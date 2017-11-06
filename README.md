@@ -5,3 +5,4 @@
 /![gocover](http://gocover.io/_badge/github.com/hscells/groove)](https://gocover.io/github.com/hscells/groove)
 
 _Query analysis pipeline framework_
+
