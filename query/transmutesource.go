@@ -1,12 +1,12 @@
 package query
 
 import (
-	"io/ioutil"
 	"github.com/hscells/cqr"
-	"github.com/hscells/transmute/pipeline"
-	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
+	"github.com/hscells/transmute/parser"
+	"github.com/hscells/transmute/pipeline"
+	"io/ioutil"
 )
 
 var (
@@ -49,7 +49,7 @@ func (ts TransmuteQuerySource) Load(directory string) ([]cqr.CommonQueryRepresen
 	// Next, use the transmute pipeline to parse them.
 	queries := []cqr.CommonQueryRepresentation{}
 	for _, f := range files {
-		source, err := ioutil.ReadFile(f.Name())
+		source, err := ioutil.ReadFile(directory + "/" + f.Name())
 		if err != nil {
 			return []cqr.CommonQueryRepresentation{}, err
 		}
@@ -58,7 +58,7 @@ func (ts TransmuteQuerySource) Load(directory string) ([]cqr.CommonQueryRepresen
 		if err != nil {
 			return []cqr.CommonQueryRepresentation{}, err
 		}
-		queries = append(queries, bq.(cqr.CommonQueryRepresentation))
+		queries = append(queries, bq.Representation().(cqr.CommonQueryRepresentation))
 	}
 
 	// Finally, return the parsed queries.

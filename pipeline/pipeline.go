@@ -1,10 +1,10 @@
 package pipeline
 
 import (
-	"github.com/hscells/groove/query"
-	"github.com/hscells/groove/stats"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/output"
+	"github.com/hscells/groove/query"
+	"github.com/hscells/groove/stats"
 )
 
 // GroovePipeline contains all the information for executing a pipeline for query analysis.

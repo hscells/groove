@@ -6,3 +6,19 @@
 
 _Query analysis pipeline framework_
 
+## API Usage
+
+```go
+p := pipeline.NewGroovePipeline(
+    query.NewTransmuteQuerySource(query.MedlineTransmutePipeline),
+    stats.NewElasticsearchStatisticsSource(),
+    []analysis.Measurement{analysis.QueryComplexity{}, analysis.TermCount{}},
+    []output.Formatter{output.JsonFormatter},
+)
+s, err := p.Execute("../../transmute/medline")
+if err != nil {
+    log.Fatal(err)
+}
+
+log.Println(s[0])
+```
