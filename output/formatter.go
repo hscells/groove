@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"strconv"
+	"encoding/csv"
+	"bytes"
 )
 
 type Formatter func(headers []string, data [][]float64) (s string)
@@ -31,9 +33,25 @@ func JsonFormatter(headers []string, data [][]float64) string {
 		}
 	}
 
-	v, err := json.Marshal(m)
+	v, err := json.MarshalIndent(m, "", "    ")
 	if err != nil {
 		log.Fatalln(err)
 	}
 	return string(v)
+}
+
+// CsvFormatter outputs results in CSV format.
+func CsvFormatter(headers []string, data [][]float64) string {
+	b := bytes.NewBufferString("")
+	w := csv.NewWriter(b)
+	w.Write(headers)
+	for j := range data[0] {
+		record := make([]string, len(data))
+		for i := range data {
+			record[i] = strconv.FormatFloat(data[i][j], 'f', -1, 64)
+		}
+		w.Write(record)
+	}
+	w.Flush()
+	return b.String()
 }
