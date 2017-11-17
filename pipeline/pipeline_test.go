@@ -7,12 +7,14 @@ import (
 	"github.com/hscells/groove/stats"
 	"log"
 	"testing"
+	"github.com/hscells/groove/preprocess"
 )
 
 func TestName(t *testing.T) {
 	p := NewGroovePipeline(
 		query.NewTransmuteQuerySource(query.MedlineTransmutePipeline),
 		stats.NewElasticsearchStatisticsSource(),
+		[]preprocess.QueryProcessor{preprocess.AlphaNum},
 		[]analysis.Measurement{analysis.QueryComplexity{}, analysis.TermCount{}},
 		[]output.Formatter{output.JsonFormatter},
 	)
