@@ -1,9 +1,11 @@
+// Package analysis provides measurements and analysis tools for queries.
 package analysis
 
 import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/stats"
 	"strings"
+	"github.com/hscells/groove"
 )
 
 // Measurement is a representation for how a measurement fits into the pipeline.
@@ -11,7 +13,7 @@ type Measurement interface {
 	// Name is the name of the measurement in the output. It should not contain any spaces.
 	Name() string
 	// Execute computes the implemented measurement for a query and optionally using the specified statistics.
-	Execute(q cqr.CommonQueryRepresentation, s stats.StatisticsSource) (float64, error)
+	Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error)
 }
 
 // QueryTerms extracts the terms from a query.
@@ -35,6 +37,7 @@ func QueryKeywords(r cqr.CommonQueryRepresentation) (keywords []cqr.Keyword) {
 	return
 }
 
+// QueryBooleanQueries extracts all of the sub-queries from a Boolean query, recursively.
 func QueryBooleanQueries(r cqr.CommonQueryRepresentation) (children []cqr.BooleanQuery) {
 	switch q := r.(type) {
 	case cqr.BooleanQuery:

@@ -1,8 +1,8 @@
 package analysis
 
 import (
-	"github.com/hscells/cqr"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/groove"
 )
 
 // TermCount is a measurement that counts the number of terms in the query.
@@ -21,8 +21,8 @@ func (tc TermCount) Name() string {
 
 // TermCount counts the total number of terms in a query. If a Keyword has more than one terms, it will split it and
 // count each individual term in that query string.
-func (tc TermCount) Execute(q cqr.CommonQueryRepresentation, s stats.StatisticsSource) (float64, error) {
-	return float64(len(QueryTerms(q))), nil
+func (tc TermCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+	return float64(len(QueryTerms(q.Processed()))), nil
 }
 
 // Name is KeywordCount.
@@ -31,8 +31,8 @@ func (kc KeywordCount) Name() string {
 }
 
 // TermCount counts the total number of keywords in a query.
-func (kc KeywordCount) Execute(q cqr.CommonQueryRepresentation, s stats.StatisticsSource) (float64, error) {
-	return float64(len(QueryKeywords(q))), nil
+func (kc KeywordCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+	return float64(len(QueryKeywords(q.Processed()))), nil
 }
 
 // Name is BooleanQueryCount.
@@ -41,6 +41,6 @@ func (bc BooleanQueryCount) Name() string {
 }
 
 // BooleanQueryCount counts the total number of Boolean queries in a query.
-func (bc BooleanQueryCount) Execute(q cqr.CommonQueryRepresentation, s stats.StatisticsSource) (float64, error) {
-	return float64(len(QueryBooleanQueries(q))), nil
+func (bc BooleanQueryCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+	return float64(len(QueryBooleanQueries(q.Processed()))), nil
 }
