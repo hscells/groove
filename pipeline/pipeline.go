@@ -1,12 +1,17 @@
+// Package pipeline provides a framework for constructing reproducible query experiments.
 package pipeline
 
 import (
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/output"
+	"github.com/hscells/groove/preprocess"
 	"github.com/hscells/groove/query"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/groove/preprocess"
+	"github.com/hscells/groove"
+	"log"
 )
+
+type empty struct{}
 
 // GroovePipeline contains all the information for executing a pipeline for query analysis.
 type GroovePipeline struct {
@@ -38,26 +43,36 @@ func (pipeline GroovePipeline) Execute(directory string) ([]string, error) {
 		return outputs, err
 	}
 
+	measurementQueries := make([]groove.PipelineQuery, len(queries))
 	for i, q := range queries {
 		for _, p := range pipeline.Preprocess {
-			queries[i] = preprocess.ProcessQuery(q, p)
+			measurementQueries[i] = groove.NewPipelineQuery(queries[i], preprocess.ProcessQuery(q, p))
 		}
 	}
 
 	// Compute measurements for each of the queries.
-	headers := []string{}
-	data := make([][]float64, len(pipeline.Measurements))
+	// The measurements are computed in parallel.
+	N := len(pipeline.Measurements)
+	headers := make([]string, N)
+	data := make([][]float64, N)
+	sem := make(chan empty, N)
 	for mi, measurement := range pipeline.Measurements {
-		headers = append(headers, measurement.Name())
-		data[mi] = make([]float64, len(queries))
-		for qi, queryRep := range queries {
-			data[mi][qi], err = measurement.Execute(queryRep, pipeline.StatisticsSource)
-			if err != nil {
-				return outputs, err
+		// The inner loop is run concurrently.
+		go func(i int, m analysis.Measurement) {
+			headers[i] = m.Name()
+			data[i] = make([]float64, len(queries))
+			for qi, measurementQuery := range measurementQueries {
+				data[i][qi], err = m.Execute(measurementQuery, pipeline.StatisticsSource)
+				if err != nil {
+					log.Fatal(err)
+				}
 			}
-		}
+			sem <- empty{}
+		}(mi, measurement)
 	}
-
+	for i := 0; i < N; i++ {
+		<-sem
+	}
 	// Format the measurement results into specified formats.
 	for _, formatter := range pipeline.OutputFormats {
 		outputs = append(outputs, formatter(headers, data))

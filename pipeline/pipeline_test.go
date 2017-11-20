@@ -3,11 +3,11 @@ package pipeline
 import (
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/output"
+	"github.com/hscells/groove/preprocess"
 	"github.com/hscells/groove/query"
 	"github.com/hscells/groove/stats"
 	"log"
 	"testing"
-	"github.com/hscells/groove/preprocess"
 )
 
 func TestName(t *testing.T) {
