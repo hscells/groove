@@ -13,14 +13,17 @@ var (
 	alphanum, _ = regexp.Compile("[^a-zA-Z0-9 ]+")
 )
 
+// AlphaNum removes all non-alphanumeric characters from a query.
 func AlphaNum(text string) string {
 	return alphanum.ReplaceAllString(text, "")
 }
 
+// Lowercase transforms all capital letters to lowercase.
 func Lowercase(text string) string {
 	return strings.ToLower(text)
 }
 
+// ProcessQuery applies a query processor to a query.
 func ProcessQuery(query cqr.CommonQueryRepresentation, processor QueryProcessor) cqr.CommonQueryRepresentation {
 	switch q := query.(type) {
 	case cqr.Keyword:

@@ -1,11 +1,12 @@
+// Package output provides different formats of output for experiments.
 package output
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"log"
 	"strconv"
-	"encoding/csv"
-	"bytes"
 )
 
 type Formatter func(headers []string, data [][]float64) (s string)

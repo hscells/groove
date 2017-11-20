@@ -1,9 +1,15 @@
 package stats
 
 import (
-	"log"
-	"gopkg.in/olivere/elastic.v5"
+	"bytes"
 	"context"
+	"encoding/json"
+	"github.com/hscells/cqr"
+	"github.com/hscells/transmute/backend"
+	"github.com/hscells/transmute/parser"
+	"github.com/hscells/transmute/pipeline"
+	"gopkg.in/olivere/elastic.v5"
+	"log"
 	"math"
 )
 
@@ -30,8 +36,8 @@ func (es ElasticsearchStatisticsSource) TermFrequency(term, document string) (fl
 }
 
 // DocumentFrequency is the document frequency (the number of documents containing the current term).
-func (es ElasticsearchStatisticsSource) DocumentFrequency(term, document string) (float64, error) {
-	resp, err := es.client.TermVectors(es.index, es.documentType).Id(document).Do(context.Background())
+func (es ElasticsearchStatisticsSource) DocumentFrequency(term string) (float64, error) {
+	resp, err := es.client.TermVectors(es.index, es.documentType).Doc(map[string]string{es.field: term}).Do(context.Background())
 	if err != nil {
 		return 0, err
 	}
@@ -46,10 +52,11 @@ func (es ElasticsearchStatisticsSource) DocumentFrequency(term, document string)
 //TotalTermFrequency is a sum of total term frequencies (the sum of total term frequencies of each term in this field).
 func (es ElasticsearchStatisticsSource) TotalTermFrequency(term string) (float64, error) {
 	resp, err := es.client.TermVectors(es.index, es.documentType).
-		Doc(map[string]string{"text": term}).
+		TermStatistics(true).
+		Doc(map[string]string{es.field: term}).
 		Do(context.Background())
 	if err != nil {
-		return 0, err
+		return 0.0, err
 	}
 
 	if tv, ok := resp.TermVectors[es.field]; ok {
@@ -72,13 +79,13 @@ func (es ElasticsearchStatisticsSource) InverseDocumentFrequency(term string) (f
 	resp2, err := es.client.TermVectors(es.index, es.documentType).
 		FieldStatistics(true).
 		TermStatistics(true).
-		Doc(map[string]string{"text": term}).
+		Doc(map[string]string{es.field: term}).
 		Do(context.Background())
 	if err != nil {
 		return 0, err
 	}
 
-	if tv, ok := resp2.TermVectors["text"]; ok {
+	if tv, ok := resp2.TermVectors[es.field]; ok {
 		nt := tv.Terms[term].DocFreq
 		if nt == 0 {
 			return 0.0, nil
@@ -86,6 +93,64 @@ func (es ElasticsearchStatisticsSource) InverseDocumentFrequency(term string) (f
 		return math.Log(float64(N) / float64(nt)), nil
 	}
 
+	return 0.0, nil
+}
+
+// VocabularySize is the total number of terms in the vocabulary.
+func (es ElasticsearchStatisticsSource) VocabularySize() (float64, error) {
+	resp, err := es.client.TermVectors(es.index, es.documentType).
+		Doc(map[string]string{es.field: "garbage"}).
+		Do(context.Background())
+	if err != nil {
+		return 0.0, err
+	}
+
+	return float64(resp.TermVectors[es.field].FieldStatistics.SumTtf), nil
+}
+
+// RetrievalSize is the minimum number of documents that contains at least one of the query terms.
+func (es ElasticsearchStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentation) (float64, error) {
+	switch q := query.(type) {
+	case cqr.Keyword:
+		// When we have a keyword query, we can just use a multi match (in case there are multiple fields).
+		result, err := es.client.Search(es.index).
+			Query(elastic.NewMultiMatchQuery(q.QueryString, q.Fields...)).
+			Do(context.Background())
+		if err != nil {
+			return 0.0, err
+		}
+		return float64(result.Hits.TotalHits), nil
+	case cqr.BooleanQuery:
+		// For a Boolean query, it gets a little tricky.
+		// First we need to get the string representation of the cqr.
+		repr := backend.NewCQRQuery(q).StringPretty()
+		// Then we need to compile it into an Elasticsearch query.
+		p := pipeline.NewPipeline(parser.NewCQRParser(), backend.NewElasticsearchCompiler(), pipeline.TransmutePipelineOptions{RequiresLexing: false})
+		esQuery, err := p.Execute(repr)
+		if err != nil {
+			return 0.0, err
+		}
+		// After that, we need to unmarshal it to get the underlying structure.
+		var tmpQuery map[string]interface{}
+		err = json.Unmarshal(bytes.NewBufferString(esQuery.String()).Bytes(), &tmpQuery)
+		if err != nil {
+			return 0.0, err
+		}
+		// So that we can get rid of the outer "query".
+		tmpQuery = tmpQuery["query"].(map[string]interface{})
+		byteQuery, err := json.MarshalIndent(tmpQuery, "", " ")
+		if err != nil {
+			return 0.0, err
+		}
+		// Only then can we issue it to Elasticsearch using our API.
+		result, err := es.client.Search(es.index).
+			Query(elastic.NewRawStringQuery(bytes.NewBuffer(byteQuery).String())).
+			Do(context.Background())
+		if err != nil {
+			return 0.0, err
+		}
+		return float64(result.Hits.TotalHits), nil
+	}
 	return 0.0, nil
 }
 

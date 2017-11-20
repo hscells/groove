@@ -1,3 +1,4 @@
+// Package query provides sources for loading queries in different formats.
 package query
 
 import "github.com/hscells/cqr"
