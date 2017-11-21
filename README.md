@@ -17,16 +17,24 @@ Elasticsearch and finally outputs the result into a JSON file.
 ## API Usage
 
 ```go
-p := pipeline.NewGroovePipeline(
+// Construct the pipeline.
+p := NewGroovePipeline(
     query.NewTransmuteQuerySource(query.MedlineTransmutePipeline),
-    stats.NewElasticsearchStatisticsSource(),
-    []analysis.Measurement{analysis.QueryComplexity{}, analysis.TermCount{}},
-    []output.Formatter{output.JsonFormatter},
+    stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://example.com:9200"),
+                                           stats.ElasticsearchIndex("pubmed"),
+                                           stats.ElasticsearchField("abstract"),
+                                           stats.ElasticsearchDocumentType("doc")),
+    Preprocess(preprocess.AlphaNum, preprocess.Lowercase),
+    Measurement(analysis.TermCount{}, preqpp.AvgIDF{}),
+    Output(output.JsonFormatter),
 )
-s, err := p.Execute("../../transmute/medline")
+
+// Execute it on a directory of queries.
+s, err := p.Execute("./medline")
 if err != nil {
     log.Fatal(err)
 }
 
+// Print the result.
 log.Println(s[0])
 ```

@@ -11,6 +11,7 @@ import (
 	"gopkg.in/olivere/elastic.v5"
 	"log"
 	"math"
+	"github.com/TimothyJones/trecresults"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.
@@ -49,7 +50,7 @@ func (es ElasticsearchStatisticsSource) DocumentFrequency(term string) (float64,
 	return 0.0, nil
 }
 
-//TotalTermFrequency is a sum of total term frequencies (the sum of total term frequencies of each term in this field).
+// TotalTermFrequency is a sum of total term frequencies (the sum of total term frequencies of each term in this field).
 func (es ElasticsearchStatisticsSource) TotalTermFrequency(term string) (float64, error) {
 	resp, err := es.client.TermVectors(es.index, es.documentType).
 		TermStatistics(true).
@@ -110,16 +111,63 @@ func (es ElasticsearchStatisticsSource) VocabularySize() (float64, error) {
 
 // RetrievalSize is the minimum number of documents that contains at least one of the query terms.
 func (es ElasticsearchStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentation) (float64, error) {
+	// Transform the query to an Elasticsearch query.
+	q, err := toElasticsearch(query)
+	if err != nil {
+		return 0.0, err
+	}
+	// Only then can we issue it to Elasticsearch using our API.
+	result, err := es.client.Search(es.index).
+		Query(elastic.NewRawStringQuery(q)).
+		Do(context.Background())
+	if err != nil {
+		return 0.0, err
+	}
+	return float64(result.Hits.TotalHits), nil
+}
+
+func (es ElasticsearchStatisticsSource) Execute(query cqr.CommonQueryRepresentation, options SearchOptions) (trecresults.ResultList, error) {
+	// Transform the query to an Elasticsearch query.
+	q, err := toElasticsearch(query)
+	if err != nil {
+		return trecresults.ResultList{}, err
+	}
+	// Only then can we issue it to Elasticsearch using our API.
+	result, err := es.client.Search(es.index).
+		Query(elastic.NewRawStringQuery(q)).
+		Size(options.Size).
+		Do(context.Background())
+	if err != nil {
+		return trecresults.ResultList{}, err
+	}
+
+	// Construct the results from the Elasticsearch hits.
+	N := result.Hits.TotalHits
+	results := make(trecresults.ResultList, N)
+	for i, hit := range result.Hits.Hits {
+		results[i] = &trecresults.Result{
+			Topic:     options.Topic,
+			Iteration: "0",
+			DocId:     hit.Id,
+			Rank:      int64(i),
+			Score:     *hit.Score,
+			RunName:   options.RunName,
+		}
+	}
+
+	return results, nil
+}
+
+func toElasticsearch(query cqr.CommonQueryRepresentation) (string, error) {
+	var result map[string]interface{}
 	switch q := query.(type) {
 	case cqr.Keyword:
-		// When we have a keyword query, we can just use a multi match (in case there are multiple fields).
-		result, err := es.client.Search(es.index).
-			Query(elastic.NewMultiMatchQuery(q.QueryString, q.Fields...)).
-			Do(context.Background())
-		if err != nil {
-			return 0.0, err
+		result = map[string]interface{}{
+			"multi_match": map[string]interface{}{
+				"query":  q.QueryString,
+				"fields": q.Fields,
+			},
 		}
-		return float64(result.Hits.TotalHits), nil
 	case cqr.BooleanQuery:
 		// For a Boolean query, it gets a little tricky.
 		// First we need to get the string representation of the cqr.
@@ -128,30 +176,22 @@ func (es ElasticsearchStatisticsSource) RetrievalSize(query cqr.CommonQueryRepre
 		p := pipeline.NewPipeline(parser.NewCQRParser(), backend.NewElasticsearchCompiler(), pipeline.TransmutePipelineOptions{RequiresLexing: false})
 		esQuery, err := p.Execute(repr)
 		if err != nil {
-			return 0.0, err
+			return "", err
 		}
 		// After that, we need to unmarshal it to get the underlying structure.
 		var tmpQuery map[string]interface{}
 		err = json.Unmarshal(bytes.NewBufferString(esQuery.String()).Bytes(), &tmpQuery)
 		if err != nil {
-			return 0.0, err
+			return "", err
 		}
-		// So that we can get rid of the outer "query".
-		tmpQuery = tmpQuery["query"].(map[string]interface{})
-		byteQuery, err := json.MarshalIndent(tmpQuery, "", " ")
-		if err != nil {
-			return 0.0, err
-		}
-		// Only then can we issue it to Elasticsearch using our API.
-		result, err := es.client.Search(es.index).
-			Query(elastic.NewRawStringQuery(bytes.NewBuffer(byteQuery).String())).
-			Do(context.Background())
-		if err != nil {
-			return 0.0, err
-		}
-		return float64(result.Hits.TotalHits), nil
+		result = tmpQuery
 	}
-	return 0.0, nil
+
+	b, err := json.Marshal(result)
+	if err != nil {
+		return "", err
+	}
+	return bytes.NewBuffer(b).String(), nil
 }
 
 // ElasticsearchHosts sets the hosts for the Elasticsearch client.

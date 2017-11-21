@@ -7,6 +7,7 @@ import (
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
 	"io/ioutil"
+	"github.com/hscells/groove"
 )
 
 var (
@@ -20,7 +21,7 @@ var (
 			},
 			RequiresLexing: true,
 		})
-	// PubMedTransmutePipeline is a defauly pipeline for PubMed queries.
+	// PubMedTransmutePipeline is a default pipeline for PubMed queries.
 	PubMedTransmutePipeline = pipeline.NewPipeline(
 		parser.NewPubMedParser(),
 		backend.NewCQRBackend(),
@@ -35,30 +36,30 @@ var (
 // TransmuteQuerySource is a source for queries.
 type TransmuteQuerySource struct {
 	pipeline pipeline.TransmutePipeline
-	queries  []cqr.CommonQueryRepresentation
+	queries  []groove.PipelineQuery
 }
 
 // Load takes a directory of queries and parses them using a supplied transmute pipeline.
-func (ts TransmuteQuerySource) Load(directory string) ([]cqr.CommonQueryRepresentation, error) {
+func (ts TransmuteQuerySource) Load(directory string) ([]groove.PipelineQuery, error) {
 	// First, get a list of files in the directory.
 	files, err := ioutil.ReadDir(directory)
 	if err != nil {
-		return []cqr.CommonQueryRepresentation{}, err
+		return []groove.PipelineQuery{}, err
 	}
 
 	// Next, use the transmute pipeline to parse them.
-	queries := []cqr.CommonQueryRepresentation{}
+	queries := []groove.PipelineQuery{}
 	for _, f := range files {
 		source, err := ioutil.ReadFile(directory + "/" + f.Name())
 		if err != nil {
-			return []cqr.CommonQueryRepresentation{}, err
+			return []groove.PipelineQuery{}, err
 		}
 
 		bq, err := ts.pipeline.Execute(string(source))
 		if err != nil {
-			return []cqr.CommonQueryRepresentation{}, err
+			return []groove.PipelineQuery{}, err
 		}
-		queries = append(queries, bq.Representation().(cqr.CommonQueryRepresentation))
+		queries = append(queries, groove.NewPipelineQuery(f.Name(), bq.Representation().(cqr.CommonQueryRepresentation)))
 	}
 
 	// Finally, return the parsed queries.
