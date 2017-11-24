@@ -1,9 +1,12 @@
 package groove
 
-import "github.com/hscells/cqr"
+import (
+	"github.com/hscells/cqr"
+)
 
 type PipelineQuery struct {
 	name        string
+	topic       int64
 	original    cqr.CommonQueryRepresentation
 	processed   cqr.CommonQueryRepresentation
 	transformed cqr.CommonQueryRepresentation
@@ -35,6 +38,14 @@ func (gq PipelineQuery) Name() string {
 	return gq.name
 }
 
-func NewPipelineQuery(name string, original cqr.CommonQueryRepresentation) PipelineQuery {
-	return PipelineQuery{name: name, original: original}
+func (gq PipelineQuery) Topic() int64 {
+	return gq.topic
+}
+
+func NewPipelineQuery(name string, topic int64, original cqr.CommonQueryRepresentation, params ...func(*PipelineQuery)) *PipelineQuery {
+	pq := PipelineQuery{name: name, original: original, topic: topic}
+	for _, param := range params {
+		param(&pq)
+	}
+	return &pq
 }

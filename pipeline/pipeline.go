@@ -9,6 +9,7 @@ import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/groove"
 	"log"
+	"github.com/TimothyJones/trecresults"
 )
 
 type empty struct{}
@@ -21,6 +22,7 @@ type GroovePipeline struct {
 	Transformations  preprocess.QueryTransformations
 	Measurements     []analysis.Measurement
 	OutputFormats    []output.Formatter
+	OutputTrec       output.TrecResults
 }
 
 // Preprocess adds preprocessors to the pipeline.
@@ -50,6 +52,15 @@ func Transformations(path string, transformations preprocess.Transformations) fu
 		return preprocess.QueryTransformations{
 			Transformations: transformations,
 			Output:          path,
+		}
+	}
+}
+
+// Trec configures trec output.
+func Trec(path string) func() interface{} {
+	return func() interface{} {
+		return output.TrecResults{
+			Path: path,
 		}
 	}
 }
@@ -104,25 +115,34 @@ func (pipeline GroovePipeline) Execute(directory string) (groove.PipelineResult,
 	N := len(pipeline.Measurements)
 	headers := make([]string, N)
 	data := make([][]float64, N)
-	sem := make(chan empty, N)
-	for mi, measurement := range pipeline.Measurements {
-		// The inner loop is run concurrently.
-		go func(i int, m analysis.Measurement) {
-			headers[i] = m.Name()
-			data[i] = make([]float64, len(queries))
-			for qi, measurementQuery := range measurementQueries {
-				data[i][qi], err = m.Execute(measurementQuery, pipeline.StatisticsSource)
-				if err != nil {
-					log.Fatal(err)
-				}
+	//sem := make(chan empty, N)
+	//for mi, measurement := range pipeline.Measurements {
+	//	// The inner loop is run concurrently.
+	//	go func(i int, m analysis.Measurement) {
+	//		headers[i] = m.Name()
+	//		data[i] = make([]float64, len(queries))
+	//		for qi, measurementQuery := range measurementQueries {
+	//			data[i][qi], err = m.Execute(measurementQuery, pipeline.StatisticsSource)
+	//			if err != nil {
+	//				log.Fatal(err)
+	//			}
+	//		}
+	//		sem <- empty{}
+	//	}(mi, measurement)
+	//}
+	//for i := 0; i < N; i++ {
+	//	<-sem
+	//}
+	for i, m := range pipeline.Measurements {
+		headers[i] = m.Name()
+		data[i] = make([]float64, len(queries))
+		for qi, measurementQuery := range measurementQueries {
+			data[i][qi], err = m.Execute(measurementQuery, pipeline.StatisticsSource)
+			if err != nil {
+				log.Fatal(err)
 			}
-			sem <- empty{}
-		}(mi, measurement)
+		}
 	}
-	for i := 0; i < N; i++ {
-		<-sem
-	}
-
 	// Format the measurement results into specified formats.
 	outputs := make([]string, len(pipeline.OutputFormats))
 	for i, formatter := range pipeline.OutputFormats {
@@ -137,6 +157,18 @@ func (pipeline GroovePipeline) Execute(directory string) (groove.PipelineResult,
 	}
 	result.Transformations = transformations
 
+	// Output the trec results.
+	if len(pipeline.OutputTrec.Path) > 0 {
+		trecResults := make(trecresults.ResultList, 0)
+		for _, q := range queries {
+			r, err := pipeline.StatisticsSource.Execute(q, pipeline.StatisticsSource.SearchOptions())
+			if err != nil {
+				log.Fatal(err)
+			}
+			trecResults = append(trecResults, r...)
+		}
+		result.TrecResults = &trecResults
+	}
 	// Return the formatted results.
 	return result, nil
 }

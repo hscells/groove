@@ -8,6 +8,7 @@ import (
 	"github.com/hscells/transmute/pipeline"
 	"io/ioutil"
 	"github.com/hscells/groove"
+	"strconv"
 )
 
 var (
@@ -59,7 +60,10 @@ func (ts TransmuteQuerySource) Load(directory string) ([]groove.PipelineQuery, e
 		if err != nil {
 			return []groove.PipelineQuery{}, err
 		}
-		queries = append(queries, groove.NewPipelineQuery(f.Name(), bq.Representation().(cqr.CommonQueryRepresentation)))
+
+		topic, err := strconv.Atoi(f.Name())
+
+		queries = append(queries, *groove.NewPipelineQuery(f.Name(), int64(topic), bq.Representation().(cqr.CommonQueryRepresentation)))
 	}
 
 	// Finally, return the parsed queries.

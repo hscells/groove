@@ -2,6 +2,7 @@ package groove
 
 import (
 	"github.com/hscells/cqr"
+	"github.com/TimothyJones/trecresults"
 )
 
 type QueryResult struct {
@@ -12,4 +13,5 @@ type QueryResult struct {
 type PipelineResult struct {
 	Measurements    []string
 	Transformations []QueryResult
+	TrecResults     *trecresults.ResultList
 }

@@ -10,8 +10,8 @@ import (
 	"github.com/hscells/transmute/pipeline"
 	"gopkg.in/olivere/elastic.v5"
 	"log"
-	"math"
 	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/groove"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.
@@ -20,10 +20,21 @@ type ElasticsearchStatisticsSource struct {
 	documentType string
 	index        string
 	field        string
+
+	options    SearchOptions
+	parameters map[string]float64
+}
+
+func (es *ElasticsearchStatisticsSource) SearchOptions() SearchOptions {
+	return es.options
+}
+
+func (es *ElasticsearchStatisticsSource) Parameters() map[string]float64 {
+	return es.parameters
 }
 
 // TermFrequency is the term frequency in the field.
-func (es ElasticsearchStatisticsSource) TermFrequency(term, document string) (float64, error) {
+func (es *ElasticsearchStatisticsSource) TermFrequency(term, document string) (float64, error) {
 	resp, err := es.client.TermVectors(es.index, es.documentType).Id(document).Do(context.Background())
 	if err != nil {
 		return 0, err
@@ -37,7 +48,7 @@ func (es ElasticsearchStatisticsSource) TermFrequency(term, document string) (fl
 }
 
 // DocumentFrequency is the document frequency (the number of documents containing the current term).
-func (es ElasticsearchStatisticsSource) DocumentFrequency(term string) (float64, error) {
+func (es *ElasticsearchStatisticsSource) DocumentFrequency(term string) (float64, error) {
 	resp, err := es.client.TermVectors(es.index, es.documentType).Doc(map[string]string{es.field: term}).Do(context.Background())
 	if err != nil {
 		return 0, err
@@ -51,7 +62,7 @@ func (es ElasticsearchStatisticsSource) DocumentFrequency(term string) (float64,
 }
 
 // TotalTermFrequency is a sum of total term frequencies (the sum of total term frequencies of each term in this field).
-func (es ElasticsearchStatisticsSource) TotalTermFrequency(term string) (float64, error) {
+func (es *ElasticsearchStatisticsSource) TotalTermFrequency(term string) (float64, error) {
 	resp, err := es.client.TermVectors(es.index, es.documentType).
 		TermStatistics(true).
 		Doc(map[string]string{es.field: term}).
@@ -69,7 +80,7 @@ func (es ElasticsearchStatisticsSource) TotalTermFrequency(term string) (float64
 
 // InverseDocumentFrequency is the ratio of of documents in the collection to the number of documents the term appears
 // in, logarithmically smoothed.
-func (es ElasticsearchStatisticsSource) InverseDocumentFrequency(term string) (float64, error) {
+func (es *ElasticsearchStatisticsSource) InverseDocumentFrequency(term string) (float64, error) {
 	resp1, err := es.client.IndexStats(es.index).Do(context.Background())
 	if err != nil {
 		log.Fatal(err)
@@ -91,14 +102,14 @@ func (es ElasticsearchStatisticsSource) InverseDocumentFrequency(term string) (f
 		if nt == 0 {
 			return 0.0, nil
 		}
-		return math.Log(float64(N) / float64(nt)), nil
+		return idf(float64(N), float64(nt)), nil
 	}
 
 	return 0.0, nil
 }
 
 // VocabularySize is the total number of terms in the vocabulary.
-func (es ElasticsearchStatisticsSource) VocabularySize() (float64, error) {
+func (es *ElasticsearchStatisticsSource) VocabularySize() (float64, error) {
 	resp, err := es.client.TermVectors(es.index, es.documentType).
 		Doc(map[string]string{es.field: "garbage"}).
 		Do(context.Background())
@@ -110,7 +121,7 @@ func (es ElasticsearchStatisticsSource) VocabularySize() (float64, error) {
 }
 
 // RetrievalSize is the minimum number of documents that contains at least one of the query terms.
-func (es ElasticsearchStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentation) (float64, error) {
+func (es *ElasticsearchStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentation) (float64, error) {
 	// Transform the query to an Elasticsearch query.
 	q, err := toElasticsearch(query)
 	if err != nil {
@@ -126,14 +137,16 @@ func (es ElasticsearchStatisticsSource) RetrievalSize(query cqr.CommonQueryRepre
 	return float64(result.Hits.TotalHits), nil
 }
 
-func (es ElasticsearchStatisticsSource) Execute(query cqr.CommonQueryRepresentation, options SearchOptions) (trecresults.ResultList, error) {
+func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error) {
 	// Transform the query to an Elasticsearch query.
-	q, err := toElasticsearch(query)
+	q, err := toElasticsearch(query.Original())
 	if err != nil {
 		return trecresults.ResultList{}, err
 	}
 	// Only then can we issue it to Elasticsearch using our API.
 	result, err := es.client.Search(es.index).
+		Index(es.index).
+		Type(es.documentType).
 		Query(elastic.NewRawStringQuery(q)).
 		Size(options.Size).
 		Do(context.Background())
@@ -142,12 +155,12 @@ func (es ElasticsearchStatisticsSource) Execute(query cqr.CommonQueryRepresentat
 	}
 
 	// Construct the results from the Elasticsearch hits.
-	N := result.Hits.TotalHits
+	N := len(result.Hits.Hits)
 	results := make(trecresults.ResultList, N)
 	for i, hit := range result.Hits.Hits {
 		results[i] = &trecresults.Result{
-			Topic:     options.Topic,
-			Iteration: "0",
+			Topic:     query.Topic(),
+			Iteration: "Q0",
 			DocId:     hit.Id,
 			Rank:      int64(i),
 			Score:     *hit.Score,
@@ -184,7 +197,7 @@ func toElasticsearch(query cqr.CommonQueryRepresentation) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		result = tmpQuery
+		result = tmpQuery["query"].(map[string]interface{})
 	}
 
 	b, err := json.Marshal(result)
@@ -204,11 +217,7 @@ func ElasticsearchHosts(hosts ...string) func(*ElasticsearchStatisticsSource) {
 				log.Fatal(err)
 			}
 		} else {
-			esHosts := make([]string, len(hosts))
-			for i, host := range hosts {
-				esHosts[i] = host
-			}
-			es.client, err = elastic.NewClient(elastic.SetURL(esHosts...))
+			es.client, err = elastic.NewClient(elastic.SetURL(hosts...))
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -241,9 +250,25 @@ func ElasticsearchField(field string) func(*ElasticsearchStatisticsSource) {
 	}
 }
 
+// ElasticsearchSearchOptions sets the search options for the statistic source.
+func ElasticsearchSearchOptions(options SearchOptions) func(*ElasticsearchStatisticsSource) {
+	return func(es *ElasticsearchStatisticsSource) {
+		es.options = options
+		return
+	}
+}
+
+// ElasticsearchSearchOptions sets the search options for the statistic source.
+func ElasticsearchParameters(params map[string]float64) func(*ElasticsearchStatisticsSource) {
+	return func(es *ElasticsearchStatisticsSource) {
+		es.parameters = params
+		return
+	}
+}
+
 // NewElasticsearchStatisticsSource creates a new ElasticsearchStatisticsSource using functional options.
 func NewElasticsearchStatisticsSource(options ...func(*ElasticsearchStatisticsSource)) *ElasticsearchStatisticsSource {
-	es := ElasticsearchStatisticsSource{}
+	es := &ElasticsearchStatisticsSource{}
 
 	if len(options) == 0 {
 		var err error
@@ -254,9 +279,9 @@ func NewElasticsearchStatisticsSource(options ...func(*ElasticsearchStatisticsSo
 		}
 	} else {
 		for _, option := range options {
-			option(&es)
+			option(es)
 		}
 	}
 
-	return &es
+	return es
 }

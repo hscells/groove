@@ -49,6 +49,5 @@ func QueryBooleanQueries(r cqr.CommonQueryRepresentation) (children []cqr.Boolea
 			}
 		}
 	}
-
 	return
 }
