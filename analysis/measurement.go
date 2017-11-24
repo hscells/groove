@@ -3,9 +3,9 @@ package analysis
 
 import (
 	"github.com/hscells/cqr"
+	"github.com/hscells/groove"
 	"github.com/hscells/groove/stats"
 	"strings"
-	"github.com/hscells/groove"
 )
 
 // Measurement is a representation for how a measurement fits into the pipeline.

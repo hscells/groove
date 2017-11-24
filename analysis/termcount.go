@@ -1,8 +1,8 @@
 package analysis
 
 import (
-	"github.com/hscells/groove/stats"
 	"github.com/hscells/groove"
+	"github.com/hscells/groove/stats"
 )
 
 // TermCount is a measurement that counts the number of terms in the query.

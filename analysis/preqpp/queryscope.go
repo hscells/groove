@@ -1,9 +1,9 @@
 package preqpp
 
 import (
+	"github.com/hscells/groove"
 	"github.com/hscells/groove/stats"
 	"math"
-	"github.com/hscells/groove"
 )
 
 // QueryScope aims to measure the specificity of a query. e.g. "Olympic Games" versus a specific query

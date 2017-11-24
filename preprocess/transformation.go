@@ -38,6 +38,7 @@ func Simplify(query cqr.CommonQueryRepresentation) cqr.CommonQueryRepresentation
 	}
 }
 
+// Apply applies a set of transformations to a query.
 func (ts Transformations) Apply(query groove.PipelineQuery) cqr.CommonQueryRepresentation {
 	tmpQuery := query.Original()
 	for _, transformation := range ts {

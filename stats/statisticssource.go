@@ -2,10 +2,10 @@
 package stats
 
 import (
-	"github.com/hscells/cqr"
 	"github.com/TimothyJones/trecresults"
-	"math"
+	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
+	"math"
 )
 
 type SearchOptions struct {

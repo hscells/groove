@@ -1,10 +1,10 @@
 package preqpp
 
 import (
+	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/stats"
 	"math"
-	"github.com/hscells/groove"
 )
 
 // AvgICTF is similar to idf, however it attempts to take into account the term frequencies. Inverse collection term

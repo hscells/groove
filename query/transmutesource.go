@@ -2,12 +2,12 @@ package query
 
 import (
 	"github.com/hscells/cqr"
+	"github.com/hscells/groove"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
 	"io/ioutil"
-	"github.com/hscells/groove"
 	"strconv"
 )
 

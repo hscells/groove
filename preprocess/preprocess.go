@@ -1,3 +1,4 @@
+// Package preprocess handles preprocessing and transformation of queries.
 package preprocess
 
 import (

@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/TimothyJones/trecresults"
 	"github.com/hscells/cqr"
+	"github.com/hscells/groove"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
 	"gopkg.in/olivere/elastic.v5"
 	"log"
-	"github.com/TimothyJones/trecresults"
-	"github.com/hscells/groove"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.

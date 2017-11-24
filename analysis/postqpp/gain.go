@@ -1,11 +1,11 @@
 package postqpp
 
 import (
-	"github.com/hscells/groove"
-	"github.com/hscells/groove/stats"
-	"github.com/hscells/groove/analysis"
-	"math"
 	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/groove"
+	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/stats"
+	"math"
 )
 
 type WeightedInformationGain struct{}

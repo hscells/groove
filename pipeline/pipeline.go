@@ -2,14 +2,14 @@
 package pipeline
 
 import (
+	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/output"
 	"github.com/hscells/groove/preprocess"
 	"github.com/hscells/groove/query"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/groove"
 	"log"
-	"github.com/TimothyJones/trecresults"
 )
 
 type empty struct{}

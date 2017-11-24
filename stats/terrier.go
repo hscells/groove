@@ -1,20 +1,22 @@
 package stats
 
 import (
-	"github.com/hscells/cqr"
-	"github.com/TimothyJones/trecresults"
-	"github.com/timob/jnigi"
-	"log"
 	"fmt"
-	"github.com/magiconair/properties"
-	"path/filepath"
-	"strconv"
+	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/cqr"
+	"github.com/hscells/groove"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
-	"github.com/hscells/groove"
+	"github.com/magiconair/properties"
+	"github.com/timob/jnigi"
+	"log"
+	"path/filepath"
+	"strconv"
 )
 
+// TerrierStatisticsSource is a source of statistics using the terrier information retrieval project;
+// http://terrier.org/
 type TerrierStatisticsSource struct {
 	propertiesPath string
 	indexPath      string
@@ -30,10 +32,12 @@ type TerrierStatisticsSource struct {
 	parameters map[string]float64
 }
 
+// SearchOptions gets the search options for this source.
 func (t TerrierStatisticsSource) SearchOptions() SearchOptions {
 	return t.options
 }
 
+// SearchOptions gets the parameters for this source.
 func (t TerrierStatisticsSource) Parameters() map[string]float64 {
 	return t.parameters
 }
