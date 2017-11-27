@@ -1,3 +1,5 @@
+<img height="200px" src="gopher.png" alt="gopher" align="right"/>
+
 # groove
 
 [![GoDoc](https://godoc.org/github.com/hscells/groove?status.svg)](https://godoc.org/github.com/hscells/groove)
@@ -38,3 +40,8 @@ if err != nil {
 // Print the result.
 log.Println(s[0])
 ```
+
+## Logo
+
+The Go gopher was created by [Renee French](https://reneefrench.blogspot.com/), licensed under
+[Creative Commons 3.0 Attributions license](https://creativecommons.org/licenses/by/3.0/).
