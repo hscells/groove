@@ -10,6 +10,8 @@ import (
 	"github.com/hscells/groove/query"
 	"github.com/hscells/groove/stats"
 	"log"
+	"errors"
+	"github.com/hscells/cqr"
 )
 
 type empty struct{}
@@ -43,16 +45,6 @@ func Measurement(measurements ...analysis.Measurement) func() interface{} {
 func Output(formatter ...output.Formatter) func() interface{} {
 	return func() interface{} {
 		return formatter
-	}
-}
-
-// Transformations adds transformations to the pipeline.
-func Transformations(path string, transformations preprocess.Transformations) func() interface{} {
-	return func() interface{} {
-		return preprocess.QueryTransformations{
-			Transformations: transformations,
-			Output:          path,
-		}
 	}
 }
 
@@ -102,12 +94,34 @@ func (pipeline GroovePipeline) Execute(directory string) (groove.PipelineResult,
 
 	// This means preprocessing the query.
 	measurementQueries := make([]groove.PipelineQuery, len(queries))
+	topics := make([]string, len(queries))
 	for i, q := range queries {
+		topics[i] = q.Name()
+		// Ensure there is a processed query.
+		measurementQueries[i] = q.SetProcessed(q.Original())
+		// And apply the processing if there is any.
 		for _, p := range pipeline.Preprocess {
-			measurementQueries[i] = queries[i].SetProcessed(preprocess.ProcessQuery(q.Original(), p))
+			measurementQueries[i] = measurementQueries[i].SetProcessed(preprocess.ProcessQuery(measurementQueries[i].Processed(), p))
 		}
-		// As well as applying any transformations.
-		measurementQueries[i] = measurementQueries[i].SetTransformed(pipeline.Transformations.Transformations.Apply(q))
+
+		// Ensure there is a transformed query.
+		measurementQueries[i] = measurementQueries[i].SetTransformed(func() cqr.CommonQueryRepresentation {
+			return measurementQueries[i].Processed()
+		})
+
+		// Apply any transformations.
+		for _, t := range pipeline.Transformations.BooleanTransformations {
+			measurementQueries[i] = measurementQueries[i].SetTransformed(t(measurementQueries[i].Transformed()))
+		}
+		for _, t := range pipeline.Transformations.ElasticsearchTransformations {
+			if s, ok := pipeline.StatisticsSource.(*stats.ElasticsearchStatisticsSource); ok {
+				measurementQueries[i] = measurementQueries[i].SetTransformed(t(measurementQueries[i].Transformed(), s))
+			} else {
+				log.Fatal("Elasticsearch transformations only work with an Elasticsearch statistics source.")
+			}
+		}
+
+		log.Println(q.Name(), measurementQueries[i].Transformed())
 	}
 
 	// Compute measurements for each of the queries.
@@ -133,20 +147,28 @@ func (pipeline GroovePipeline) Execute(directory string) (groove.PipelineResult,
 	//for i := 0; i < N; i++ {
 	//	<-sem
 	//}
+
+	// data[measurement][queryN]
 	for i, m := range pipeline.Measurements {
 		headers[i] = m.Name()
 		data[i] = make([]float64, len(queries))
 		for qi, measurementQuery := range measurementQueries {
 			data[i][qi], err = m.Execute(measurementQuery, pipeline.StatisticsSource)
 			if err != nil {
-				log.Fatal(err)
+				return result, err
 			}
 		}
 	}
 	// Format the measurement results into specified formats.
 	outputs := make([]string, len(pipeline.OutputFormats))
 	for i, formatter := range pipeline.OutputFormats {
-		outputs[i] = formatter(headers, data)
+		if len(data) > 0 && len(topics) != len(data[0]) {
+			return result, errors.New("the length of topics and data must be the same")
+		}
+		outputs[i], err = formatter(topics, headers, data)
+		if err != nil {
+			return result, err
+		}
 	}
 	result.Measurements = outputs
 

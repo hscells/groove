@@ -14,7 +14,7 @@ type PipelineQuery struct {
 }
 
 // Original is the initial query before preprocessing or transformation.
-func (gq PipelineQuery) Original() cqr.CommonQueryRepresentation {
+func (gq *PipelineQuery) Original() cqr.CommonQueryRepresentation {
 	return gq.original
 }
 
@@ -25,28 +25,28 @@ func (gq *PipelineQuery) SetProcessed(q cqr.CommonQueryRepresentation) PipelineQ
 }
 
 // Processed gets the processed variation of the query.
-func (gq PipelineQuery) Processed() cqr.CommonQueryRepresentation {
+func (gq *PipelineQuery) Processed() cqr.CommonQueryRepresentation {
 	return gq.processed
 }
 
 // SetTransformed initiates the transformed variation of the query.
-func (gq *PipelineQuery) SetTransformed(q cqr.CommonQueryRepresentation) PipelineQuery {
-	gq.transformed = q
+func (gq *PipelineQuery) SetTransformed(q func() cqr.CommonQueryRepresentation) PipelineQuery {
+	gq.transformed = q()
 	return *gq
 }
 
 // Transformed gets the transformed variation of the query.
-func (gq PipelineQuery) Transformed() cqr.CommonQueryRepresentation {
+func (gq *PipelineQuery) Transformed() cqr.CommonQueryRepresentation {
 	return gq.transformed
 }
 
 // Name is the name of the query.
-func (gq PipelineQuery) Name() string {
+func (gq *PipelineQuery) Name() string {
 	return gq.name
 }
 
 // Topic is the topic of the query for use in trec runs.
-func (gq PipelineQuery) Topic() int64 {
+func (gq *PipelineQuery) Topic() int64 {
 	return gq.topic
 }
 
