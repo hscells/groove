@@ -21,7 +21,7 @@ func ictf(W, cf float64) float64 {
 }
 
 func (avgi AvgICTF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Processed())
+	terms := analysis.QueryTerms(q.Transformed())
 
 	W, err := s.VocabularySize()
 	if err != nil {

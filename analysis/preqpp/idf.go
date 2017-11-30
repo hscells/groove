@@ -18,7 +18,7 @@ func (avg AvgIDF) Name() string {
 }
 
 func (avg AvgIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Processed())
+	terms := analysis.QueryTerms(q.Transformed())
 
 	sumIdf := 0.0
 	for _, term := range terms {
@@ -37,7 +37,7 @@ func (sum SumIDF) Name() string {
 }
 
 func (sum SumIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Processed())
+	terms := analysis.QueryTerms(q.Transformed())
 
 	sumIdf := 0.0
 	for _, term := range terms {
@@ -56,7 +56,7 @@ func (sum MaxIDF) Name() string {
 }
 
 func (sum MaxIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Processed())
+	terms := analysis.QueryTerms(q.Transformed())
 
 	scores := []float64{}
 	for _, term := range terms {
@@ -75,7 +75,7 @@ func (sum StdDevIDF) Name() string {
 }
 
 func (sum StdDevIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Processed())
+	terms := analysis.QueryTerms(q.Transformed())
 
 	scores := []float64{}
 	for _, term := range terms {

@@ -16,7 +16,7 @@ func (wig WeightedInformationGain) Name() string {
 }
 
 func (wig WeightedInformationGain) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	queryLength := float64(len(analysis.QueryTerms(q.Original())))
+	queryLength := float64(len(analysis.QueryTerms(q.Transformed())))
 	results, err := s.Execute(q, s.SearchOptions())
 	if err != nil {
 		return 0.0, err
@@ -28,8 +28,11 @@ func (wig WeightedInformationGain) Execute(q groove.PipelineQuery, s stats.Stati
 	totalScore := 0.0
 
 	k := s.Parameters()["k"]
-	if k < float64(len(results)) {
+	if float64(len(results)) < k {
 		k = float64(len(results))
+	}
+	if k < 1 {
+		k = 1
 	}
 
 	for _, result := range results {
@@ -54,7 +57,7 @@ func (wig WeightedExpansionGain) cnprf(k float64, results trecresults.ResultList
 }
 
 func (wig WeightedExpansionGain) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	queryLength := float64(len(analysis.QueryTerms(q.Original())))
+	queryLength := float64(len(analysis.QueryTerms(q.Transformed())))
 	results, err := s.Execute(q, s.SearchOptions())
 	if err != nil {
 		return 0.0, err

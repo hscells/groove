@@ -16,7 +16,7 @@ func (qs QueryScope) Name() string {
 }
 
 func (qs QueryScope) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	Nq, err := s.RetrievalSize(q.Original())
+	Nq, err := s.RetrievalSize(q.Transformed())
 	if err != nil {
 		return 0.0, err
 	}

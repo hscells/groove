@@ -22,7 +22,7 @@ func (tc TermCount) Name() string {
 // TermCount counts the total number of terms in a query. If a Keyword has more than one terms, it will split it and
 // count each individual term in that query string.
 func (tc TermCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	return float64(len(QueryTerms(q.Processed()))), nil
+	return float64(len(QueryTerms(q.Transformed()))), nil
 }
 
 // Name is KeywordCount.
@@ -32,7 +32,7 @@ func (kc KeywordCount) Name() string {
 
 // TermCount counts the total number of keywords in a query.
 func (kc KeywordCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	return float64(len(QueryKeywords(q.Processed()))), nil
+	return float64(len(QueryKeywords(q.Transformed()))), nil
 }
 
 // Name is BooleanQueryCount.
@@ -42,5 +42,5 @@ func (bc BooleanQueryCount) Name() string {
 
 // BooleanQueryCount counts the total number of Boolean queries in a query.
 func (bc BooleanQueryCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	return float64(len(QueryBooleanQueries(q.Processed()))), nil
+	return float64(len(QueryBooleanQueries(q.Transformed()))), nil
 }

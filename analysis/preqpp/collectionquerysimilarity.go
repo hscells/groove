@@ -6,6 +6,7 @@ import (
 	"github.com/hscells/groove/stats"
 	"gonum.org/v1/gonum/floats"
 	"math"
+	"gonum.org/v1/gonum/stat"
 )
 
 // SummedCollectionQuerySimilarity (CQS) combines the collection term frequencies (cf (w)) and inverse document
@@ -17,12 +18,14 @@ type SummedCollectionQuerySimilarity struct{}
 // the maximum value rather than the sum.
 type MaxCollectionQuerySimilarity struct{}
 
+type AverageCollectionQuerySimilarity struct{}
+
 func (sc SummedCollectionQuerySimilarity) Name() string {
 	return "SummedCollectionQuerySimilarity"
 }
 
 func (sc SummedCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Processed())
+	terms := analysis.QueryTerms(q.Transformed())
 
 	sumSCQ := 0.0
 	for _, term := range terms {
@@ -41,7 +44,7 @@ func (sc MaxCollectionQuerySimilarity) Name() string {
 }
 
 func (sc MaxCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Processed())
+	terms := analysis.QueryTerms(q.Transformed())
 
 	scq := []float64{}
 	for _, term := range terms {
@@ -53,6 +56,25 @@ func (sc MaxCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.S
 	}
 
 	return floats.Max(scq), nil
+}
+
+func (sc AverageCollectionQuerySimilarity) Name() string {
+	return "AverageCollectionQuerySimilarity"
+}
+
+func (sc AverageCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+	terms := analysis.QueryTerms(q.Transformed())
+
+	scq := []float64{}
+	for _, term := range terms {
+		s, err := collectionQuerySimilarity(term, s)
+		if err != nil {
+			return 0.0, err
+		}
+		scq = append(scq, s)
+	}
+
+	return 	stat.Mean(scq, nil), nil
 }
 
 func collectionQuerySimilarity(term string, s stats.StatisticsSource) (float64, error) {
