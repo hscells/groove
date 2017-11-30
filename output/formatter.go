@@ -5,14 +5,15 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
-	"log"
 	"strconv"
 )
 
-type Formatter func(headers []string, data [][]float64) (s string)
+// Formatter is used in the a groove pipeline to output measurements in various formats. These methods should not be
+// used directly since there are some assumptions made about the inputs; for instance, the length of each argument.
+type Formatter func(topics, headers []string, data [][]float64) (string, error)
 
 // BasicFormatter outputs the headers and data in a very basic format.
-func BasicFormatter(headers []string, data [][]float64) (s string) {
+func BasicFormatter(topics, headers []string, data [][]float64) (s string, err error) {
 	for _, h := range headers {
 		s += h
 	}
@@ -25,34 +26,37 @@ func BasicFormatter(headers []string, data [][]float64) (s string) {
 }
 
 // JsonFormatter outputs results in a JSON format.
-func JsonFormatter(headers []string, data [][]float64) string {
-	m := map[string][]float64{}
-	for i, header := range headers {
-		m[header] = make([]float64, len(data[i]))
-		for j := range data[i] {
-			m[header][j] = data[i][j]
+func JsonFormatter(topics, headers []string, data [][]float64) (string, error) {
+	m := map[string]map[string]float64{}
+	for j, topic := range topics {
+		m[topic] = map[string]float64{}
+		for i, header := range headers {
+			m[topic][header] = data[i][j]
 		}
 	}
 
 	v, err := json.MarshalIndent(m, "", "    ")
 	if err != nil {
-		log.Fatalln(err)
+		return "", err
 	}
-	return string(v)
+	return string(v), nil
 }
 
 // CsvFormatter outputs results in CSV format.
-func CsvFormatter(headers []string, data [][]float64) string {
+func CsvFormatter(topics, headers []string, data [][]float64) (string, error) {
 	b := bytes.NewBufferString("")
 	w := csv.NewWriter(b)
-	w.Write(headers)
+	h := []string{"Topic"}
+	h = append(h, headers...)
+	w.Write(h)
 	for j := range data[0] {
-		record := make([]string, len(data))
+		record := make([]string, len(data)+1)
+		record[0] = topics[j]
 		for i := range data {
-			record[i] = strconv.FormatFloat(data[i][j], 'f', -1, 64)
+			record[i+1] = strconv.FormatFloat(data[i][j], 'f', -1, 64)
 		}
 		w.Write(record)
 	}
 	w.Flush()
-	return b.String()
+	return b.String(), nil
 }
