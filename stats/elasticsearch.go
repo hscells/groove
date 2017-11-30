@@ -23,6 +23,8 @@ type ElasticsearchStatisticsSource struct {
 
 	options    SearchOptions
 	parameters map[string]float64
+
+	Analyser string
 }
 
 func (es *ElasticsearchStatisticsSource) SearchOptions() SearchOptions {
@@ -171,6 +173,17 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 	return results, nil
 }
 
+func (es *ElasticsearchStatisticsSource) Analyse(text, analyser string) (tokens []string, err error) {
+	res, err := es.client.IndexAnalyze().Index(es.index).Analyzer(analyser).Text(text).Do(context.Background())
+	if err != nil {
+		return
+	}
+	for _, token := range res.Tokens {
+		tokens = append(tokens, token.Token)
+	}
+	return
+}
+
 func toElasticsearch(query cqr.CommonQueryRepresentation) (string, error) {
 	var result map[string]interface{}
 	switch q := query.(type) {
@@ -262,6 +275,14 @@ func ElasticsearchSearchOptions(options SearchOptions) func(*ElasticsearchStatis
 func ElasticsearchParameters(params map[string]float64) func(*ElasticsearchStatisticsSource) {
 	return func(es *ElasticsearchStatisticsSource) {
 		es.parameters = params
+		return
+	}
+}
+
+// ElasticsearchAnalyser sets the analyser for the statistic source.
+func ElasticsearchAnalyser(analyser string) func(*ElasticsearchStatisticsSource) {
+	return func(es *ElasticsearchStatisticsSource) {
+		es.Analyser = analyser
 		return
 	}
 }

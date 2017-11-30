@@ -30,5 +30,5 @@ type StatisticsSource interface {
 // idf calculates inverse document frequency, or the ratio of of documents in the collection to the number of documents
 // the term appears in, logarithmically smoothed.
 func idf(N, nt float64) float64 {
-	return math.Log(1 + (N / nt))
+	return math.Log((N + 1) / (nt + 1))
 }
