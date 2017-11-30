@@ -31,11 +31,6 @@ func Lowercase(text string) string {
 	return strings.ToLower(text)
 }
 
-// Lucene4IRRegexp is the pattern from https://github.com/lucene4ir/lucene4ir/blob/master/params/index/example_05.xml.
-func Lucene4IRRegexp(text string) string {
-	return lucene4ir.ReplaceAllString(text, "")
-}
-
 // ProcessQuery applies a query processor to a query.
 func ProcessQuery(query cqr.CommonQueryRepresentation, processor QueryProcessor) cqr.CommonQueryRepresentation {
 	switch q := query.(type) {

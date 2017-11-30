@@ -24,7 +24,8 @@ type ElasticsearchStatisticsSource struct {
 	options    SearchOptions
 	parameters map[string]float64
 
-	Analyser string
+	Analyser     string
+	AnalyseField string
 }
 
 func (es *ElasticsearchStatisticsSource) SearchOptions() SearchOptions {
@@ -51,7 +52,21 @@ func (es *ElasticsearchStatisticsSource) TermFrequency(term, document string) (f
 
 // DocumentFrequency is the document frequency (the number of documents containing the current term).
 func (es *ElasticsearchStatisticsSource) DocumentFrequency(term string) (float64, error) {
-	resp, err := es.client.TermVectors(es.index, es.documentType).Doc(map[string]string{es.field: term}).Do(context.Background())
+	analyseField := es.field
+	if len(es.AnalyseField) > 0 {
+		analyseField = es.field + "." + es.AnalyseField
+	}
+
+	resp, err := es.client.TermVectors(es.index, es.documentType).
+		Doc(map[string]string{es.field: term}).
+		FieldStatistics(false).
+		TermStatistics(true).
+		Offsets(false).
+		Positions(false).
+		Payloads(false).
+		Fields(analyseField).
+		PerFieldAnalyzer(map[string]string{analyseField: ""}).
+		Do(context.Background())
 	if err != nil {
 		return 0, err
 	}
@@ -65,8 +80,18 @@ func (es *ElasticsearchStatisticsSource) DocumentFrequency(term string) (float64
 
 // TotalTermFrequency is a sum of total term frequencies (the sum of total term frequencies of each term in this field).
 func (es *ElasticsearchStatisticsSource) TotalTermFrequency(term string) (float64, error) {
+	analyseField := es.field
+	if len(es.AnalyseField) > 0 {
+		analyseField = es.field + "." + es.AnalyseField
+	}
+
 	resp, err := es.client.TermVectors(es.index, es.documentType).
 		TermStatistics(true).
+		Offsets(false).
+		Positions(false).
+		Payloads(false).
+		Fields(analyseField).
+		PerFieldAnalyzer(map[string]string{analyseField: ""}).
 		Doc(map[string]string{es.field: term}).
 		Do(context.Background())
 	if err != nil {
@@ -90,16 +115,26 @@ func (es *ElasticsearchStatisticsSource) InverseDocumentFrequency(term string) (
 
 	N := resp1.All.Total.Docs.Count
 
+	analyseField := es.field
+	if len(es.AnalyseField) > 0 {
+		analyseField = es.field + "." + es.AnalyseField
+	}
+
 	resp2, err := es.client.TermVectors(es.index, es.documentType).
-		FieldStatistics(true).
-		TermStatistics(true).
 		Doc(map[string]string{es.field: term}).
+		FieldStatistics(false).
+		TermStatistics(true).
+		Offsets(false).
+		Positions(false).
+		Payloads(false).
+		Fields(analyseField).
+		PerFieldAnalyzer(map[string]string{analyseField: ""}).
 		Do(context.Background())
 	if err != nil {
 		return 0, err
 	}
 
-	if tv, ok := resp2.TermVectors[es.field]; ok {
+	if tv, ok := resp2.TermVectors[analyseField]; ok {
 		nt := tv.Terms[term].DocFreq
 		if nt == 0 {
 			return 0.0, nil
@@ -283,6 +318,14 @@ func ElasticsearchParameters(params map[string]float64) func(*ElasticsearchStati
 func ElasticsearchAnalyser(analyser string) func(*ElasticsearchStatisticsSource) {
 	return func(es *ElasticsearchStatisticsSource) {
 		es.Analyser = analyser
+		return
+	}
+}
+
+// ElasticsearchAnalyser sets the analyser for the statistic source.
+func ElasticsearchAnalysedField(field string) func(*ElasticsearchStatisticsSource) {
+	return func(es *ElasticsearchStatisticsSource) {
+		es.AnalyseField = field
 		return
 	}
 }

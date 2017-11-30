@@ -120,8 +120,6 @@ func (pipeline GroovePipeline) Execute(directory string) (groove.PipelineResult,
 				log.Fatal("Elasticsearch transformations only work with an Elasticsearch statistics source.")
 			}
 		}
-
-		log.Println(q.Name(), measurementQueries[i].Transformed())
 	}
 
 	// Compute measurements for each of the queries.
