@@ -11,17 +11,29 @@ import (
 type QueryProcessor func(text string) string
 
 var (
-	alphanum, _ = regexp.Compile("[^a-zA-Z0-9 ]+")
+	alphanum, _  = regexp.Compile("[^a-zA-Z0-9 ]+")
+	numbers, _   = regexp.Compile("[0-9]")
+	spaces, _    = regexp.Compile(" +")
+	lucene4ir, _ = regexp.Compile(`([+\-._()",/%]?[0-9]+[+\-._()",/%]?[0-9]*[+\-._()",/%]?|^_+)`)
 )
 
 // AlphaNum removes all non-alphanumeric characters from a query.
 func AlphaNum(text string) string {
-	return alphanum.ReplaceAllString(text, "")
+	return spaces.ReplaceAllString(alphanum.ReplaceAllString(text, " "), " ")
+}
+
+func StripNumbers(text string) string {
+	return numbers.ReplaceAllString(text, "")
 }
 
 // Lowercase transforms all capital letters to lowercase.
 func Lowercase(text string) string {
 	return strings.ToLower(text)
+}
+
+// Lucene4IRRegexp is the pattern from https://github.com/lucene4ir/lucene4ir/blob/master/params/index/example_05.xml.
+func Lucene4IRRegexp(text string) string {
+	return lucene4ir.ReplaceAllString(text, "")
 }
 
 // ProcessQuery applies a query processor to a query.
