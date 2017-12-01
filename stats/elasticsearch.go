@@ -28,10 +28,12 @@ type ElasticsearchStatisticsSource struct {
 	AnalyseField string
 }
 
+// SearchOptions gets the immutable search options for the statistics source.
 func (es *ElasticsearchStatisticsSource) SearchOptions() SearchOptions {
 	return es.options
 }
 
+// Parameters gets the immutable parameters for the statistics source.
 func (es *ElasticsearchStatisticsSource) Parameters() map[string]float64 {
 	return es.parameters
 }
@@ -174,6 +176,7 @@ func (es *ElasticsearchStatisticsSource) RetrievalSize(query cqr.CommonQueryRepr
 	return float64(result.Hits.TotalHits), nil
 }
 
+// Execute runs the query on Elasticsearch and returns results in trec format.
 func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error) {
 	// Transform the query to an Elasticsearch query.
 	q, err := toElasticsearch(query.Original())
@@ -208,6 +211,7 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 	return results, nil
 }
 
+// Analyse is a specific Elasticsearch method used in the analyse transformation.
 func (es *ElasticsearchStatisticsSource) Analyse(text, analyser string) (tokens []string, err error) {
 	res, err := es.client.IndexAnalyze().Index(es.index).Analyzer(analyser).Text(text).Do(context.Background())
 	if err != nil {
@@ -219,6 +223,7 @@ func (es *ElasticsearchStatisticsSource) Analyse(text, analyser string) (tokens 
 	return
 }
 
+// toElasticsearch transforms a cqr query into an Elasticsearch query.
 func toElasticsearch(query cqr.CommonQueryRepresentation) (string, error) {
 	var result map[string]interface{}
 	switch q := query.(type) {
@@ -306,7 +311,7 @@ func ElasticsearchSearchOptions(options SearchOptions) func(*ElasticsearchStatis
 	}
 }
 
-// ElasticsearchSearchOptions sets the search options for the statistic source.
+// ElasticsearchParameters sets the parameters for the statistic source.
 func ElasticsearchParameters(params map[string]float64) func(*ElasticsearchStatisticsSource) {
 	return func(es *ElasticsearchStatisticsSource) {
 		es.parameters = params

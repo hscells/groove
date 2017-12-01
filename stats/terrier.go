@@ -37,7 +37,7 @@ func (t TerrierStatisticsSource) SearchOptions() SearchOptions {
 	return t.options
 }
 
-// SearchOptions gets the parameters for this source.
+// Parameters gets the parameters for this source.
 func (t TerrierStatisticsSource) Parameters() map[string]float64 {
 	return t.parameters
 }
@@ -303,7 +303,7 @@ func TerrierField(field string) func(*TerrierStatisticsSource) {
 	}
 }
 
-// ElasticsearchSearchOptions sets the search options for the statistic source.
+// TerrierSearchOptions sets the search options for the statistic source.
 func TerrierSearchOptions(options SearchOptions) func(*TerrierStatisticsSource) {
 	return func(ts *TerrierStatisticsSource) {
 		ts.options = options
@@ -311,7 +311,7 @@ func TerrierSearchOptions(options SearchOptions) func(*TerrierStatisticsSource) 
 	}
 }
 
-// ElasticsearchSearchOptions sets the search options for the statistic source.
+// TerrierParameters sets the search options for the statistic source.
 func TerrierParameters(params map[string]float64) func(*TerrierStatisticsSource) {
 	return func(ts *TerrierStatisticsSource) {
 		ts.parameters = params

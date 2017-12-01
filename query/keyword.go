@@ -1,10 +1,10 @@
 package query
 
 import (
+	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"io/ioutil"
 	"strconv"
-	"github.com/hscells/cqr"
 )
 
 type KeywordQuerySource struct {

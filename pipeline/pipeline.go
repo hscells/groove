@@ -2,7 +2,9 @@
 package pipeline
 
 import (
+	"errors"
 	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/output"
@@ -10,8 +12,6 @@ import (
 	"github.com/hscells/groove/query"
 	"github.com/hscells/groove/stats"
 	"log"
-	"errors"
-	"github.com/hscells/cqr"
 )
 
 type empty struct{}

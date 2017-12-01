@@ -5,8 +5,8 @@ import (
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/stats"
 	"gonum.org/v1/gonum/floats"
-	"math"
 	"gonum.org/v1/gonum/stat"
+	"math"
 )
 
 // SummedCollectionQuerySimilarity (CQS) combines the collection term frequencies (cf (w)) and inverse document
@@ -74,7 +74,7 @@ func (sc AverageCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s sta
 		scq = append(scq, s)
 	}
 
-	return 	stat.Mean(scq, nil), nil
+	return stat.Mean(scq, nil), nil
 }
 
 func collectionQuerySimilarity(term string, s stats.StatisticsSource) (float64, error) {

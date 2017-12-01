@@ -1,10 +1,10 @@
 package preprocess
 
 import (
+	"github.com/hscells/cqr"
 	"github.com/hscells/groove/stats"
 	"log"
 	"strings"
-	"github.com/hscells/cqr"
 )
 
 // ElasticsearchTransformation is a specific transformation that uses an Elasticsearch statistics source.
