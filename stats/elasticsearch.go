@@ -12,6 +12,7 @@ import (
 	"github.com/hscells/transmute/pipeline"
 	"gopkg.in/olivere/elastic.v5"
 	"log"
+	"github.com/satori/go.uuid"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.
@@ -81,6 +82,7 @@ func (es *ElasticsearchStatisticsSource) DocumentFrequency(term string) (float64
 }
 
 // TotalTermFrequency is a sum of total term frequencies (the sum of total term frequencies of each term in this field).
+// TotalTermFrequency is a sum of total term frequencies (the sum of total term frequencies of each term in this field).
 func (es *ElasticsearchStatisticsSource) TotalTermFrequency(term string) (float64, error) {
 	analyseField := es.field
 	if len(es.AnalyseField) > 0 {
@@ -88,19 +90,19 @@ func (es *ElasticsearchStatisticsSource) TotalTermFrequency(term string) (float6
 	}
 
 	resp, err := es.client.TermVectors(es.index, es.documentType).
+		Doc(map[string]string{es.field: term}).
 		TermStatistics(true).
 		Offsets(false).
 		Positions(false).
 		Payloads(false).
 		Fields(analyseField).
 		PerFieldAnalyzer(map[string]string{analyseField: ""}).
-		Doc(map[string]string{es.field: term}).
 		Do(context.Background())
 	if err != nil {
 		return 0.0, err
 	}
 
-	if tv, ok := resp.TermVectors[es.field]; ok {
+	if tv, ok := resp.TermVectors[analyseField]; ok {
 		return float64(tv.Terms[term].Ttf), nil
 	}
 
@@ -149,14 +151,24 @@ func (es *ElasticsearchStatisticsSource) InverseDocumentFrequency(term string) (
 
 // VocabularySize is the total number of terms in the vocabulary.
 func (es *ElasticsearchStatisticsSource) VocabularySize() (float64, error) {
+	analyseField := es.field
+	if len(es.AnalyseField) > 0 {
+		analyseField = es.field + "." + es.AnalyseField
+	}
+
 	resp, err := es.client.TermVectors(es.index, es.documentType).
-		Doc(map[string]string{es.field: "garbage"}).
+		Doc(map[string]string{es.field: uuid.NewV4().String()}).
+		Offsets(false).
+		Positions(false).
+		Payloads(false).
+		Fields(analyseField).
+		PerFieldAnalyzer(map[string]string{analyseField: ""}).
 		Do(context.Background())
 	if err != nil {
 		return 0.0, err
 	}
 
-	return float64(resp.TermVectors[es.field].FieldStatistics.SumTtf), nil
+	return float64(resp.TermVectors[analyseField].FieldStatistics.SumTtf), nil
 }
 
 // RetrievalSize is the minimum number of documents that contains at least one of the query terms.
@@ -174,6 +186,40 @@ func (es *ElasticsearchStatisticsSource) RetrievalSize(query cqr.CommonQueryRepr
 		return 0.0, err
 	}
 	return float64(result.Hits.TotalHits), nil
+}
+
+// TermVector retrieves the term vector for a document.
+func (es *ElasticsearchStatisticsSource) TermVector(document string) (TermVector, error) {
+	tv := TermVector{}
+	analyseField := es.field
+	if len(es.AnalyseField) > 0 {
+		analyseField = es.field + "." + es.AnalyseField
+	}
+
+	resp, err := es.client.TermVectors(es.index, es.documentType).
+		Id(document).
+		FieldStatistics(true).
+		TermStatistics(true).
+		Offsets(false).
+		Positions(false).
+		Payloads(false).
+		Fields(analyseField).
+		PerFieldAnalyzer(map[string]string{analyseField: ""}).
+		Do(context.Background())
+	if err != nil {
+		return tv, err
+	}
+
+	for term, vec := range resp.TermVectors[analyseField].Terms {
+		tv = append(tv, TermVectorTerm{
+			Term:               term,
+			DocumentFrequency:  float64(vec.DocFreq),
+			TermFrequency:      float64(vec.TermFreq),
+			TotalTermFrequency: float64(vec.Ttf),
+		})
+	}
+
+	return tv, nil
 }
 
 // Execute runs the query on Elasticsearch and returns results in trec format.

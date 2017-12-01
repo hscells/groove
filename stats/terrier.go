@@ -79,6 +79,12 @@ func (t TerrierStatisticsSource) TermFrequency(term, document string) (float64, 
 	return 0.0, err
 }
 
+// TermVector does not work.
+// TODO implement this.
+func (t TerrierStatisticsSource) TermVector(document string) (TermVector, error) {
+	panic("Implement me")
+}
+
 // DocumentFrequency is the document frequency (the number of documents containing the current term).
 func (t TerrierStatisticsSource) DocumentFrequency(term string) (float64, error) {
 	nt, err := lexiconEntryForTerm(t.env, t.idx, "term", "getDocumentFrequency")
