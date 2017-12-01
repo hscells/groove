@@ -7,20 +7,18 @@ import (
 	"math"
 )
 
+type avgICTF struct{}
+
 // AvgICTF is similar to idf, however it attempts to take into account the term frequencies. Inverse collection term
 // frequency is defined as the ratio of unique terms in the collection to the term frequency of a term in a document,
 // logarithmically smoothed.
-type AvgICTF struct{}
+var AvgICTF = avgICTF{}
 
-func (avgi AvgICTF) Name() string {
+func (avgi avgICTF) Name() string {
 	return "AvgICTF"
 }
 
-func ictf(W, cf float64) float64 {
-	return math.Log((W - cf) / cf)
-}
-
-func (avgi AvgICTF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (avgi avgICTF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Transformed())
 
 	W, err := s.VocabularySize()
@@ -30,11 +28,11 @@ func (avgi AvgICTF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (f
 
 	sumICTF := 0.0
 	for _, term := range terms {
-		cf, err := s.TotalTermFrequency(term)
+		tf, err := s.TotalTermFrequency(term)
 		if err != nil {
 			return 0.0, err
 		}
-		sumICTF += ictf(W, cf+1)
+		sumICTF += math.Log2(W) - math.Log2(1+tf)
 	}
 
 	return (1.0 / float64(len(terms))) * sumICTF, nil

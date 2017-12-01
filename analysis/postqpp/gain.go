@@ -8,14 +8,22 @@ import (
 	"math"
 )
 
-type WeightedInformationGain struct{}
-type WeightedExpansionGain struct{}
+type weightedInformationGain struct{}
+type weightedExpansionGain struct{}
 
-func (wig WeightedInformationGain) Name() string {
+var (
+	// WeightedInformationGain aims to measure the weighted entropy of the top k ranked documents.
+	WeightedInformationGain = weightedInformationGain{}
+	// WeightedExpansionGain aims to analyse the quality of retrieved pseudo relevant documents by measuring the
+	// likelihood that they will have topic drift.
+	WeightedExpansionGain = weightedExpansionGain{}
+)
+
+func (wig weightedInformationGain) Name() string {
 	return "WIG"
 }
 
-func (wig WeightedInformationGain) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (wig weightedInformationGain) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	queryLength := float64(len(analysis.QueryTerms(q.Transformed())))
 	results, err := s.Execute(q, s.SearchOptions())
 	if err != nil {
@@ -43,11 +51,11 @@ func (wig WeightedInformationGain) Execute(q groove.PipelineQuery, s stats.Stati
 	return (1.0 / k) * totalScore, nil
 }
 
-func (wig WeightedExpansionGain) Name() string {
+func (weg weightedExpansionGain) Name() string {
 	return "WEG"
 }
 
-func (wig WeightedExpansionGain) cnprf(k float64, results trecresults.ResultList) float64 {
+func (weg weightedExpansionGain) cnprf(k float64, results trecresults.ResultList) float64 {
 	n := len(results) - int(k)
 	nprf := 0.0
 	for _, result := range results[n:] {
@@ -56,7 +64,7 @@ func (wig WeightedExpansionGain) cnprf(k float64, results trecresults.ResultList
 	return nprf / float64(len(results[n:]))
 }
 
-func (wig WeightedExpansionGain) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (weg weightedExpansionGain) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	queryLength := float64(len(analysis.QueryTerms(q.Transformed())))
 	results, err := s.Execute(q, s.SearchOptions())
 	if err != nil {
@@ -74,7 +82,7 @@ func (wig WeightedExpansionGain) Execute(q groove.PipelineQuery, s stats.Statist
 		k = 1
 	}
 
-	D := wig.cnprf(k, results)
+	D := weg.cnprf(k, results)
 	totalScore := 0.0
 
 	for _, result := range results {

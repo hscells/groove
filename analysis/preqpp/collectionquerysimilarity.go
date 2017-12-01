@@ -9,22 +9,26 @@ import (
 	"math"
 )
 
-// SummedCollectionQuerySimilarity (CQS) combines the collection term frequencies (cf (w)) and inverse document
-// frequency (idf (w)). The summed collection query similarity (SCQS) is a QPP in a family of predictors, much like how
-// idf can be summarised and used as a predictor
-type SummedCollectionQuerySimilarity struct{}
+type summedCollectionQuerySimilarity struct{}
+type maxCollectionQuerySimilarity struct{}
+type averageCollectionQuerySimilarity struct{}
 
-// MaxCollectionQuerySimilarity is similar to SummedCollectionQuerySimilarity except, as the name implies, it computes
-// the maximum value rather than the sum.
-type MaxCollectionQuerySimilarity struct{}
+var (
+	// SummedCollectionQuerySimilarity (CQS) combines the collection term frequencies (cf (w)) and inverse document
+	// frequency (idf (w)). The summed collection query similarity (SCQS) is a QPP in a family of predictors, much like how
+	// idf can be summarised and used as a predictor
+	SummedCollectionQuerySimilarity = summedCollectionQuerySimilarity{}
+	// MaxCollectionQuerySimilarity is similar to SummedCollectionQuerySimilarity except, as the name implies, it computes
+	// the maximum value rather than the sum.
+	MaxCollectionQuerySimilarity     = maxCollectionQuerySimilarity{}
+	AverageCollectionQuerySimilarity = averageCollectionQuerySimilarity{}
+)
 
-type AverageCollectionQuerySimilarity struct{}
-
-func (sc SummedCollectionQuerySimilarity) Name() string {
+func (sc summedCollectionQuerySimilarity) Name() string {
 	return "SummedCollectionQuerySimilarity"
 }
 
-func (sc SummedCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (sc summedCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Transformed())
 
 	sumSCQ := 0.0
@@ -39,11 +43,11 @@ func (sc SummedCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stat
 	return sumSCQ, nil
 }
 
-func (sc MaxCollectionQuerySimilarity) Name() string {
+func (sc maxCollectionQuerySimilarity) Name() string {
 	return "MaxCollectionQuerySimilarity"
 }
 
-func (sc MaxCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (sc maxCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Transformed())
 
 	scq := []float64{}
@@ -58,11 +62,11 @@ func (sc MaxCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.S
 	return floats.Max(scq), nil
 }
 
-func (sc AverageCollectionQuerySimilarity) Name() string {
+func (sc averageCollectionQuerySimilarity) Name() string {
 	return "AverageCollectionQuerySimilarity"
 }
 
-func (sc AverageCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (sc averageCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Transformed())
 
 	scq := []float64{}
@@ -86,5 +90,5 @@ func collectionQuerySimilarity(term string, s stats.StatisticsSource) (float64, 
 	if err != nil {
 		return 0.0, err
 	}
-	return (1.0 + math.Log(1+tf)) * math.Log(1+idf), nil
+	return (1.0 + math.Log(1.0+tf)) * math.Log(1.0+idf), nil
 }

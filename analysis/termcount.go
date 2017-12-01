@@ -5,42 +5,46 @@ import (
 	"github.com/hscells/groove/stats"
 )
 
-// TermCount is a measurement that counts the number of terms in the query.
-type TermCount struct{}
+type termCount struct{}
+type keywordCount struct{}
+type booleanQueryCount struct{}
 
-// KeywordCount is a measurement that counts the number of keywords in the query.
-type KeywordCount struct{}
-
-// BooleanQueryCount is a measure that counts the number of Boolean queries in the query.
-type BooleanQueryCount struct{}
+var (
+	// TermCount is a measurement that counts the number of terms in the query.
+	TermCount = termCount{}
+	// KeywordCount is a measurement that counts the number of keywords in the query.
+	KeywordCount = keywordCount{}
+	// BooleanQueryCount is a measure that counts the number of Boolean queries in the query.
+	BooleanQueryCount = booleanQueryCount{}
+)
 
 // Name is TermCount.
-func (tc TermCount) Name() string {
+func (tc termCount) Name() string {
 	return "TermCount"
 }
 
 // TermCount counts the total number of terms in a query. If a Keyword has more than one terms, it will split it and
 // count each individual term in that query string.
-func (tc TermCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (tc termCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	return float64(len(QueryTerms(q.Transformed()))), nil
 }
 
 // Name is KeywordCount.
-func (kc KeywordCount) Name() string {
+func (kc keywordCount) Name() string {
 	return "KeywordCount"
 }
 
 // TermCount counts the total number of keywords in a query.
-func (kc KeywordCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (kc keywordCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	return float64(len(QueryKeywords(q.Transformed()))), nil
 }
 
 // Name is BooleanQueryCount.
-func (bc BooleanQueryCount) Name() string {
+func (bc booleanQueryCount) Name() string {
 	return "BooleanQueryCount"
 }
 
 // BooleanQueryCount counts the total number of Boolean queries in a query.
-func (bc BooleanQueryCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (bc booleanQueryCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	return float64(len(QueryBooleanQueries(q.Transformed()))), nil
 }

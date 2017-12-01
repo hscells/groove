@@ -7,17 +7,19 @@ import (
 	"math"
 )
 
+type simplifiedClarityScore struct{}
+
 // SimplifiedClarityScore (SCS) aims to measure the intrinsic clarity or ambiguity of a query. SCS does this by
 // computing the maximum likelihood of a query language model of the term w in query Q:
-type SimplifiedClarityScore struct{}
+var SimplifiedClarityScore = simplifiedClarityScore{}
 
-func (qs SimplifiedClarityScore) Name() string {
+func (qs simplifiedClarityScore) Name() string {
 	return "SimplifiedClarityScore"
 }
 
-func (qs SimplifiedClarityScore) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (qs simplifiedClarityScore) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	m := float64(len(analysis.QueryTerms(q.Transformed())))
-	avgICTFPredictor := AvgICTF{}
+	avgICTFPredictor := AvgICTF
 	avgICTF, err := avgICTFPredictor.Execute(q, s)
 	if err != nil {
 		return 0.0, err

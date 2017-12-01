@@ -8,54 +8,61 @@ import (
 	"gonum.org/v1/gonum/stat"
 )
 
-type AvgIDF struct{}
-type SumIDF struct{}
-type MaxIDF struct{}
-type StdDevIDF struct{}
+type avgIDF struct{}
+type sumIDF struct{}
+type maxIDF struct{}
+type stdDevIDF struct{}
 
-func (avg AvgIDF) Name() string {
+var (
+	AvgIDF    = avgIDF{}
+	SumIDF    = sumIDF{}
+	MaxIDF    = maxIDF{}
+	StdDevIDF = stdDevIDF{}
+)
+
+func (avg avgIDF) Name() string {
 	return "AvgIDF"
 }
 
-func (avg AvgIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (avg avgIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Transformed())
 
-	sumIdf := 0.0
+	sumIDF := 0.0
 	for _, term := range terms {
 		idf, err := s.InverseDocumentFrequency(term)
 		if err != nil {
 			return 0.0, err
 		}
-		sumIdf += idf
+		sumIDF += idf
 	}
 
-	return sumIdf / float64(len(terms)), nil
+	return sumIDF / float64(len(terms)), nil
 }
 
-func (sum SumIDF) Name() string {
+func (sum sumIDF) Name() string {
 	return "SumIDF"
 }
 
-func (sum SumIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (sum sumIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Transformed())
 
-	sumIdf := 0.0
+	sumIDF := 0.0
 	for _, term := range terms {
 		idf, err := s.InverseDocumentFrequency(term)
 		if err != nil {
 			return 0.0, err
 		}
-		sumIdf += idf
+		sumIDF += idf
 	}
 
-	return sumIdf, nil
+	return sumIDF, nil
 }
 
-func (sum MaxIDF) Name() string {
+func (sum maxIDF) Name() string {
 	return "MaxIDF"
 }
 
-func (sum MaxIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (sum maxIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Transformed())
 
 	scores := []float64{}
@@ -70,11 +77,11 @@ func (sum MaxIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (flo
 	return floats.Max(scores), nil
 }
 
-func (sum StdDevIDF) Name() string {
+func (sum stdDevIDF) Name() string {
 	return "StdDevIDF"
 }
 
-func (sum StdDevIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (sum stdDevIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Transformed())
 
 	scores := []float64{}
