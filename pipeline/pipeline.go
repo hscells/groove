@@ -12,19 +12,23 @@ import (
 	"github.com/hscells/groove/query"
 	"github.com/hscells/groove/stats"
 	"log"
+	"github.com/hscells/groove/eval"
 )
 
 type empty struct{}
 
 // GroovePipeline contains all the information for executing a pipeline for query analysis.
 type GroovePipeline struct {
-	QueriesSource    query.QueriesSource
-	StatisticsSource stats.StatisticsSource
-	Preprocess       []preprocess.QueryProcessor
-	Transformations  preprocess.QueryTransformations
-	Measurements     []analysis.Measurement
-	OutputFormats    []output.Formatter
-	OutputTrec       output.TrecResults
+	QueriesSource         query.QueriesSource
+	StatisticsSource      stats.StatisticsSource
+	Preprocess            []preprocess.QueryProcessor
+	Transformations       preprocess.QueryTransformations
+	Measurements          []analysis.Measurement
+	MeasurementFormatters []output.MeasurementFormatter
+	Evaluations           []eval.Evaluator
+	EvaluationFormatters  []output.EvaluationFormatter
+	EvaluationQrels       trecresults.QrelsFile
+	OutputTrec            output.TrecResults
 }
 
 // Preprocess adds preprocessors to the pipeline.
@@ -42,7 +46,7 @@ func Measurement(measurements ...analysis.Measurement) func() interface{} {
 }
 
 // Output adds outputs to the pipeline.
-func Output(formatter ...output.Formatter) func() interface{} {
+func Output(formatter ...output.MeasurementFormatter) func() interface{} {
 	return func() interface{} {
 		return formatter
 	}
@@ -72,8 +76,8 @@ func NewGroovePipeline(qs query.QueriesSource, ss stats.StatisticsSource, compon
 			gp.Preprocess = v
 		case []analysis.Measurement:
 			gp.Measurements = v
-		case []output.Formatter:
-			gp.OutputFormats = v
+		case []output.MeasurementFormatter:
+			gp.MeasurementFormatters = v
 		case preprocess.QueryTransformations:
 			gp.Transformations = v
 		}
@@ -158,8 +162,8 @@ func (pipeline GroovePipeline) Execute(directory string) (groove.PipelineResult,
 		}
 	}
 	// Format the measurement results into specified formats.
-	outputs := make([]string, len(pipeline.OutputFormats))
-	for i, formatter := range pipeline.OutputFormats {
+	outputs := make([]string, len(pipeline.MeasurementFormatters))
+	for i, formatter := range pipeline.MeasurementFormatters {
 		if len(data) > 0 && len(topics) != len(data[0]) {
 			return result, errors.New("the length of topics and data must be the same")
 		}
@@ -189,6 +193,28 @@ func (pipeline GroovePipeline) Execute(directory string) (groove.PipelineResult,
 		}
 		result.TrecResults = &trecResults
 	}
+
+	// Output the evaluation results.
+	if len(pipeline.Evaluations) > 0 {
+		trecResults := make(trecresults.ResultList, 0)
+		for _, q := range queries {
+			r, err := pipeline.StatisticsSource.Execute(q, pipeline.StatisticsSource.SearchOptions())
+			if err != nil {
+				log.Fatal(err)
+			}
+			trecResults = append(trecResults, r...)
+		}
+		measurements := eval.Evaluate(pipeline.Evaluations, &trecResults, pipeline.EvaluationQrels)
+		result.Evaluations = make([]string, len(pipeline.EvaluationFormatters))
+		for i, f := range pipeline.EvaluationFormatters {
+			r, err := f(measurements)
+			if err != nil {
+				log.Fatal(err)
+			}
+			result.Evaluations[i] = r
+		}
+	}
+
 	// Return the formatted results.
 	return result, nil
 }
