@@ -7,7 +7,6 @@ import (
 	"github.com/hscells/groove"
 	"math"
 	"errors"
-	"log"
 )
 
 // SearchOptions are options that the statistics source will use for retrieval.

@@ -14,6 +14,7 @@ type QueryResult struct {
 // PipelineResult is the output of a groove pipeline.
 type PipelineResult struct {
 	Measurements    []string
+	Evaluations     []string
 	Transformations []QueryResult
 	TrecResults     *trecresults.ResultList
 }
