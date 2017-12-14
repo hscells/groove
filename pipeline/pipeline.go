@@ -181,29 +181,24 @@ func (pipeline GroovePipeline) Execute(directory string) (groove.PipelineResult,
 	}
 	result.Transformations = transformations
 
-	// Output the trec results.
-	if len(pipeline.OutputTrec.Path) > 0 {
-		trecResults := make(trecresults.ResultList, 0)
-		for _, q := range queries {
+	trecResults := make(trecresults.ResultList, 0)
+	if len(pipeline.Evaluations) > 0 || len(pipeline.OutputTrec.Path) > 0 {
+		for _, q := range measurementQueries {
 			r, err := pipeline.StatisticsSource.Execute(q, pipeline.StatisticsSource.SearchOptions())
 			if err != nil {
 				log.Fatal(err)
 			}
 			trecResults = append(trecResults, r...)
 		}
+	}
+
+	// Output the trec results.
+	if len(pipeline.OutputTrec.Path) > 0 {
 		result.TrecResults = &trecResults
 	}
 
 	// Output the evaluation results.
 	if len(pipeline.Evaluations) > 0 {
-		trecResults := make(trecresults.ResultList, 0)
-		for _, q := range queries {
-			r, err := pipeline.StatisticsSource.Execute(q, pipeline.StatisticsSource.SearchOptions())
-			if err != nil {
-				log.Fatal(err)
-			}
-			trecResults = append(trecResults, r...)
-		}
 		measurements := eval.Evaluate(pipeline.Evaluations, &trecResults, pipeline.EvaluationQrels)
 		result.Evaluations = make([]string, len(pipeline.EvaluationFormatters))
 		for i, f := range pipeline.EvaluationFormatters {

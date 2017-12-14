@@ -9,6 +9,7 @@ import (
 	"github.com/hscells/transmute/pipeline"
 	"io/ioutil"
 	"strconv"
+	"log"
 )
 
 var (
@@ -45,23 +46,26 @@ func (ts TransmuteQuerySource) Load(directory string) ([]groove.PipelineQuery, e
 	// First, get a list of files in the directory.
 	files, err := ioutil.ReadDir(directory)
 	if err != nil {
-		return []groove.PipelineQuery{}, err
+		return nil, err
 	}
 
 	// Next, use the transmute pipeline to parse them.
-	queries := []groove.PipelineQuery{}
+	var queries []groove.PipelineQuery
 	for _, f := range files {
 		source, err := ioutil.ReadFile(directory + "/" + f.Name())
 		if err != nil {
-			return []groove.PipelineQuery{}, err
+			return nil, err
 		}
 
 		bq, err := ts.pipeline.Execute(string(source))
 		if err != nil {
-			return []groove.PipelineQuery{}, err
+			return nil, err
 		}
 
 		topic, err := strconv.Atoi(f.Name())
+		if err != nil {
+			log.Fatal(err)
+		}
 
 		queries = append(queries, *groove.NewPipelineQuery(f.Name(), int64(topic), bq.Representation().(cqr.CommonQueryRepresentation)))
 	}

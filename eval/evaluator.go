@@ -1,16 +1,18 @@
 package eval
 
-import "github.com/TimothyJones/trecresults"
+import (
+	"github.com/TimothyJones/trecresults"
+)
 
 // Evaluator is an interface for evaluating a retrieved list of documents.
 type Evaluator interface {
-	Score(topic int64, results *trecresults.ResultList, qrel trecresults.Qrels) float64
+	Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64
 	Name() string
 }
 
 // Evaluate scores documents using supplied evaluation measurements.
 func Evaluate(evaluators []Evaluator, results *trecresults.ResultList, qrels trecresults.QrelsFile) map[int64]map[string]float64 {
-	// First create a map of topic->results
+	// First create a map of topic->results.
 	resultMap := map[int64]trecresults.ResultList{}
 	for _, res := range *results {
 		if r, ok := resultMap[res.Topic]; ok {
@@ -20,14 +22,22 @@ func Evaluate(evaluators []Evaluator, results *trecresults.ResultList, qrels tre
 		}
 	}
 
-	// Next create a map of topic->evaluator:score
+	// Next create a map of topic->evaluator:score.
 	scores := map[int64]map[string]float64{}
-	for topic, resultList := range resultMap {
+	for topic, q := range qrels.Qrels {
 		scores[topic] = map[string]float64{}
-		for _, evaluator := range evaluators {
-			scores[topic][evaluator.Name()] = evaluator.Score(topic, &resultList, qrels.Qrels[topic])
+		// Since we care about all of the topics and not just the ones retrieved, we want to check if any documents
+		// were retrieved for a document.
+		if resultList, ok := resultMap[topic]; ok {
+			for _, evaluator := range evaluators {
+				scores[topic][evaluator.Name()] = evaluator.Score(&resultList, q)
+			}
+		} else {
+			// If no documents were retrieved, we score with an empty list.
+			for _, evaluator := range evaluators {
+				scores[topic][evaluator.Name()] = evaluator.Score(&trecresults.ResultList{}, q)
+			}
 		}
 	}
-
 	return scores
 }
