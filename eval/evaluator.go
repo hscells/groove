@@ -11,33 +11,21 @@ type Evaluator interface {
 }
 
 // Evaluate scores documents using supplied evaluation measurements.
-func Evaluate(evaluators []Evaluator, results *trecresults.ResultList, qrels trecresults.QrelsFile) map[int64]map[string]float64 {
-	// First create a map of topic->results.
-	resultMap := map[int64]trecresults.ResultList{}
-	for _, res := range *results {
-		if r, ok := resultMap[res.Topic]; ok {
-			resultMap[res.Topic] = append(r, res)
-		} else {
-			resultMap[res.Topic] = trecresults.ResultList{res}
+func Evaluate(evaluators []Evaluator, results *trecresults.ResultList, qrels trecresults.QrelsFile, topic int64) map[string]float64 {
+	scores := map[string]float64{}
+	q := qrels.Qrels[topic]
+
+	// When we retrieve documents, evaluate them.
+	if len(*results) > 0 {
+		for _, evaluator := range evaluators {
+			scores[evaluator.Name()] = evaluator.Score(results, q)
+		}
+	} else {
+		// If no documents were retrieved, we score with an empty list.
+		for _, evaluator := range evaluators {
+			scores[evaluator.Name()] = evaluator.Score(&trecresults.ResultList{}, q)
 		}
 	}
 
-	// Next create a map of topic->evaluator:score.
-	scores := map[int64]map[string]float64{}
-	for topic, q := range qrels.Qrels {
-		scores[topic] = map[string]float64{}
-		// Since we care about all of the topics and not just the ones retrieved, we want to check if any documents
-		// were retrieved for a document.
-		if resultList, ok := resultMap[topic]; ok {
-			for _, evaluator := range evaluators {
-				scores[topic][evaluator.Name()] = evaluator.Score(&resultList, q)
-			}
-		} else {
-			// If no documents were retrieved, we score with an empty list.
-			for _, evaluator := range evaluators {
-				scores[topic][evaluator.Name()] = evaluator.Score(&trecresults.ResultList{}, q)
-			}
-		}
-	}
 	return scores
 }

@@ -81,3 +81,35 @@ func OrSimplify(query cqr.CommonQueryRepresentation) Transformation {
 		}
 	}
 }
+
+// RCTFilter adds a randomised controlled trials filter to queries.
+// randomized controlled trial.pt.
+// controlled clinical trial.pt.
+// randomized.ab.
+// placebo.ab.
+// clinical trials as topic.sh.
+// randomly.ab.
+// trial.ti.
+func RCTFilter(query cqr.CommonQueryRepresentation) Transformation {
+	return func() cqr.CommonQueryRepresentation {
+		switch q := query.(type) {
+		case cqr.BooleanQuery:
+			q = cqr.NewBooleanQuery("and",
+				[]cqr.CommonQueryRepresentation{
+					q, // Original query.
+					cqr.NewBooleanQuery("or", []cqr.CommonQueryRepresentation{// RCT filter.
+						cqr.NewKeyword("Randomized Controlled Trials As Topic", "mesh_headings").SetOption("exploded", true),
+						cqr.NewKeyword("Randomized Controlled Trial", "publication_types"),
+						cqr.NewKeyword("Controlled Clinical Trial", "publication_types"),
+						cqr.NewKeyword("randomized", "text"),
+						cqr.NewKeyword("placebo", "text"),
+						cqr.NewKeyword("randomly", "text"),
+						cqr.NewKeyword("trial", "title"),
+					}),
+				},
+			)
+			return q
+		}
+		return query
+	}
+}

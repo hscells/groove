@@ -13,6 +13,7 @@ import (
 	"gopkg.in/olivere/elastic.v5"
 	"log"
 	"github.com/satori/go.uuid"
+	"io"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.
@@ -25,6 +26,7 @@ type ElasticsearchStatisticsSource struct {
 	options    SearchOptions
 	parameters map[string]float64
 
+	Scroll       bool
 	Analyser     string
 	AnalyseField string
 }
@@ -225,36 +227,83 @@ func (es *ElasticsearchStatisticsSource) TermVector(document string) (TermVector
 // Execute runs the query on Elasticsearch and returns results in trec format.
 func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error) {
 	// Transform the query to an Elasticsearch query.
-	q, err := toElasticsearch(query.Original())
+	q, err := toElasticsearch(query.Transformed())
 	if err != nil {
-		return trecresults.ResultList{}, err
+		return nil, err
 	}
 	// Only then can we issue it to Elasticsearch using our API.
-	result, err := es.client.Search(es.index).
-		Index(es.index).
-		Type(es.documentType).
-		Query(elastic.NewRawStringQuery(q)).
-		Size(options.Size).
-		Do(context.Background())
-	if err != nil {
-		return trecresults.ResultList{}, err
-	}
+	if es.Scroll {
 
-	// Construct the results from the Elasticsearch hits.
-	N := len(result.Hits.Hits)
-	results := make(trecresults.ResultList, N)
-	for i, hit := range result.Hits.Hits {
-		results[i] = &trecresults.Result{
-			Topic:     query.Topic(),
-			Iteration: "Q0",
-			DocId:     hit.Id,
-			Rank:      int64(i),
-			Score:     *hit.Score,
-			RunName:   options.RunName,
+		// Scroll search.
+		svc := es.client.Scroll(es.index).
+			FetchSource(false).
+			Type(es.documentType).
+			KeepAlive("1h").
+			SearchSource(
+			elastic.NewSearchSource().
+				From(0).
+				Size(es.SearchOptions().Size).
+				TrackScores(true).
+				Query(elastic.NewRawStringQuery(q)))
+
+		docs := 0
+		results := trecresults.ResultList{}
+
+		for {
+			result, err := svc.Do(context.Background())
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+
+			for _, hit := range result.Hits.Hits {
+				results = append(results, &trecresults.Result{
+					Topic:     query.Topic(),
+					Iteration: "Q0",
+					DocId:     hit.Id,
+					Rank:      int64(docs),
+					Score:     *hit.Score,
+					RunName:   options.RunName,
+				})
+				docs++
+			}
+
+			log.Printf("topic %v - %v/%v", query.Topic(), docs, result.Hits.TotalHits)
 		}
-	}
 
-	return results, nil
+		svc.Clear(context.Background())
+
+		return results, nil
+	} else {
+		// Regular search.
+		result, err := es.client.Search(es.index).
+			Index(es.index).
+			Type(es.documentType).
+			Query(elastic.NewRawStringQuery(q)).
+			Size(options.Size).
+			Do(context.Background())
+		if err != nil {
+			return nil, err
+		}
+
+		// Construct the results from the Elasticsearch hits.
+		N := len(result.Hits.Hits)
+		results := make(trecresults.ResultList, N)
+		for i, hit := range result.Hits.Hits {
+			results[i] = &trecresults.Result{
+				Topic:     query.Topic(),
+				Iteration: "Q0",
+				DocId:     hit.Id,
+				Rank:      int64(i),
+				Score:     *hit.Score,
+				RunName:   options.RunName,
+			}
+		}
+
+		return results, nil
+	}
 }
 
 // Analyse is a specific Elasticsearch method used in the analyse transformation.
@@ -377,6 +426,14 @@ func ElasticsearchAnalyser(analyser string) func(*ElasticsearchStatisticsSource)
 func ElasticsearchAnalysedField(field string) func(*ElasticsearchStatisticsSource) {
 	return func(es *ElasticsearchStatisticsSource) {
 		es.AnalyseField = field
+		return
+	}
+}
+
+// ElasticsearchAnalyser sets the analyser for the statistic source.
+func ElasticsearchScroll(scroll bool) func(*ElasticsearchStatisticsSource) {
+	return func(es *ElasticsearchStatisticsSource) {
+		es.Scroll = scroll
 		return
 	}
 }
