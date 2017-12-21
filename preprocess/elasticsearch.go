@@ -39,7 +39,7 @@ func SetAnalyseField(query cqr.CommonQueryRepresentation, source *stats.Elastics
 			if truncated, ok := q.Options["truncated"].(bool); ok {
 				if truncated {
 					for i, field := range q.Fields {
-						if strings.Contains(field, "text") || strings.Contains(field, "title") {
+						if field == "text" || field == "title" {
 							q.Fields[i] = fmt.Sprintf("%s.%s", field, source.AnalyseField)
 						}
 					}

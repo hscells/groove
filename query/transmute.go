@@ -67,7 +67,11 @@ func (ts TransmuteQuerySource) Load(directory string) ([]groove.PipelineQuery, e
 			log.Fatal(err)
 		}
 
-		queries = append(queries, *groove.NewPipelineQuery(f.Name(), int64(topic), bq.Representation().(cqr.CommonQueryRepresentation)))
+		repr, err := bq.Representation()
+		if err != nil {
+			return nil, err
+		}
+		queries = append(queries, *groove.NewPipelineQuery(f.Name(), int64(topic), repr.(cqr.CommonQueryRepresentation)))
 	}
 
 	// Finally, return the parsed queries.

@@ -209,7 +209,10 @@ func (t TerrierStatisticsSource) Execute(query groove.PipelineQuery, options Sea
 
 // search executes a query on terrier.
 func search(env *jnigi.Env, query cqr.CommonQueryRepresentation, options SearchOptions, t TerrierStatisticsSource) (*jnigi.ObjectRef, error) {
-	cqrString := backend.NewCQRQuery(query).String()
+	cqrString, err := backend.NewCQRQuery(query).String()
+	if err != nil {
+		return nil, err
+	}
 	p := pipeline.NewPipeline(parser.NewCQRParser(), backend.NewTerrierBackend(), pipeline.TransmutePipelineOptions{RequiresLexing: false, FieldMapping: map[string][]string{"default": {t.field}}})
 	terrierQuery, err := p.Execute(cqrString)
 	if err != nil {
@@ -217,7 +220,11 @@ func search(env *jnigi.Env, query cqr.CommonQueryRepresentation, options SearchO
 	}
 
 	// Wrap arguments in Java strings.
-	jQuery, err := env.NewObject("java/lang/String", []byte(terrierQuery.String()))
+	s, err := terrierQuery.String()
+	if err != nil {
+		return nil, err
+	}
+	jQuery, err := env.NewObject("java/lang/String", []byte(s))
 	if err != nil {
 		log.Fatal(err)
 	}

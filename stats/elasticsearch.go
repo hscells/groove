@@ -14,6 +14,8 @@ import (
 	"log"
 	"github.com/satori/go.uuid"
 	"io"
+	"github.com/hscells/transmute/lexer"
+	"io/ioutil"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.
@@ -231,6 +233,9 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 	if err != nil {
 		return nil, err
 	}
+
+	ioutil.WriteFile("query.json", []byte(q), 0644)
+
 	// Only then can we issue it to Elasticsearch using our API.
 	if es.Scroll {
 
@@ -332,16 +337,31 @@ func toElasticsearch(query cqr.CommonQueryRepresentation) (string, error) {
 	case cqr.BooleanQuery:
 		// For a Boolean query, it gets a little tricky.
 		// First we need to get the string representation of the cqr.
-		repr := backend.NewCQRQuery(q).StringPretty()
+		repr, err := backend.NewCQRQuery(q).StringPretty()
+		if err != nil {
+			return "", err
+		}
 		// Then we need to compile it into an Elasticsearch query.
-		p := pipeline.NewPipeline(parser.NewCQRParser(), backend.NewElasticsearchCompiler(), pipeline.TransmutePipelineOptions{RequiresLexing: false})
+		p := pipeline.NewPipeline(
+			parser.NewCQRParser(),
+			backend.NewElasticsearchCompiler(),
+			pipeline.TransmutePipelineOptions{
+				LexOptions: lexer.LexOptions{
+					FormatParenthesis: false,
+				},
+				RequiresLexing: false,
+			})
 		esQuery, err := p.Execute(repr)
 		if err != nil {
 			return "", err
 		}
 		// After that, we need to unmarshal it to get the underlying structure.
 		var tmpQuery map[string]interface{}
-		err = json.Unmarshal(bytes.NewBufferString(esQuery.String()).Bytes(), &tmpQuery)
+		s, err := esQuery.String()
+		if err != nil {
+			return "", err
+		}
+		err = json.Unmarshal(bytes.NewBufferString(s).Bytes(), &tmpQuery)
 		if err != nil {
 			return "", err
 		}
