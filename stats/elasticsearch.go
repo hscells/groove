@@ -247,7 +247,7 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 			SearchSource(
 			elastic.NewSearchSource().
 				From(0).
-				Size(es.SearchOptions().Size).
+				Size(options.Size).
 				TrackScores(true).
 				Query(elastic.NewRawStringQuery(q)))
 

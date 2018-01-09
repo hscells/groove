@@ -14,6 +14,7 @@ import (
 	"log"
 	"github.com/hscells/groove/eval"
 	"runtime"
+	"github.com/hscells/groove/rewrite"
 )
 
 type empty struct{}
@@ -30,6 +31,7 @@ type GroovePipeline struct {
 	EvaluationFormatters  []output.EvaluationFormatter
 	EvaluationQrels       trecresults.QrelsFile
 	OutputTrec            output.TrecResults
+	QueryChain            *rewrite.QueryChain
 }
 
 // Preprocess adds preprocessors to the pipeline.
@@ -129,29 +131,26 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 		}
 	}
 
+	// Perform query rewriting.
+	if pipeline.QueryChain != nil && len(pipeline.QueryChain.Transformations) > 0 {
+		for i, q := range measurementQueries {
+			nq, err := pipeline.QueryChain.Execute(q)
+			if err != nil {
+				c <- groove.PipelineResult{
+					Error: err,
+					Type:  groove.Error,
+				}
+				return
+			}
+			measurementQueries[i] = measurementQueries[i].SetTransformed(nq.Transformed)
+		}
+	}
+
 	// Compute measurements for each of the queries.
 	// The measurements are computed in parallel.
 	N := len(pipeline.Measurements)
 	headers := make([]string, N)
 	data := make([][]float64, N)
-	//sem := make(chan empty, N)
-	//for mi, measurement := range pipeline.Measurements {
-	//	// The inner loop is run concurrently.
-	//	go func(i int, m analysis.Measurement) {
-	//		headers[i] = m.Name()
-	//		data[i] = make([]float64, len(queries))
-	//		for qi, measurementQuery := range measurementQueries {
-	//			data[i][qi], err = m.Execute(measurementQuery, pipeline.StatisticsSource)
-	//			if err != nil {
-	//				log.Fatal(err)
-	//			}
-	//		}
-	//		sem <- empty{}
-	//	}(mi, measurement)
-	//}
-	//for i := 0; i < N; i++ {
-	//	<-sem
-	//}
 
 	// data[measurement][queryN]
 	for i, m := range pipeline.Measurements {

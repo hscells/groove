@@ -41,6 +41,7 @@ func QueryKeywords(r cqr.CommonQueryRepresentation) (keywords []cqr.Keyword) {
 func QueryBooleanQueries(r cqr.CommonQueryRepresentation) (children []cqr.BooleanQuery) {
 	switch q := r.(type) {
 	case cqr.BooleanQuery:
+		children = append(children, q)
 		for _, child := range q.Children {
 			switch c := child.(type) {
 			case cqr.BooleanQuery:

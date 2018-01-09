@@ -47,7 +47,6 @@ func SetAnalyseField(query cqr.CommonQueryRepresentation, source *stats.Elastics
 					q.Fields[i] = strings.Replace(field, ".stemmed", "", -1)
 				}
 			}
-			log.Println(q.QueryString, q.Fields)
 			return q
 		case cqr.BooleanQuery:
 			for i, child := range q.Children {
