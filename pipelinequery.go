@@ -5,6 +5,8 @@ import (
 )
 
 // PipelineQuery stores information about a query before it is measured, analysed, or executed.
+// In most circumstances, the `transformed` query should be used, as it is the preprocessed,
+// transformed, and rewritten query.
 type PipelineQuery struct {
 	name        string
 	topic       int64

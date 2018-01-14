@@ -31,7 +31,7 @@ type GroovePipeline struct {
 	EvaluationFormatters  []output.EvaluationFormatter
 	EvaluationQrels       trecresults.QrelsFile
 	OutputTrec            output.TrecResults
-	QueryChain            *rewrite.QueryChain
+	QueryChain            rewrite.QueryChain
 }
 
 // Preprocess adds preprocessors to the pipeline.
@@ -132,19 +132,24 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 	}
 
 	// Perform query rewriting.
-	if pipeline.QueryChain != nil && len(pipeline.QueryChain.Transformations) > 0 {
-		for i, q := range measurementQueries {
-			nq, err := pipeline.QueryChain.Execute(q)
-			if err != nil {
-				c <- groove.PipelineResult{
-					Error: err,
-					Type:  groove.Error,
-				}
-				return
-			}
-			measurementQueries[i] = measurementQueries[i].SetTransformed(nq.Transformed)
-		}
-	}
+	//if pipeline.QueryChain.CandidateSelector != nil && len(pipeline.QueryChain.Transformations) > 0 {
+	//	concurrency := runtime.NumCPU() * 2
+	//	sem := make(chan bool, concurrency)
+	//	for i, q := range measurementQueries {
+	//		sem <- true
+	//		go func(query groove.PipelineQuery, idx int) {
+	//			defer func() { <-sem }()
+	//
+	//			log.Printf("rewrote query %v", nq.Query.Topic())
+	//			log.Println(nq.Query)
+	//		}(q, i)
+	//	}
+	//	// Wait until the last goroutine has read from the semaphore.
+	//	for i := 0; i < cap(sem); i++ {
+	//		sem <- true
+	//	}
+	//	log.Println("finished query rewriting")
+	//}
 
 	// Compute measurements for each of the queries.
 	// The measurements are computed in parallel.
@@ -192,14 +197,6 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 
 	// Output the transformed queries.
 	transformations := make([]groove.QueryResult, len(measurementQueries))
-	for i, mq := range measurementQueries {
-		transformations[i] = groove.QueryResult{Name: mq.Name(), Transformation: mq.Transformed()}
-	}
-	// Send the through the channel.
-	c <- groove.PipelineResult{
-		Transformations: transformations,
-		Type:            groove.Transformation,
-	}
 
 	// This section is run concurrently, since the results can sometimes get quite large and we don't want to eat ram.
 	if len(pipeline.Evaluations) > 0 || len(pipeline.OutputTrec.Path) > 0 {
@@ -211,10 +208,23 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 		// http://jmoiron.net/blog/limiting-concurrency-in-go/
 		concurrency := runtime.NumCPU() * 2
 		sem := make(chan bool, concurrency)
-		for _, q := range measurementQueries {
+		for i, q := range measurementQueries {
 			sem <- true
-			go func(query groove.PipelineQuery) {
+			go func(idx int, query groove.PipelineQuery) {
 				defer func() { <-sem }()
+
+				// Query chain.
+				nq, err := pipeline.QueryChain.Execute(query)
+				if err != nil {
+					c <- groove.PipelineResult{
+						Error: err,
+						Type:  groove.Error,
+					}
+					return
+				}
+				query = query.SetTransformed(func() cqr.CommonQueryRepresentation {
+					return nq.Query.Transformed()
+				})
 
 				// Execute the query.
 				trecResults, err := pipeline.StatisticsSource.Execute(query, pipeline.StatisticsSource.SearchOptions())
@@ -240,7 +250,9 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 						Type:        groove.TrecResult,
 					}
 				}
-			}(q)
+
+				transformations[i] = groove.QueryResult{Name: query.Name(), Transformation: query.Transformed()}
+			}(i, q)
 		}
 
 		// Wait until the last goroutine has read from the semaphore.
@@ -268,6 +280,12 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 			Evaluations: evaluations,
 			Type:        groove.Evaluation,
 		}
+	}
+
+	// Send the through the channel.
+	c <- groove.PipelineResult{
+		Transformations: transformations,
+		Type:            groove.Transformation,
 	}
 
 	// Return the formatted results.

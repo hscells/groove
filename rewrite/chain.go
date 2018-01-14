@@ -6,7 +6,7 @@ import (
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/stats"
-	"fmt"
+	"log"
 )
 
 type QueryChain struct {
@@ -15,29 +15,32 @@ type QueryChain struct {
 }
 
 type QueryChainCandidateSelector interface {
-	Select(query groove.PipelineQuery, transformations []Transformation) (groove.PipelineQuery, error)
-	StoppingCriteria() bool
+	Select(query TransformedQuery, transformations []Transformation) (TransformedQuery, QueryChainCandidateSelector, error)
+	StoppingCriteria() (QueryChainCandidateSelector, bool)
 }
 
-func NewQueryChain(selector QueryChainCandidateSelector, transformations ...Transformation) *QueryChain {
-	return &QueryChain{
+func NewQueryChain(selector QueryChainCandidateSelector, transformations ...Transformation) QueryChain {
+	return QueryChain{
 		CandidateSelector: selector,
 		Transformations:   transformations,
 	}
 }
 
-func (qc QueryChain) Execute(query groove.PipelineQuery) (groove.PipelineQuery, error) {
-	nq := query
-	if !qc.CandidateSelector.StoppingCriteria() {
-		fmt.Println("---------------------------------------")
-		var err error
-		nq, err = qc.CandidateSelector.Select(query, qc.Transformations)
+func (qc QueryChain) Execute(query groove.PipelineQuery) (TransformedQuery, error) {
+	var (
+		stop bool
+		err  error
+	)
+	qc.CandidateSelector, stop = qc.CandidateSelector.StoppingCriteria()
+	tq := NewTransformedQuery(query)
+	for !stop {
+		tq, qc.CandidateSelector, err = qc.CandidateSelector.Select(tq, qc.Transformations)
 		if err != nil {
-			return groove.PipelineQuery{}, err
+			return TransformedQuery{}, err
 		}
-		return qc.Execute(nq)
+		qc.CandidateSelector, stop = qc.CandidateSelector.StoppingCriteria()
 	}
-	return nq, nil
+	return tq, nil
 }
 
 type OracleQueryChainCandidateSelector struct {
@@ -45,85 +48,88 @@ type OracleQueryChainCandidateSelector struct {
 	minResults    float64
 	bestPrecision float64
 	prevPrecision float64
-	qrels         trecresults.QrelsFile
+	qrels         *trecresults.QrelsFile
 	ss            stats.StatisticsSource
 }
 
-func (oc *OracleQueryChainCandidateSelector) Select(query groove.PipelineQuery, transformations []Transformation) (groove.PipelineQuery, error) {
+func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, transformations []Transformation) (TransformedQuery, QueryChainCandidateSelector, error) {
 	oc.depth++
 	oc.prevPrecision = oc.bestPrecision
 
 	if oc.minResults == 0 {
 		var err error
-		oc.minResults, err = oc.ss.RetrievalSize(query.Transformed())
+		oc.minResults, err = oc.ss.RetrievalSize(query.Query.Transformed())
 		if err != nil {
-			return groove.PipelineQuery{}, err
+			return TransformedQuery{}, oc, nil
 		}
 	}
 
-	var queries []cqr.CommonQueryRepresentation
+	var queries []CandidateQuery
 
 	// Apply the transformations to all of the queries.
 	for _, transformation := range transformations {
-		q, err := transformation.Apply(query.Transformed())
+		cqs, err := transformation.Apply(query.Query.Transformed())
 		if err != nil {
-			return groove.PipelineQuery{}, err
+			return TransformedQuery{}, oc, err
 		}
 
-		queries = append(queries, q...)
+		queries = append(queries, cqs...)
+
 	}
 
-	fmt.Printf("generated %v transformation candidates\n", len(queries))
+	log.Printf("topic %v: generated %v transformation candidates\n", query.Query.Topic(), len(queries))
 
-	bestPrecision, precisionQuery := 0.0, cqr.BooleanQuery{}
+	bestPrecision, precisionQuery := 0.0, query.Query.Transformed()
 	for _, applied := range queries {
 		// The new query.
-		nq := groove.NewPipelineQuery(query.Name(), query.Topic(), query.Transformed()).SetTransformed(func() cqr.CommonQueryRepresentation { return applied })
+		nq := groove.NewPipelineQuery(query.Query.Name(), query.Query.Topic(), query.Query.Transformed()).SetTransformed(func() cqr.CommonQueryRepresentation { return applied.Query })
 
 		// Don't continue if the query is retrieving MORE results and test if the query is capable of being executed.
-		resultSize, err := oc.ss.RetrievalSize(applied)
+		resultSize, err := oc.ss.RetrievalSize(applied.Query)
 		if err != nil {
 			continue
 		}
-		fmt.Println(resultSize, oc.minResults)
-		if resultSize == 0 || resultSize > oc.minResults || resultSize > 1000000 {
+
+		//fmt.Println(resultSize, oc.minResults)
+		if resultSize == 0 || resultSize >= oc.minResults || resultSize > 100000 {
 			continue
 		}
 
 		// Now, using an oracle heuristic, get the precision and recall for all of the transformations.
 		results, err := oc.ss.Execute(nq, oc.ss.SearchOptions())
 		if err != nil {
-			return groove.PipelineQuery{}, err
+			continue
 		}
 
-		evaluation := eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results, oc.qrels, query.Topic())
+		evaluation := eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results, *oc.qrels, query.Query.Topic())
 		precision := evaluation[eval.PrecisionEvaluator.Name()]
 
 		if precision > bestPrecision {
 			bestPrecision = precision
 			oc.bestPrecision = bestPrecision
 			oc.minResults = resultSize
-			precisionQuery = applied.(cqr.BooleanQuery)
+			precisionQuery = applied.Query
+			log.Printf("topic %v: P %v, R %v, %v %v, %v %v, %v %v\n", query.Query.Topic(), evaluation[eval.PrecisionEvaluator.Name()], evaluation[eval.RecallEvaluator.Name()], eval.NumRel.Name(), evaluation[eval.NumRel.Name()], eval.NumRet.Name(), evaluation[eval.NumRet.Name()], eval.NumRelRet.Name(), evaluation[eval.NumRelRet.Name()])
 		}
 
-		fmt.Println(evaluation)
-
 	}
-	return groove.NewPipelineQuery(query.Name(), query.Topic(), precisionQuery).SetTransformed(func() cqr.CommonQueryRepresentation { return precisionQuery }), nil
+
+	transformed := groove.NewPipelineQuery(query.Query.Name(), query.Query.Topic(), precisionQuery).SetTransformed(func() cqr.CommonQueryRepresentation { return precisionQuery })
+	return query.Append(transformed), oc, nil
 }
 
-func (oc *OracleQueryChainCandidateSelector) StoppingCriteria() bool {
+func (oc OracleQueryChainCandidateSelector) StoppingCriteria() (QueryChainCandidateSelector, bool) {
 	if oc.depth == 10 || oc.prevPrecision == oc.bestPrecision {
 		oc.depth = 0
 		oc.prevPrecision = -1
 		oc.bestPrecision = 0
 		oc.minResults = 0
-		return true
+		return oc, true
 	}
-	return false
+	return oc, false
 }
 
-func NewOracleQueryChainCandidateSelector(source stats.StatisticsSource, file trecresults.QrelsFile) *OracleQueryChainCandidateSelector {
+func NewOracleQueryChainCandidateSelector(source stats.StatisticsSource, file *trecresults.QrelsFile) *OracleQueryChainCandidateSelector {
 	oc := OracleQueryChainCandidateSelector{
 		ss:    source,
 		qrels: file,
