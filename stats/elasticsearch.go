@@ -341,13 +341,14 @@ func toElasticsearch(query cqr.CommonQueryRepresentation) (string, error) {
 		if err != nil {
 			return "", err
 		}
+
 		// Then we need to compile it into an Elasticsearch query.
 		p := pipeline.NewPipeline(
 			parser.NewCQRParser(),
 			backend.NewElasticsearchCompiler(),
 			pipeline.TransmutePipelineOptions{
 				LexOptions: lexer.LexOptions{
-					FormatParenthesis: false,
+					FormatParenthesis: true,
 				},
 				RequiresLexing: false,
 			})

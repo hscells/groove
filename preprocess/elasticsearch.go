@@ -36,21 +36,26 @@ func SetAnalyseField(query cqr.CommonQueryRepresentation, source *stats.Elastics
 	return func() cqr.CommonQueryRepresentation {
 		switch q := query.(type) {
 		case cqr.Keyword:
+			fields := make([]string, len(q.Fields))
+			copy(fields, q.Fields)
 			if truncated, ok := q.Options["truncated"].(bool); ok && truncated {
 				for i, field := range q.Fields {
 					if field == "text" || field == "title" {
-						q.Fields[i] = fmt.Sprintf("%s.%s", field, source.AnalyseField)
+						fields[i] = fmt.Sprintf("%s.%s", field, source.AnalyseField)
 					}
 				}
 			} else if !truncated {
 				for i, field := range q.Fields {
-					q.Fields[i] = strings.Replace(field, ".stemmed", "", -1)
+					fields[i] = strings.Replace(field, ".stemmed", "", -1)
 				}
 			}
+			q.Fields = fields
 			return q
 		case cqr.BooleanQuery:
-			for i, child := range q.Children {
-				q.Children[i] = SetAnalyseField(child, source)()
+			if !strings.Contains(q.Operator, "adj") {
+				for i, child := range q.Children {
+					q.Children[i] = SetAnalyseField(child, source)()
+				}
 			}
 			return q
 		default:

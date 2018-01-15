@@ -60,7 +60,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 		var err error
 		oc.minResults, err = oc.ss.RetrievalSize(query.Query.Transformed())
 		if err != nil {
-			return TransformedQuery{}, oc, nil
+			return query, oc, err
 		}
 	}
 
@@ -90,8 +90,8 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 			continue
 		}
 
-		//fmt.Println(resultSize, oc.minResults)
-		if resultSize == 0 || resultSize >= oc.minResults || resultSize > 100000 {
+		log.Printf("topic %v - %v ? %v\n", nq.Topic(), resultSize, oc.minResults)
+		if resultSize == 0 || resultSize > 100000 || resultSize >= oc.minResults {
 			continue
 		}
 
@@ -110,6 +110,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 			oc.minResults = resultSize
 			precisionQuery = applied.Query
 			log.Printf("topic %v: P %v, R %v, %v %v, %v %v, %v %v\n", query.Query.Topic(), evaluation[eval.PrecisionEvaluator.Name()], evaluation[eval.RecallEvaluator.Name()], eval.NumRel.Name(), evaluation[eval.NumRel.Name()], eval.NumRet.Name(), evaluation[eval.NumRet.Name()], eval.NumRelRet.Name(), evaluation[eval.NumRelRet.Name()])
+			break
 		}
 
 	}
@@ -119,7 +120,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 }
 
 func (oc OracleQueryChainCandidateSelector) StoppingCriteria() (QueryChainCandidateSelector, bool) {
-	if oc.depth == 10 || oc.prevPrecision == oc.bestPrecision {
+	if oc.depth >= 5 || oc.prevPrecision == oc.bestPrecision {
 		oc.depth = 0
 		oc.prevPrecision = -1
 		oc.bestPrecision = 0

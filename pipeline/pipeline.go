@@ -130,27 +130,6 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 			}
 		}
 	}
-
-	// Perform query rewriting.
-	//if pipeline.QueryChain.CandidateSelector != nil && len(pipeline.QueryChain.Transformations) > 0 {
-	//	concurrency := runtime.NumCPU() * 2
-	//	sem := make(chan bool, concurrency)
-	//	for i, q := range measurementQueries {
-	//		sem <- true
-	//		go func(query groove.PipelineQuery, idx int) {
-	//			defer func() { <-sem }()
-	//
-	//			log.Printf("rewrote query %v", nq.Query.Topic())
-	//			log.Println(nq.Query)
-	//		}(q, i)
-	//	}
-	//	// Wait until the last goroutine has read from the semaphore.
-	//	for i := 0; i < cap(sem); i++ {
-	//		sem <- true
-	//	}
-	//	log.Println("finished query rewriting")
-	//}
-
 	// Compute measurements for each of the queries.
 	// The measurements are computed in parallel.
 	N := len(pipeline.Measurements)
@@ -214,17 +193,21 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 				defer func() { <-sem }()
 
 				// Query chain.
-				nq, err := pipeline.QueryChain.Execute(query)
-				if err != nil {
-					c <- groove.PipelineResult{
-						Error: err,
-						Type:  groove.Error,
+				if pipeline.QueryChain.CandidateSelector != nil && len(pipeline.QueryChain.Transformations) > 0 {
+					nq, err := pipeline.QueryChain.Execute(query)
+					if err != nil {
+						c <- groove.PipelineResult{
+							Topic: query.Topic(),
+							Error: err,
+							Type:  groove.Error,
+						}
+						return
 					}
-					return
+
+					query = query.SetTransformed(func() cqr.CommonQueryRepresentation {
+						return nq.Query.Transformed()
+					})
 				}
-				query = query.SetTransformed(func() cqr.CommonQueryRepresentation {
-					return nq.Query.Transformed()
-				})
 
 				// Execute the query.
 				trecResults, err := pipeline.StatisticsSource.Execute(query, pipeline.StatisticsSource.SearchOptions())
