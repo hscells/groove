@@ -185,7 +185,7 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 
 		// Set the limit to how many goroutines can be run.
 		// http://jmoiron.net/blog/limiting-concurrency-in-go/
-		concurrency := runtime.NumCPU() * 2
+		concurrency := runtime.NumCPU()
 		sem := make(chan bool, concurrency)
 		for i, q := range measurementQueries {
 			sem <- true

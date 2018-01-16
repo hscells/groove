@@ -16,7 +16,7 @@ type QueryChain struct {
 
 type QueryChainCandidateSelector interface {
 	Select(query TransformedQuery, transformations []Transformation) (TransformedQuery, QueryChainCandidateSelector, error)
-	StoppingCriteria() (QueryChainCandidateSelector, bool)
+	StoppingCriteria() bool
 }
 
 func NewQueryChain(selector QueryChainCandidateSelector, transformations ...Transformation) QueryChain {
@@ -31,14 +31,14 @@ func (qc QueryChain) Execute(query groove.PipelineQuery) (TransformedQuery, erro
 		stop bool
 		err  error
 	)
-	qc.CandidateSelector, stop = qc.CandidateSelector.StoppingCriteria()
+	stop = qc.CandidateSelector.StoppingCriteria()
 	tq := NewTransformedQuery(query)
 	for !stop {
 		tq, qc.CandidateSelector, err = qc.CandidateSelector.Select(tq, qc.Transformations)
 		if err != nil {
 			return TransformedQuery{}, err
 		}
-		qc.CandidateSelector, stop = qc.CandidateSelector.StoppingCriteria()
+		stop = qc.CandidateSelector.StoppingCriteria()
 	}
 	return tq, nil
 }
@@ -119,15 +119,11 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 	return query.Append(transformed), oc, nil
 }
 
-func (oc OracleQueryChainCandidateSelector) StoppingCriteria() (QueryChainCandidateSelector, bool) {
-	if oc.depth >= 5 || oc.prevPrecision == oc.bestPrecision {
-		oc.depth = 0
-		oc.prevPrecision = -1
-		oc.bestPrecision = 0
-		oc.minResults = 0
-		return oc, true
+func (oc OracleQueryChainCandidateSelector) StoppingCriteria() (bool) {
+	if oc.depth >= 1 || oc.prevPrecision == oc.bestPrecision {
+		return true
 	}
-	return oc, false
+	return false
 }
 
 func NewOracleQueryChainCandidateSelector(source stats.StatisticsSource, file *trecresults.QrelsFile) *OracleQueryChainCandidateSelector {
