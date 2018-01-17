@@ -7,6 +7,7 @@ import (
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/stats"
 	"log"
+	"math"
 )
 
 type QueryChain struct {
@@ -43,18 +44,55 @@ func (qc QueryChain) Execute(query groove.PipelineQuery) (TransformedQuery, erro
 	return tq, nil
 }
 
-type OracleQueryChainCandidateSelector struct {
-	depth         int
-	minResults    float64
-	bestPrecision float64
-	prevPrecision float64
-	qrels         *trecresults.QrelsFile
-	ss            stats.StatisticsSource
+func (oc OracleQueryChainCandidateSelector) Features(query groove.PipelineQuery, transformations []Transformation) (lf []LearntFeature, err error) {
+
+	bestQuery := query
+	for i := 0; i < 5; i++ {
+		// Apply the transformations to all of the queries.
+		for _, transformation := range transformations {
+			cqs, err := transformation.Apply(bestQuery.Transformed())
+			if err != nil {
+				return nil, err
+			}
+
+			for _, candidate := range cqs {
+				nq := groove.NewPipelineQuery(query.Name(), query.Topic(), query.Transformed()).SetTransformed(func() cqr.CommonQueryRepresentation { return candidate.Query })
+
+				// Now, using an oracle heuristic, get the precision and recall for all of the transformations.
+				results, err := oc.ss.Execute(nq, oc.ss.SearchOptions())
+				if err != nil {
+					continue
+				}
+
+				evaluation := eval.Evaluate([]eval.Evaluator{eval.PrecisionEvaluator}, &results, *oc.qrels, bestQuery.Topic())
+				precision := evaluation[eval.PrecisionEvaluator.Name()]
+
+				lf = append(lf, LearntFeature{FeatureFamily: candidate.FeatureFamily, Score: precision})
+			}
+		}
+	}
+	return
 }
 
+// OracleQueryChainCandidateSelector finds the best possible combination of query rewrites.
+type OracleQueryChainCandidateSelector struct {
+	depth      int
+	minResults float64
+
+	bestRelRet float64
+	prevRelRet float64
+	bestRel    float64
+	prevRel    float64
+
+	qrels *trecresults.QrelsFile
+	ss    stats.StatisticsSource
+}
+
+// Select is a grid search for the best possible query transformation chain.
 func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, transformations []Transformation) (TransformedQuery, QueryChainCandidateSelector, error) {
 	oc.depth++
-	oc.prevPrecision = oc.bestPrecision
+	oc.prevRelRet = oc.bestRelRet
+	oc.prevRel = oc.bestRel
 
 	if oc.minResults == 0 {
 		var err error
@@ -74,12 +112,11 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 		}
 
 		queries = append(queries, cqs...)
-
 	}
 
 	log.Printf("topic %v: generated %v transformation candidates\n", query.Query.Topic(), len(queries))
 
-	bestPrecision, precisionQuery := 0.0, query.Query.Transformed()
+	bestRelRet, bestRel, precisionQuery := 0.0, math.MaxFloat64, query.Query.Transformed()
 	for _, applied := range queries {
 		// The new query.
 		nq := groove.NewPipelineQuery(query.Query.Name(), query.Query.Topic(), query.Query.Transformed()).SetTransformed(func() cqr.CommonQueryRepresentation { return applied.Query })
@@ -102,15 +139,18 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 		}
 
 		evaluation := eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results, *oc.qrels, query.Query.Topic())
-		precision := evaluation[eval.PrecisionEvaluator.Name()]
+		numRelRet := evaluation[eval.NumRelRet.Name()]
+		numRel := evaluation[eval.NumRel.Name()]
 
-		if precision > bestPrecision {
-			bestPrecision = precision
-			oc.bestPrecision = bestPrecision
+		log.Printf("topic %v - %v: %v, %v: %v", query.Query.Topic(), numRelRet, bestRelRet, numRel, bestRel)
+		if numRelRet > 0 && numRelRet >= bestRelRet && numRel <= bestRel {
+			bestRelRet = numRelRet
+			bestRel = numRel
+			oc.bestRelRet = bestRelRet
+			oc.bestRel = bestRel
 			oc.minResults = resultSize
 			precisionQuery = applied.Query
-			log.Printf("topic %v: P %v, R %v, %v %v, %v %v, %v %v\n", query.Query.Topic(), evaluation[eval.PrecisionEvaluator.Name()], evaluation[eval.RecallEvaluator.Name()], eval.NumRel.Name(), evaluation[eval.NumRel.Name()], eval.NumRet.Name(), evaluation[eval.NumRet.Name()], eval.NumRelRet.Name(), evaluation[eval.NumRelRet.Name()])
-			break
+			log.Printf("topic %v - P %v, R %v, %v %v, %v %v, %v %v\n", query.Query.Topic(), evaluation[eval.PrecisionEvaluator.Name()], evaluation[eval.RecallEvaluator.Name()], eval.NumRel.Name(), evaluation[eval.NumRel.Name()], eval.NumRet.Name(), evaluation[eval.NumRet.Name()], eval.NumRelRet.Name(), evaluation[eval.NumRelRet.Name()])
 		}
 
 	}
@@ -120,7 +160,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 }
 
 func (oc OracleQueryChainCandidateSelector) StoppingCriteria() (bool) {
-	if oc.depth >= 1 || oc.prevPrecision == oc.bestPrecision {
+	if oc.depth >= 5 || (oc.bestRelRet == oc.bestRelRet && oc.bestRel == oc.prevRel) {
 		return true
 	}
 	return false
@@ -128,9 +168,10 @@ func (oc OracleQueryChainCandidateSelector) StoppingCriteria() (bool) {
 
 func NewOracleQueryChainCandidateSelector(source stats.StatisticsSource, file *trecresults.QrelsFile) *OracleQueryChainCandidateSelector {
 	oc := OracleQueryChainCandidateSelector{
-		ss:    source,
-		qrels: file,
+		ss:         source,
+		qrels:      file,
+		bestRelRet: -1.0,
+		bestRel:    -1.0,
 	}
-	oc.prevPrecision = -1
 	return &oc
 }

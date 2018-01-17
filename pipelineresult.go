@@ -8,6 +8,7 @@ import (
 // QueryResult is the result of a transformation.
 type QueryResult struct {
 	Name           string
+	Topic          int64
 	Transformation cqr.CommonQueryRepresentation
 }
 
@@ -31,4 +32,14 @@ type PipelineResult struct {
 	Error           error
 	Topic           int64
 	Type            ResultType
+}
+
+func (qr QueryResult) ToGroovePipelineQuery() *PipelineQuery {
+	return &PipelineQuery{
+		name:        qr.Name,
+		topic:       qr.Topic,
+		original:    qr.Transformation,
+		processed:   qr.Transformation,
+		transformed: qr.Transformation,
+	}
 }

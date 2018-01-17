@@ -6,17 +6,25 @@ import (
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/cqr"
+	"io"
+	"fmt"
 )
 
 // Feature is some value that is applicable to a query transformation.
 type Feature struct {
-	Name  string
-	Score float64
+	Id          byte
+	Index       byte
+	Score       float64
+	MaxFeatures byte
 }
 
-// FeatureFamily is the
-type FeatureFamily struct {
-	Features []Feature
+// FeatureFamily is the group of features used to learn or predict a score.
+type FeatureFamily []Feature
+
+// LearntFeature contains the features that were used to produce a particular score.
+type LearntFeature struct {
+	FeatureFamily
+	Score float64
 }
 
 // TransformedQuery is the current most query in the query chain.
@@ -35,25 +43,40 @@ type CandidateQuery struct {
 func ComputeGlobalFeatures(query groove.PipelineQuery, ss stats.StatisticsSource) (f []Feature, err error) {
 	predictor := []analysis.Measurement{preqpp.AvgIDF, preqpp.AvgICTF, preqpp.AverageCollectionQuerySimilarity}
 
-	for _, qpp := range predictor {
+	for i, qpp := range predictor {
 		score, err := qpp.Execute(query, ss)
 		if err != nil {
 			return nil, err
 		}
-		f = append(f, NewFeature(qpp.Name(), score))
+		f = append(f, NewFeature16(0xf0, byte(i), score))
 	}
 
 	return
 }
 
+func (lf LearntFeature) WriteLibSVM(writer io.Writer) (int, error) {
+	features := make(map[int64]float64)
+	for _, feature := range lf.FeatureFamily {
+		index := int64(feature.Id + feature.Index)
+		features[index] = feature.Score
+	}
+
+	line := fmt.Sprintf("%v", lf.Score)
+	for index, value := range features {
+		line += fmt.Sprintf(" %v:%v", index, value)
+	}
+
+	return writer.Write([]byte(line + "\n"))
+}
+
 // AverageScore compute the average feature score for a group of features.
 func (ff FeatureFamily) AverageScore() float64 {
-	if len(ff.Features) == 0 {
+	if len(ff) == 0 {
 		return 0
 	}
 
 	totalScore := 0.0
-	for _, f := range ff.Features {
+	for _, f := range ff {
 		totalScore += f.Score
 	}
 
@@ -61,7 +84,7 @@ func (ff FeatureFamily) AverageScore() float64 {
 		return 0
 	}
 
-	return totalScore / float64(len(ff.Features))
+	return totalScore / float64(len(ff))
 }
 
 // Append adds the most recent query transformation to the chain and updates the current query.
@@ -72,10 +95,12 @@ func (t TransformedQuery) Append(query groove.PipelineQuery) TransformedQuery {
 }
 
 // NewFeature is a constructor for a feature.
-func NewFeature(name string, score float64) Feature {
+func NewFeature16(id byte, index byte, score float64) Feature {
 	return Feature{
-		Name:  name,
-		Score: score,
+		Id:          id,
+		Index:       index,
+		Score:       score,
+		MaxFeatures: 0xf,
 	}
 }
 
@@ -87,8 +112,8 @@ func NewFeatureFamily(query groove.PipelineQuery, ss stats.StatisticsSource, fea
 		return ff, err
 	}
 
-	ff.Features = append(ff.Features, features...)
-	ff.Features = append(ff.Features, globalFeatures...)
+	ff = append(ff, features...)
+	ff = append(ff, globalFeatures...)
 	return ff, nil
 }
 

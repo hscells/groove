@@ -185,7 +185,10 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 
 		// Set the limit to how many goroutines can be run.
 		// http://jmoiron.net/blog/limiting-concurrency-in-go/
-		concurrency := runtime.NumCPU()
+		concurrency := runtime.NumCPU() * 2
+		//if pipeline.QueryChain.CandidateSelector != nil && len(pipeline.QueryChain.Transformations) > 0 {
+		//	concurrency = 1
+		//}
 		sem := make(chan bool, concurrency)
 		for i, q := range measurementQueries {
 			sem <- true
@@ -234,7 +237,7 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 					}
 				}
 
-				transformations[i] = groove.QueryResult{Name: query.Name(), Transformation: query.Transformed()}
+				transformations[i] = groove.QueryResult{Name: query.Name(), Topic: query.Topic(), Transformation: query.Transformed()}
 			}(i, q)
 		}
 

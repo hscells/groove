@@ -185,6 +185,7 @@ func (es *ElasticsearchStatisticsSource) RetrievalSize(query cqr.CommonQueryRepr
 	// Only then can we issue it to Elasticsearch using our API.
 	result, err := es.client.Search(es.index).
 		Query(elastic.NewRawStringQuery(q)).
+		NoStoredFields().
 		Do(context.Background())
 	if err != nil {
 		return 0.0, err
@@ -247,6 +248,7 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 			SearchSource(
 			elastic.NewSearchSource().
 				From(0).
+				NoStoredFields().
 				Size(options.Size).
 				TrackScores(true).
 				Query(elastic.NewRawStringQuery(q)))
@@ -288,6 +290,7 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 			Type(es.documentType).
 			Query(elastic.NewRawStringQuery(q)).
 			Size(options.Size).
+			NoStoredFields().
 			Do(context.Background())
 		if err != nil {
 			return nil, err

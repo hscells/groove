@@ -6,6 +6,7 @@ import (
 	"strings"
 	"strconv"
 	"fmt"
+	"github.com/hscells/meshexp"
 )
 
 type Transformation interface {
@@ -36,7 +37,7 @@ func (logicalOperatorReplacement) invert(q cqr.BooleanQuery) cqr.BooleanQuery {
 }
 
 // permutations generates all possible permutations of the logical operators.
-func (lor logicalOperatorReplacement) permutations(query cqr.CommonQueryRepresentation) (queries []cqr.BooleanQuery) {
+func (lor logicalOperatorReplacement) permutations(query cqr.CommonQueryRepresentation, depth float64) (queries []CandidateQuery) {
 	switch q := query.(type) {
 	case cqr.BooleanQuery:
 		// Create the two initial seed inversions.
@@ -49,34 +50,44 @@ func (lor logicalOperatorReplacement) permutations(query cqr.CommonQueryRepresen
 			// And for each of their children.
 			for j, child := range queryCopy.Children {
 				// Apply this transformation.
-				for _, applied := range lor.permutations(child) {
+				for _, applied := range lor.permutations(child, depth+1) {
 					children := make([]cqr.CommonQueryRepresentation, len(queryCopy.Children))
 					copy(children, queryCopy.Children)
 					tmp := queryCopy
 					tmp.Children = children
-					tmp.Children[j] = applied
-					queries = append(queries, tmp)
+					tmp.Children[j] = applied.Query
+					queries = append(queries, NewCandidateQuery(tmp, applied.FeatureFamily))
 				}
 			}
 		}
-		queries = append(queries, invertedQueries...)
+		for _, iq := range invertedQueries {
+			var replacement float64
+			if q.Operator == iq.Operator {
+				replacement = 0
+			} else if q.Operator == "and" && iq.Operator == "or" {
+				replacement = 1
+			} else {
+				replacement = 2
+			}
+
+			ff := FeatureFamily{NewFeature16(0x0, 0x0, replacement), NewFeature16(0x0, 0x1, depth)}
+			queries = append(queries, NewCandidateQuery(iq, ff))
+		}
 	}
 	return
 }
 
 func (lor logicalOperatorReplacement) Apply(query cqr.CommonQueryRepresentation) (queries []CandidateQuery, err error) {
 	// Generate permutations.
-	permutations := lor.permutations(query)
+	permutations := lor.permutations(query, 0.0)
 	// Get all the sub-queries for the original query.
 	subQueries := analysis.QueryBooleanQueries(query)
 
-	queryMap := map[string]cqr.BooleanQuery{}
-
-	ff := FeatureFamily{}
+	queryMap := map[string]CandidateQuery{}
 
 	for _, permutation := range permutations {
 		// Get the sub-queries for each permutation.
-		permutationSubQueries := analysis.QueryBooleanQueries(permutation)
+		permutationSubQueries := analysis.QueryBooleanQueries(permutation.Query)
 
 		// The "key" to the permutation.
 		path := ""
@@ -97,16 +108,17 @@ func (lor logicalOperatorReplacement) Apply(query cqr.CommonQueryRepresentation)
 	}
 
 	for _, permutation := range queryMap {
-		queries = append(queries, NewCandidateQuery(permutation, ff))
+		queries = append(queries, permutation)
 	}
 
 	return
 }
 
-func (ar adjacencyRange) permutations(query cqr.CommonQueryRepresentation) (queries []cqr.BooleanQuery, err error) {
+func (ar adjacencyRange) permutations(query cqr.CommonQueryRepresentation, depth float64) (queries []CandidateQuery, err error) {
 	switch q := query.(type) {
 	case cqr.BooleanQuery:
 		var rangeQueries []cqr.BooleanQuery
+		var changes []float64
 		if strings.Contains(q.Operator, "adj") {
 
 			addition := q
@@ -127,18 +139,21 @@ func (ar adjacencyRange) permutations(query cqr.CommonQueryRepresentation) (quer
 			subtraction.Operator = fmt.Sprintf("adj%v", number-1)
 
 			rangeQueries = append(rangeQueries, addition)
+			changes = append(changes, float64(number+1))
 			if number > 1 {
 				rangeQueries = append(rangeQueries, subtraction)
+				changes = append(changes, float64(number-1))
 			}
 		} else {
 			rangeQueries = append(rangeQueries, q)
+			changes = append(changes, 0)
 		}
 		// For each of the two initial queries.
 		for _, queryCopy := range rangeQueries {
 			// And for each of their children.
 			for j, child := range queryCopy.Children {
 				// Apply this transformation.
-				appliedQueries, err := ar.permutations(child)
+				appliedQueries, err := ar.permutations(child, depth+1)
 				if err != nil {
 					return nil, err
 				}
@@ -147,32 +162,34 @@ func (ar adjacencyRange) permutations(query cqr.CommonQueryRepresentation) (quer
 					copy(children, queryCopy.Children)
 					tmp := queryCopy
 					tmp.Children = children
-					tmp.Children[j] = applied
-					queries = append(queries, tmp)
+					tmp.Children[j] = applied.Query
+					queries = append(queries, NewCandidateQuery(tmp, applied.FeatureFamily))
 				}
 			}
 		}
-		queries = append(queries, rangeQueries...)
+
+		for i, rq := range rangeQueries {
+			ff := FeatureFamily{NewFeature16(0x10, 0x0, changes[i]), NewFeature16(0x10, 0x1, depth)}
+			queries = append(queries, NewCandidateQuery(rq, ff))
+		}
 	}
 	return
 }
 
 func (ar adjacencyRange) Apply(query cqr.CommonQueryRepresentation) (queries []CandidateQuery, err error) {
 	// Generate permutations.
-	permutations, err := ar.permutations(query)
+	permutations, err := ar.permutations(query, 0.0)
 	if err != nil {
 		return nil, err
 	}
 	// Get all the sub-queries for the original query.
 	subQueries := analysis.QueryBooleanQueries(query)
 
-	queryMap := map[string]cqr.BooleanQuery{}
-
-	ff := FeatureFamily{}
+	queryMap := map[string]CandidateQuery{}
 
 	for _, permutation := range permutations {
 		// Get the sub-queries for each permutation.
-		permutationSubQueries := analysis.QueryBooleanQueries(permutation)
+		permutationSubQueries := analysis.QueryBooleanQueries(permutation.Query)
 
 		// The "key" to the permutation.
 		path := ""
@@ -193,14 +210,15 @@ func (ar adjacencyRange) Apply(query cqr.CommonQueryRepresentation) (queries []C
 	}
 
 	for _, permutation := range queryMap {
-		queries = append(queries, NewCandidateQuery(permutation, ff))
+		queries = append(queries, permutation)
 	}
 
 	return
 }
 
 // permutations generates all possible permutations of the logical operators.
-func (m meshExplosion) permutations(query cqr.CommonQueryRepresentation) (queries []cqr.BooleanQuery) {
+func (m meshExplosion) permutations(query cqr.CommonQueryRepresentation, depth float64) (queries []CandidateQuery) {
+	d, _ := meshexp.Default()
 	//fmt.Println(query)
 	switch q := query.(type) {
 	case cqr.BooleanQuery:
@@ -240,7 +258,8 @@ func (m meshExplosion) permutations(query cqr.CommonQueryRepresentation) (querie
 							}
 
 							// Append it.
-							queries = append(queries, tmp)
+							ff := FeatureFamily{NewFeature16(0x20, 0x0, float64(d.Depth(c.QueryString))), NewFeature16(0x20, 0x1, depth)}
+							queries = append(queries, NewCandidateQuery(tmp, ff))
 						}
 						break
 					}
@@ -248,13 +267,13 @@ func (m meshExplosion) permutations(query cqr.CommonQueryRepresentation) (querie
 			case cqr.BooleanQuery:
 				for j, child := range q.Children {
 					// Apply this transformation.
-					for _, applied := range m.permutations(child) {
+					for _, applied := range m.permutations(child, depth+1) {
 						children := make([]cqr.CommonQueryRepresentation, len(q.Children))
 						copy(children, q.Children)
 						tmp := q
 						tmp.Children = children
-						tmp.Children[j] = applied
-						queries = append(queries, tmp)
+						tmp.Children[j] = applied.Query
+						queries = append(queries, NewCandidateQuery(tmp, applied.FeatureFamily))
 					}
 				}
 			}
@@ -265,18 +284,16 @@ func (m meshExplosion) permutations(query cqr.CommonQueryRepresentation) (querie
 
 func (m meshExplosion) Apply(query cqr.CommonQueryRepresentation) (queries []CandidateQuery, err error) {
 	// Generate permutations.
-	permutations := m.permutations(query)
+	permutations := m.permutations(query, 0.0)
 
 	// Get all the sub-queries for the original query.
 	subQueries := analysis.QueryKeywords(query)
 
-	queryMap := map[string]cqr.BooleanQuery{}
-
-	ff := FeatureFamily{}
+	queryMap := map[string]CandidateQuery{}
 
 	for _, permutation := range permutations {
 		// Get the sub-queries for each permutation.
-		permutationSubQueries := analysis.QueryKeywords(permutation)
+		permutationSubQueries := analysis.QueryKeywords(permutation.Query)
 
 		// The "key" to the permutation.
 		path := ""
@@ -290,7 +307,7 @@ func (m meshExplosion) Apply(query cqr.CommonQueryRepresentation) (queries []Can
 	}
 
 	for _, permutation := range queryMap {
-		queries = append(queries, NewCandidateQuery(permutation, ff))
+		queries = append(queries, permutation)
 	}
 
 	return
@@ -300,12 +317,32 @@ func remove(slice []string, s int) []string {
 	return append(slice[:s], slice[s+1:]...)
 }
 
+func (fr fieldRestrictions) restrictionType(fields []string) float64 {
+	if len(fields) == 1 {
+
+		if fields[0] == "text" {
+			return 1.0
+		} else if fields[0] == "title" {
+			return 2.0
+		}
+	} else if len(fields) == 2 {
+		if (fields[0] == "text" && fields[1] == "title") || (fields[0] == "title" && fields[1] == "text") {
+			return 3.0
+		}
+	}
+	return 0.0
+}
+
 // permutations generates all possible permutations of the logical operators.
-func (fr fieldRestrictions) permutations(query cqr.CommonQueryRepresentation) (queries []cqr.BooleanQuery) {
+func (fr fieldRestrictions) permutations(query cqr.CommonQueryRepresentation, depth float64) (queries []CandidateQuery) {
 	switch q := query.(type) {
 	case cqr.BooleanQuery:
 		// Create the two initial seed inversions.
 		for i, child := range q.Children {
+			var (
+				f1 []string
+				f2 []string
+			)
 			switch c := child.(type) {
 			case cqr.Keyword:
 				hasTitle, hasAbstract, posTitle, posAbstract := false, false, 0, 0
@@ -338,6 +375,7 @@ func (fr fieldRestrictions) permutations(query cqr.CommonQueryRepresentation) (q
 						fields[posTitle] = "text"
 						ch.Fields = fields
 						tmp1.Children[i] = ch
+						f1 = fields
 					}
 
 					tmp2 := q
@@ -351,11 +389,12 @@ func (fr fieldRestrictions) permutations(query cqr.CommonQueryRepresentation) (q
 						fields = append(fields, "text")
 						ch.Fields = fields
 						tmp2.Children[i] = ch
+						f2 = fields
 					}
 
 					// Append it.
-					queries = append(queries, tmp1)
-					queries = append(queries, tmp2)
+					queries = append(queries, NewCandidateQuery(tmp1, FeatureFamily{NewFeature16(0x30, 0x0, fr.restrictionType(f1)), NewFeature16(0x30, 0x1, depth)}))
+					queries = append(queries, NewCandidateQuery(tmp2, FeatureFamily{NewFeature16(0x30, 0x0, fr.restrictionType(f2)), NewFeature16(0x30, 0x1, depth)}))
 				} else if !hasTitle && hasAbstract {
 					// Copy the outer parents children.
 					children1 := make([]cqr.CommonQueryRepresentation, len(q.Children))
@@ -374,6 +413,7 @@ func (fr fieldRestrictions) permutations(query cqr.CommonQueryRepresentation) (q
 						copy(fields, ch.Fields)
 						fields[posAbstract] = "title"
 						tmp1.Children[i] = ch
+						f1 = fields
 					}
 
 					tmp2 := q
@@ -387,11 +427,12 @@ func (fr fieldRestrictions) permutations(query cqr.CommonQueryRepresentation) (q
 						fields = append(fields, "title")
 						ch.Fields = fields
 						tmp2.Children[i] = ch
+						f2 = fields
 					}
 
 					// Append it.
-					queries = append(queries, tmp1)
-					queries = append(queries, tmp2)
+					queries = append(queries, NewCandidateQuery(tmp1, FeatureFamily{NewFeature16(0x30, 0x0, fr.restrictionType(f1)), NewFeature16(0x30, 0x1, depth)}))
+					queries = append(queries, NewCandidateQuery(tmp2, FeatureFamily{NewFeature16(0x30, 0x0, fr.restrictionType(f2)), NewFeature16(0x30, 0x1, depth)}))
 				} else if hasTitle && hasAbstract {
 					// Copy the outer parents children.
 					children1 := make([]cqr.CommonQueryRepresentation, len(q.Children))
@@ -414,6 +455,7 @@ func (fr fieldRestrictions) permutations(query cqr.CommonQueryRepresentation) (q
 						fields = remove(fields, posTitle)
 						ch.Fields = fields
 						tmp1.Children[i] = ch
+						f1 = fields
 					}
 
 					// Copy the new fields to the query copy.
@@ -424,23 +466,24 @@ func (fr fieldRestrictions) permutations(query cqr.CommonQueryRepresentation) (q
 						fields = remove(fields, posAbstract)
 						ch.Fields = fields
 						tmp2.Children[i] = ch
+						f2 = fields
 					}
 
 					// Append it.
-					queries = append(queries, tmp1)
-					queries = append(queries, tmp2)
+					queries = append(queries, NewCandidateQuery(tmp1, FeatureFamily{NewFeature16(0x30, 0x0, fr.restrictionType(f1)), NewFeature16(0x30, 0x1, depth)}))
+					queries = append(queries, NewCandidateQuery(tmp2, FeatureFamily{NewFeature16(0x30, 0x0, fr.restrictionType(f2)), NewFeature16(0x30, 0x1, depth)}))
 				}
 
 			case cqr.BooleanQuery:
 				for j, child := range q.Children {
 					// Apply this transformation.
-					for _, applied := range fr.permutations(child) {
+					for _, applied := range fr.permutations(child, depth+1) {
 						children := make([]cqr.CommonQueryRepresentation, len(q.Children))
 						copy(children, q.Children)
 						tmp := q
 						tmp.Children = children
-						tmp.Children[j] = applied
-						queries = append(queries, tmp)
+						tmp.Children[j] = applied.Query
+						queries = append(queries, NewCandidateQuery(tmp, applied.FeatureFamily))
 					}
 				}
 			}
@@ -451,18 +494,18 @@ func (fr fieldRestrictions) permutations(query cqr.CommonQueryRepresentation) (q
 
 func (fr fieldRestrictions) Apply(query cqr.CommonQueryRepresentation) (queries []CandidateQuery, err error) {
 	// Generate permutations.
-	permutations := fr.permutations(query)
+	permutations := fr.permutations(query, 0.0)
 
 	// Get all the sub-queries for the original query.
 	subQueries := analysis.QueryKeywords(query)
 
-	queryMap := map[string]cqr.BooleanQuery{}
+	queryMap := map[string]cqr.CommonQueryRepresentation{}
 
 	ff := FeatureFamily{}
 
 	for _, permutation := range permutations {
 		// Get the sub-queries for each permutation.
-		permutationSubQueries := analysis.QueryKeywords(permutation)
+		permutationSubQueries := analysis.QueryKeywords(permutation.Query)
 
 		// The "key" to the permutation.
 		path := ""
@@ -472,7 +515,7 @@ func (fr fieldRestrictions) Apply(query cqr.CommonQueryRepresentation) (queries 
 			path += fmt.Sprintf("%v%v", permutationSubQueries[i].QueryString, permutationSubQueries[i].Fields)
 		}
 
-		queryMap[path] = permutation
+		queryMap[path] = permutation.Query
 	}
 
 	for _, permutation := range queryMap {
