@@ -29,7 +29,7 @@ func (sc summedCollectionQuerySimilarity) Name() string {
 }
 
 func (sc summedCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Transformed())
+	terms := analysis.QueryTerms(q.Query)
 
 	sumSCQ := 0.0
 	for _, term := range terms {
@@ -48,9 +48,9 @@ func (sc maxCollectionQuerySimilarity) Name() string {
 }
 
 func (sc maxCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Transformed())
+	terms := analysis.QueryTerms(q.Query)
 
-	scq := []float64{}
+	var scq []float64
 	for _, term := range terms {
 		s, err := collectionQuerySimilarity(term, s)
 		if err != nil {
@@ -67,9 +67,9 @@ func (sc averageCollectionQuerySimilarity) Name() string {
 }
 
 func (sc averageCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Transformed())
+	terms := analysis.QueryTerms(q.Query)
 
-	scq := []float64{}
+	var scq []float64
 	for _, term := range terms {
 		s, err := collectionQuerySimilarity(term, s)
 		if err != nil {

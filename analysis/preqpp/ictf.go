@@ -19,7 +19,7 @@ func (avgi avgICTF) Name() string {
 }
 
 func (avgi avgICTF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Transformed())
+	terms := analysis.QueryTerms(q.Query)
 
 	W, err := s.VocabularySize()
 	if err != nil {

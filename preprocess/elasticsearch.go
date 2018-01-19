@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"fmt"
+	"github.com/hscells/groove/analysis"
 )
 
 // ElasticsearchTransformation is a specific transformation that uses an Elasticsearch statistics source.
@@ -52,10 +53,20 @@ func SetAnalyseField(query cqr.CommonQueryRepresentation, source *stats.Elastics
 			q.Fields = fields
 			return q
 		case cqr.BooleanQuery:
-			if !strings.Contains(q.Operator, "adj") {
-				for i, child := range q.Children {
-					q.Children[i] = SetAnalyseField(child, source)()
+			numTruncated := 0
+			if strings.Contains(q.Operator, "adj") {
+				keywords := analysis.QueryKeywords(q)
+				for _, keyword := range keywords {
+					if truncated, ok := keyword.Options["truncated"].(bool); ok && truncated {
+						numTruncated++
+					}
 				}
+				if numTruncated != len(keywords) {
+					return q
+				}
+			}
+			for i, child := range q.Children {
+				q.Children[i] = SetAnalyseField(child, source)()
 			}
 			return q
 		default:

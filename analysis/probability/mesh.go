@@ -48,7 +48,7 @@ func countExplodedMeSHTerms(query cqr.CommonQueryRepresentation) (numMeSH, numEx
 
 // Execute returns the ratio of exploded MeSH queries to the number of total MeSH queries in the search strategy.
 func (MeSHExplosionsRatio) Execute(pq groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	numExpMeSH, numMeSH := countExplodedMeSHTerms(pq.Transformed())
+	numExpMeSH, numMeSH := countExplodedMeSHTerms(pq.Query)
 	if numMeSH == 0 {
 		return 0.0, nil
 	}

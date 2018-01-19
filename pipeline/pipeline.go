@@ -4,7 +4,6 @@ package pipeline
 import (
 	"errors"
 	"github.com/TimothyJones/trecresults"
-	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/output"
@@ -105,31 +104,29 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 	measurementQueries := make([]groove.PipelineQuery, len(queries))
 	topics := make([]string, len(queries))
 	for i, q := range queries {
-		topics[i] = q.Name()
+		topics[i] = q.Name
 		// Ensure there is a processed query.
-		measurementQueries[i] = q.SetProcessed(q.Original())
+
 		// And apply the processing if there is any.
 		for _, p := range pipeline.Preprocess {
-			measurementQueries[i] = measurementQueries[i].SetProcessed(preprocess.ProcessQuery(measurementQueries[i].Processed(), p))
+			q = groove.NewPipelineQuery(q.Name, q.Topic, preprocess.ProcessQuery(q.Query, p))
 		}
-
-		// Ensure there is a transformed query.
-		measurementQueries[i] = measurementQueries[i].SetTransformed(func() cqr.CommonQueryRepresentation {
-			return measurementQueries[i].Processed()
-		})
 
 		// Apply any transformations.
 		for _, t := range pipeline.Transformations.BooleanTransformations {
-			measurementQueries[i] = measurementQueries[i].SetTransformed(t(measurementQueries[i].Transformed()))
+			q = groove.NewPipelineQuery(q.Name, q.Topic, t(q.Query)())
 		}
 		for _, t := range pipeline.Transformations.ElasticsearchTransformations {
 			if s, ok := pipeline.StatisticsSource.(*stats.ElasticsearchStatisticsSource); ok {
-				measurementQueries[i] = measurementQueries[i].SetTransformed(t(measurementQueries[i].Transformed(), s))
+				q = groove.NewPipelineQuery(q.Name, q.Topic, t(q.Query, s)())
 			} else {
 				log.Fatal("Elasticsearch transformations only work with an Elasticsearch statistics source.")
 			}
 		}
+
+		measurementQueries[i] = q
 	}
+
 	// Compute measurements for each of the queries.
 	// The measurements are computed in parallel.
 	N := len(pipeline.Measurements)
@@ -195,28 +192,26 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 			go func(idx int, query groove.PipelineQuery) {
 				defer func() { <-sem }()
 
-				// Query chain.
+				// PipelineQuery chain.
 				if pipeline.QueryChain.CandidateSelector != nil && len(pipeline.QueryChain.Transformations) > 0 {
 					nq, err := pipeline.QueryChain.Execute(query)
 					if err != nil {
 						c <- groove.PipelineResult{
-							Topic: query.Topic(),
+							Topic: query.Topic,
 							Error: err,
 							Type:  groove.Error,
 						}
 						return
 					}
 
-					query = query.SetTransformed(func() cqr.CommonQueryRepresentation {
-						return nq.Query.Transformed()
-					})
+					query = groove.NewPipelineQuery(q.Name, q.Topic, nq.PipelineQuery.Query)
 				}
 
 				// Execute the query.
 				trecResults, err := pipeline.StatisticsSource.Execute(query, pipeline.StatisticsSource.SearchOptions())
 				if err != nil {
 					c <- groove.PipelineResult{
-						Topic: query.Topic(),
+						Topic: query.Topic,
 						Error: err,
 						Type:  groove.Error,
 					}
@@ -225,19 +220,21 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 
 				// Set the evaluation results.
 				if len(pipeline.Evaluations) > 0 {
-					measurements[query.Topic()] = eval.Evaluate(pipeline.Evaluations, &trecResults, pipeline.EvaluationQrels, query.Topic())
+					measurements[query.Topic] = eval.Evaluate(pipeline.Evaluations, &trecResults, pipeline.EvaluationQrels, query.Topic)
 				}
 
 				// Output the trec results.
 				if len(pipeline.OutputTrec.Path) > 0 {
 					c <- groove.PipelineResult{
-						Topic:       query.Topic(),
+						Topic:       query.Topic,
 						TrecResults: &trecResults,
 						Type:        groove.TrecResult,
 					}
 				}
 
-				transformations[i] = groove.QueryResult{Name: query.Name(), Topic: query.Topic(), Transformation: query.Transformed()}
+				transformations[i] = groove.QueryResult{Name: query.Name, Topic: query.Topic, Transformation: query.Query}
+
+				log.Printf("completed topic %v\n", query.Topic)
 			}(i, q)
 		}
 

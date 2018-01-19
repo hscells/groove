@@ -50,8 +50,8 @@ func (ts TransmuteQuerySource) Load(directory string) ([]groove.PipelineQuery, e
 	}
 
 	// Next, use the transmute pipeline to parse them.
-	var queries []groove.PipelineQuery
-	for _, f := range files {
+	queries := make([]groove.PipelineQuery, len(files))
+	for i, f := range files {
 		source, err := ioutil.ReadFile(directory + "/" + f.Name())
 		if err != nil {
 			return nil, err
@@ -71,7 +71,7 @@ func (ts TransmuteQuerySource) Load(directory string) ([]groove.PipelineQuery, e
 		if err != nil {
 			return nil, err
 		}
-		queries = append(queries, *groove.NewPipelineQuery(f.Name(), int64(topic), repr.(cqr.CommonQueryRepresentation)))
+		queries[i] = groove.NewPipelineQuery(f.Name(), int64(topic), repr.(cqr.CommonQueryRepresentation))
 	}
 
 	// Finally, return the parsed queries.

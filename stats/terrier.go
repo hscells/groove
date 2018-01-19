@@ -158,7 +158,7 @@ func (t TerrierStatisticsSource) Execute(query groove.PipelineQuery, options Sea
 	trecResultSet := trecresults.ResultList{}
 
 	// Grab the result set from terrier.
-	resultSet, err := search(t.env, query.Original(), options, t)
+	resultSet, err := search(t.env, query.Query, options, t)
 	if err != nil {
 		return trecResultSet, err
 	}
@@ -195,7 +195,7 @@ func (t TerrierStatisticsSource) Execute(query groove.PipelineQuery, options Sea
 	trecResultSet = make(trecresults.ResultList, N)
 	for i := 0; i < N; i++ {
 		trecResultSet[i] = &trecresults.Result{
-			Topic:     query.Topic(),
+			Topic:     query.Topic,
 			Iteration: "Q0",
 			DocId:     strconv.FormatInt(docIds[i], 10),
 			Rank:      int64(i),

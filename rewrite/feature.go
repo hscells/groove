@@ -29,8 +29,8 @@ type LearntFeature struct {
 
 // TransformedQuery is the current most query in the query chain.
 type TransformedQuery struct {
-	QueryChain []cqr.CommonQueryRepresentation
-	Query      groove.PipelineQuery
+	QueryChain    []cqr.CommonQueryRepresentation
+	PipelineQuery groove.PipelineQuery
 }
 
 // CandidateQuery is a possible transformation a query can take.
@@ -89,8 +89,8 @@ func (ff FeatureFamily) AverageScore() float64 {
 
 // Append adds the most recent query transformation to the chain and updates the current query.
 func (t TransformedQuery) Append(query groove.PipelineQuery) TransformedQuery {
-	t.QueryChain = append(t.QueryChain, t.Query.Transformed())
-	t.Query = query
+	t.QueryChain = append(t.QueryChain, t.PipelineQuery.Query)
+	t.PipelineQuery = query
 	return t
 }
 
@@ -119,8 +119,8 @@ func NewFeatureFamily(query groove.PipelineQuery, ss stats.StatisticsSource, fea
 
 func NewTransformedQuery(query groove.PipelineQuery, chain ...cqr.CommonQueryRepresentation) TransformedQuery {
 	return TransformedQuery{
-		QueryChain: chain,
-		Query:      query,
+		QueryChain:    chain,
+		PipelineQuery: query,
 	}
 }
 

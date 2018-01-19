@@ -18,7 +18,7 @@ func (qs simplifiedClarityScore) Name() string {
 }
 
 func (qs simplifiedClarityScore) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	m := float64(len(analysis.QueryTerms(q.Transformed())))
+	m := float64(len(analysis.QueryTerms(q.Query)))
 	avgICTFPredictor := AvgICTF
 	avgICTF, err := avgICTFPredictor.Execute(q, s)
 	if err != nil {

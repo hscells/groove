@@ -17,10 +17,10 @@ type SearchOptions struct {
 
 // TermVectorTerm is a term inside a term vector.
 type TermVectorTerm struct {
-	Term               string
 	DocumentFrequency  float64
 	TotalTermFrequency float64
 	TermFrequency      float64
+	Term               string
 }
 
 // TermVectorTerm is a standard format for returning term vectors from statistic sources.

@@ -21,22 +21,26 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 			RequiresLexing: true,
 		})
 
-	rawQuery := `1. exp ORTHODONTICS/
-2. orthodontic$.mp.
-3. or/1-2
-4. (retention adj3 retain$).mp.
-5. (stabilise$ or stabilize$).mp.
-6. (fraenectom$ or frenectom$).mp.
-7. (fiberotom$ or fibreotom$).mp.
-8. "interproximal stripping".mp.
-9. pericision.mp.
-10. reproximat$.mp.
-11. ((gingiv$ or periodont$).mp. adj4 surg$).mp.
-12. (retain or retention).mp.
-13. 11 and 12
-14. or/4-10
-15. 13 or 14
-16. 3 and 15`
+	rawQuery := `1. Diabetic Ketoacidosis/
+2. Diabetic Coma/
+3. ((hyperglyc?emic or diabet*).tw. adj emergenc*).tw.
+4. (diabet* and (keto* or acidos* or coma).tw.).tw.
+5. DKA.tw.
+6. or/1-5
+7. Insulin Lispro/
+8. Insulin Aspart/
+9. Insulin, Short-Acting/
+10. (glulisine or apidra).tw.
+11. (humulin or novolin).tw.
+12. (lispro or aspart).tw.
+13. (novolog or novorapid).tw.
+14. (insulin* adj3 analogue*).tw.
+15. acting insulin*.tw.
+16. or/7-15
+17. 6 and 16
+18. (humans/ not animals/)
+19. 17 and 18
+`
 
 	cq, err := cqrPipeline.Execute(rawQuery)
 	if err != nil {

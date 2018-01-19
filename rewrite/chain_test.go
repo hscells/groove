@@ -27,19 +27,14 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 			RequiresLexing: true,
 		})
 
-	rawQuery := `1. exp Ovarian Neoplasms/
-2. (ovar*.mp. adj5 (cancer* or tumor* or tumour* or neoplas* or carcinoma* or adenocarcinoma* or malignan*).mp.).mp.
-3. 1 or 2
-4. surgery.fs.
-5. exp Gynecologic Surgical Procedures/
-6. (cytoreduct* or debulk*).mp.
-7. 4 or 5 or 6
-8. Tranexamic Acid/
-9. (tranexamic acid or amchafibrin or anvitoff or cyclokapron or cyklokapron or exacyl or kabi 2161 or lysteda or spotof or t-amcha or tranhexamic acid or transamin or ugurol or xp12b).mp.
-10. 8 or 9
-11. 3 and 7 and 10`
+	rawQuery := `1. MMSE*.ti,ab.
+2. sMMSE.ti,ab.
+3. Folstein*.ti,ab.
+4. MiniMental.ti,ab.
+5. retain.ti,ab.
+6. or/1-5`
 
-	var topic int64 = 16
+	var topic int64 = 1
 
 	cq, err := cqrPipeline.Execute(rawQuery)
 	if err != nil {
@@ -70,26 +65,22 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 
 	chain := NewQueryChain(selector, AdjacencyRange, LogicalOperatorReplacement, MeSHExplosion, FieldRestrictions)
 	fmt.Printf("Rewriting query with %v possible transformations\n", len(chain.Transformations))
-	q, err := chain.Execute(groove.NewPipelineQuery("test", topic, repr.(cqr.CommonQueryRepresentation)).SetTransformed(func() cqr.CommonQueryRepresentation {
-		return repr.(cqr.CommonQueryRepresentation)
-	}))
+	q, err := chain.Execute(groove.NewPipelineQuery("test", topic, repr.(cqr.CommonQueryRepresentation)))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	results1, err := ss.Execute(groove.NewPipelineQuery("test", topic, repr.(cqr.CommonQueryRepresentation)).SetTransformed(func() cqr.CommonQueryRepresentation {
-		return repr.(cqr.CommonQueryRepresentation)
-	}), ss.SearchOptions())
+	results1, err := ss.Execute(groove.NewPipelineQuery("test", topic, repr.(cqr.CommonQueryRepresentation)), ss.SearchOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
-	results2, err := ss.Execute(q, ss.SearchOptions())
+	results2, err := ss.Execute(q.PipelineQuery, ss.SearchOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
 	fmt.Println(repr.(cqr.CommonQueryRepresentation))
-	fmt.Println(eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel}, &results1, qrels, topic))
-	fmt.Println(q.Transformed())
-	fmt.Println(eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel}, &results2, qrels, topic))
+	fmt.Println(eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results1, qrels, topic))
+	fmt.Println(q.PipelineQuery.Query)
+	fmt.Println(eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results2, qrels, topic))
 
 }

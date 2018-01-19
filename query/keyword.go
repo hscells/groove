@@ -20,8 +20,8 @@ func (kw KeywordQuerySource) Load(directory string) ([]groove.PipelineQuery, err
 	}
 
 	// Next, load each query into a CQR keyword query.
-	queries := []groove.PipelineQuery{}
-	for _, f := range files {
+	queries := make([]groove.PipelineQuery, len(files))
+	for i, f := range files {
 		source, err := ioutil.ReadFile(directory + "/" + f.Name())
 		if err != nil {
 			return []groove.PipelineQuery{}, err
@@ -31,7 +31,7 @@ func (kw KeywordQuerySource) Load(directory string) ([]groove.PipelineQuery, err
 
 		topic, err := strconv.Atoi(f.Name())
 
-		queries = append(queries, *groove.NewPipelineQuery(f.Name(), int64(topic), cqrQuery))
+		queries[i] = groove.NewPipelineQuery(f.Name(), int64(topic), cqrQuery)
 	}
 
 	// Finally, return the queries.

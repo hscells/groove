@@ -7,8 +7,8 @@ import (
 
 // QueryResult is the result of a transformation.
 type QueryResult struct {
-	Name           string
 	Topic          int64
+	Name           string
 	Transformation cqr.CommonQueryRepresentation
 }
 
@@ -25,21 +25,19 @@ const (
 
 // PipelineResult is the output of a groove pipeline.
 type PipelineResult struct {
+	Topic           int64
 	Measurements    []string
 	Evaluations     []string
 	Transformations []QueryResult
 	TrecResults     *trecresults.ResultList
-	Error           error
-	Topic           int64
 	Type            ResultType
+	Error           error
 }
 
-func (qr QueryResult) ToGroovePipelineQuery() *PipelineQuery {
-	return &PipelineQuery{
-		name:        qr.Name,
-		topic:       qr.Topic,
-		original:    qr.Transformation,
-		processed:   qr.Transformation,
-		transformed: qr.Transformation,
+func (qr QueryResult) ToGroovePipelineQuery() PipelineQuery {
+	return PipelineQuery{
+		Topic: qr.Topic,
+		Name:  qr.Name,
+		Query: qr.Transformation,
 	}
 }

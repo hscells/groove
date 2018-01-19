@@ -11,39 +11,47 @@ import (
 
 type Transformation interface {
 	Apply(query cqr.CommonQueryRepresentation) (queries []CandidateQuery, err error)
+	Name() string
 }
 
 type logicalOperatorReplacement struct{}
 type adjacencyRange struct{}
 type meshExplosion struct{}
 type fieldRestrictions struct{}
+type adjacencyReplacement struct{}
 
 var (
 	LogicalOperatorReplacement = logicalOperatorReplacement{}
 	AdjacencyRange             = adjacencyRange{}
 	MeSHExplosion              = meshExplosion{}
 	FieldRestrictions          = fieldRestrictions{}
+	AdjacencyReplacement       = adjacencyReplacement{}
+	d, _                       = meshexp.Default()
 )
 
 // invert switches logical operators for a Boolean query.
 func (logicalOperatorReplacement) invert(q cqr.BooleanQuery) cqr.BooleanQuery {
 	switch q.Operator {
-	case "and":
+	case "and", "AND":
 		q.Operator = "or"
-	case "or":
+	case "or", "OR":
 		q.Operator = "and"
 	}
 	return q
 }
 
 // permutations generates all possible permutations of the logical operators.
-func (lor logicalOperatorReplacement) permutations(query cqr.CommonQueryRepresentation, depth float64) (queries []CandidateQuery) {
+func (lor logicalOperatorReplacement) permutations(query cqr.CommonQueryRepresentation, depth float64) []CandidateQuery {
+	var candidates []CandidateQuery
+	var queries []CandidateQuery
 	switch q := query.(type) {
 	case cqr.BooleanQuery:
 		// Create the two initial seed inversions.
 		var invertedQueries []cqr.BooleanQuery
 		invertedQueries = append(invertedQueries, q)
-		invertedQueries = append(invertedQueries, lor.invert(q))
+		if strings.ToLower(q.Operator) == "or" || strings.ToLower(q.Operator) == "and" {
+			invertedQueries = append(invertedQueries, lor.invert(q))
+		}
 
 		// For each of the two initial queries.
 		for _, queryCopy := range invertedQueries {
@@ -70,11 +78,40 @@ func (lor logicalOperatorReplacement) permutations(query cqr.CommonQueryRepresen
 				replacement = 2
 			}
 
+			//if len(queries) > 1000 {
+			//	fmt.Println(iq)
+			//}
+
 			ff := FeatureFamily{NewFeature16(0x0, 0x0, replacement), NewFeature16(0x0, 0x1, depth)}
 			queries = append(queries, NewCandidateQuery(iq, ff))
 		}
+		queryMap := make(map[string]CandidateQuery)
+		for _, permutation := range queries {
+			// Get the sub-queries for each permutation.
+			permutationSubQueries := analysis.QueryBooleanQueries(permutation.Query)
+
+			// The "key" to the permutation.
+			path := ""
+
+			for i := range permutationSubQueries {
+				path += permutationSubQueries[i].Operator
+			}
+
+			// This is an applicable transformation.
+			queryMap[path] = permutation
+		}
+
+		for k, permutation := range queryMap {
+			candidates = append(candidates, permutation)
+			delete(queryMap, k)
+		}
+
 	}
-	return
+	return candidates
+}
+
+func (logicalOperatorReplacement) Name() string {
+	return "LogicalOperatorReplacement"
 }
 
 func (lor logicalOperatorReplacement) Apply(query cqr.CommonQueryRepresentation) (queries []CandidateQuery, err error) {
@@ -82,8 +119,7 @@ func (lor logicalOperatorReplacement) Apply(query cqr.CommonQueryRepresentation)
 	permutations := lor.permutations(query, 0.0)
 	// Get all the sub-queries for the original query.
 	subQueries := analysis.QueryBooleanQueries(query)
-
-	queryMap := map[string]CandidateQuery{}
+	queryMap := make(map[string]CandidateQuery)
 
 	for _, permutation := range permutations {
 		// Get the sub-queries for each permutation.
@@ -107,8 +143,13 @@ func (lor logicalOperatorReplacement) Apply(query cqr.CommonQueryRepresentation)
 		}
 	}
 
-	for _, permutation := range queryMap {
-		queries = append(queries, permutation)
+	queries = make([]CandidateQuery, len(queryMap))
+
+	i := 0
+	for k, permutation := range queryMap {
+		queries[i] = permutation
+		i++
+		delete(queryMap, k)
 	}
 
 	return
@@ -176,6 +217,10 @@ func (ar adjacencyRange) permutations(query cqr.CommonQueryRepresentation, depth
 	return
 }
 
+func (adjacencyRange) Name() string {
+	return "AdjacencyRange"
+}
+
 func (ar adjacencyRange) Apply(query cqr.CommonQueryRepresentation) (queries []CandidateQuery, err error) {
 	// Generate permutations.
 	permutations, err := ar.permutations(query, 0.0)
@@ -185,7 +230,7 @@ func (ar adjacencyRange) Apply(query cqr.CommonQueryRepresentation) (queries []C
 	// Get all the sub-queries for the original query.
 	subQueries := analysis.QueryBooleanQueries(query)
 
-	queryMap := map[string]CandidateQuery{}
+	queryMap := make(map[string]CandidateQuery, len(permutations))
 
 	for _, permutation := range permutations {
 		// Get the sub-queries for each permutation.
@@ -209,17 +254,22 @@ func (ar adjacencyRange) Apply(query cqr.CommonQueryRepresentation) (queries []C
 		}
 	}
 
-	for _, permutation := range queryMap {
-		queries = append(queries, permutation)
+	queries = make([]CandidateQuery, len(queryMap))
+
+	i := 0
+	for k, permutation := range queryMap {
+		queries[i] = permutation
+		i++
+		delete(queryMap, k)
 	}
 
 	return
 }
 
 // permutations generates all possible permutations of the logical operators.
-func (m meshExplosion) permutations(query cqr.CommonQueryRepresentation, depth float64) (queries []CandidateQuery) {
-	d, _ := meshexp.Default()
-	//fmt.Println(query)
+func (m meshExplosion) permutations(query cqr.CommonQueryRepresentation, depth float64) []CandidateQuery {
+	var candidates []CandidateQuery
+	var queries []CandidateQuery
 	switch q := query.(type) {
 	case cqr.BooleanQuery:
 		// Create the two initial seed inversions.
@@ -279,7 +329,33 @@ func (m meshExplosion) permutations(query cqr.CommonQueryRepresentation, depth f
 			}
 		}
 	}
-	return
+
+	queryMap := make(map[string]CandidateQuery)
+	for _, permutation := range queries {
+		// Get the sub-queries for each permutation.
+		permutationSubQueries := analysis.QueryKeywords(permutation.Query)
+
+		// The "key" to the permutation.
+		path := ""
+
+		for i := range permutationSubQueries {
+			path += fmt.Sprintf("%v%v", permutationSubQueries[i].QueryString, permutationSubQueries[i].Options["exploded"].(bool))
+		}
+
+		// This is an applicable transformation.
+		queryMap[path] = permutation
+	}
+
+	for k, permutation := range queryMap {
+		candidates = append(candidates, permutation)
+		delete(queryMap, k)
+	}
+
+	return candidates
+}
+
+func (meshExplosion) Name() string {
+	return "MeshExplosion"
 }
 
 func (m meshExplosion) Apply(query cqr.CommonQueryRepresentation) (queries []CandidateQuery, err error) {
@@ -289,7 +365,7 @@ func (m meshExplosion) Apply(query cqr.CommonQueryRepresentation) (queries []Can
 	// Get all the sub-queries for the original query.
 	subQueries := analysis.QueryKeywords(query)
 
-	queryMap := map[string]CandidateQuery{}
+	queryMap := make(map[string]CandidateQuery, len(permutations))
 
 	for _, permutation := range permutations {
 		// Get the sub-queries for each permutation.
@@ -306,8 +382,13 @@ func (m meshExplosion) Apply(query cqr.CommonQueryRepresentation) (queries []Can
 		queryMap[path] = permutation
 	}
 
-	for _, permutation := range queryMap {
-		queries = append(queries, permutation)
+	queries = make([]CandidateQuery, len(queryMap))
+
+	i := 0
+	for k, permutation := range queryMap {
+		queries[i] = permutation
+		i++
+		delete(queryMap, k)
 	}
 
 	return
@@ -319,7 +400,6 @@ func remove(slice []string, s int) []string {
 
 func (fr fieldRestrictions) restrictionType(fields []string) float64 {
 	if len(fields) == 1 {
-
 		if fields[0] == "text" {
 			return 1.0
 		} else if fields[0] == "title" {
@@ -334,7 +414,9 @@ func (fr fieldRestrictions) restrictionType(fields []string) float64 {
 }
 
 // permutations generates all possible permutations of the logical operators.
-func (fr fieldRestrictions) permutations(query cqr.CommonQueryRepresentation, depth float64) (queries []CandidateQuery) {
+func (fr fieldRestrictions) permutations(query cqr.CommonQueryRepresentation, depth float64) []CandidateQuery {
+	var candidates []CandidateQuery
+	var queries []CandidateQuery
 	switch q := query.(type) {
 	case cqr.BooleanQuery:
 		// Create the two initial seed inversions.
@@ -475,21 +557,47 @@ func (fr fieldRestrictions) permutations(query cqr.CommonQueryRepresentation, de
 				}
 
 			case cqr.BooleanQuery:
-				for j, child := range q.Children {
-					// Apply this transformation.
-					for _, applied := range fr.permutations(child, depth+1) {
-						children := make([]cqr.CommonQueryRepresentation, len(q.Children))
-						copy(children, q.Children)
-						tmp := q
-						tmp.Children = children
-						tmp.Children[j] = applied.Query
-						queries = append(queries, NewCandidateQuery(tmp, applied.FeatureFamily))
+				if !strings.Contains(c.Operator, "adj") {
+					for j, child := range q.Children {
+						// Apply this transformation.
+						for _, applied := range fr.permutations(child, depth+1) {
+							children := make([]cqr.CommonQueryRepresentation, len(q.Children))
+							copy(children, q.Children)
+							tmp := q
+							tmp.Children = children
+							tmp.Children[j] = applied.Query
+							queries = append(queries, NewCandidateQuery(tmp, applied.FeatureFamily))
+						}
 					}
 				}
 			}
 		}
 	}
-	return
+	queryMap := make(map[string]CandidateQuery)
+	for _, permutation := range queries {
+		// Get the sub-queries for each permutation.
+		permutationSubQueries := analysis.QueryKeywords(permutation.Query)
+
+		// The "key" to the permutation.
+		path := ""
+
+		for i := range permutationSubQueries {
+			path += fmt.Sprintf("%v%v", permutationSubQueries[i].QueryString, permutationSubQueries[i].Fields)
+		}
+
+		// This is an applicable transformation.
+		queryMap[path] = permutation
+	}
+
+	for k, permutation := range queryMap {
+		candidates = append(candidates, permutation)
+		delete(queryMap, k)
+	}
+	return queries
+}
+
+func (fieldRestrictions) Name() string {
+	return "FieldRestrictions"
 }
 
 func (fr fieldRestrictions) Apply(query cqr.CommonQueryRepresentation) (queries []CandidateQuery, err error) {
@@ -499,9 +607,7 @@ func (fr fieldRestrictions) Apply(query cqr.CommonQueryRepresentation) (queries 
 	// Get all the sub-queries for the original query.
 	subQueries := analysis.QueryKeywords(query)
 
-	queryMap := map[string]cqr.CommonQueryRepresentation{}
-
-	ff := FeatureFamily{}
+	queryMap := make(map[string]CandidateQuery, len(subQueries))
 
 	for _, permutation := range permutations {
 		// Get the sub-queries for each permutation.
@@ -515,11 +621,99 @@ func (fr fieldRestrictions) Apply(query cqr.CommonQueryRepresentation) (queries 
 			path += fmt.Sprintf("%v%v", permutationSubQueries[i].QueryString, permutationSubQueries[i].Fields)
 		}
 
-		queryMap[path] = permutation.Query
+		queryMap[path] = permutation
 	}
 
-	for _, permutation := range queryMap {
-		queries = append(queries, NewCandidateQuery(permutation, ff))
+	queries = make([]CandidateQuery, len(queryMap))
+
+	i := 0
+	for k, permutation := range queryMap {
+		queries[i] = permutation
+		i++
+		delete(queryMap, k)
+	}
+
+	return
+}
+
+// permutations generates all possible permutations of the logical operators.
+func (ar adjacencyReplacement) permutations(query cqr.CommonQueryRepresentation, depth float64) (queries []CandidateQuery) {
+	switch q := query.(type) {
+	case cqr.BooleanQuery:
+		// Create the two initial seed inversions.
+		var invertedQueries []cqr.BooleanQuery
+		invertedQueries = append(invertedQueries, q)
+
+		if strings.Contains(q.Operator, "adj") {
+			nq := q
+			nq.Operator = "and"
+			invertedQueries = append(invertedQueries, nq)
+		}
+
+		// For each of the two initial queries.
+		for _, queryCopy := range invertedQueries {
+			// And for each of their children.
+			for j, child := range queryCopy.Children {
+				// Apply this transformation.
+				for _, applied := range ar.permutations(child, depth+1) {
+					children := make([]cqr.CommonQueryRepresentation, len(queryCopy.Children))
+					copy(children, queryCopy.Children)
+					tmp := queryCopy
+					tmp.Children = children
+					tmp.Children[j] = applied.Query
+					queries = append(queries, NewCandidateQuery(tmp, applied.FeatureFamily))
+				}
+			}
+		}
+		for _, iq := range invertedQueries {
+			ff := FeatureFamily{NewFeature16(0x0, 0x1, depth)}
+			queries = append(queries, NewCandidateQuery(iq, ff))
+		}
+	}
+	return
+}
+
+func (adjacencyReplacement) Name() string {
+	return "AdjacencyReplacement"
+}
+
+func (ar adjacencyReplacement) Apply(query cqr.CommonQueryRepresentation) (queries []CandidateQuery, err error) {
+	// Generate permutations.
+	permutations := ar.permutations(query, 0.0)
+	// Get all the sub-queries for the original query.
+	subQueries := analysis.QueryBooleanQueries(query)
+
+	queryMap := make(map[string]CandidateQuery, len(permutations))
+
+	for _, permutation := range permutations {
+		// Get the sub-queries for each permutation.
+		permutationSubQueries := analysis.QueryBooleanQueries(permutation.Query)
+
+		// The "key" to the permutation.
+		path := ""
+
+		// Count the differences between operators for each query.
+		numDifferent := 0
+		for i := range subQueries {
+			path += permutationSubQueries[i].Operator
+			if subQueries[i].Operator != permutationSubQueries[i].Operator {
+				numDifferent++
+			}
+		}
+
+		// This is an applicable transformation.
+		if numDifferent <= 2 {
+			queryMap[path] = permutation
+		}
+	}
+
+	queries = make([]CandidateQuery, len(queryMap))
+
+	i := 0
+	for k, permutation := range queryMap {
+		queries[i] = permutation
+		i++
+		delete(queryMap, k)
 	}
 
 	return

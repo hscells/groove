@@ -18,8 +18,8 @@ type QueryChainSVM struct {
 	ShouldExtract   bool
 }
 
-func (q *QueryChainSVM) AppendQuery(query *groove.PipelineQuery) {
-	q.Queries = append(q.Queries, *query)
+func (q *QueryChainSVM) AppendQuery(query groove.PipelineQuery) {
+	q.Queries = append(q.Queries, query)
 }
 
 // WriteFeatures extracts features from queries and writes them to a LIBSVM compatible file.

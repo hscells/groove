@@ -15,7 +15,6 @@ import (
 	"github.com/satori/go.uuid"
 	"io"
 	"github.com/hscells/transmute/lexer"
-	"io/ioutil"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.
@@ -182,15 +181,15 @@ func (es *ElasticsearchStatisticsSource) RetrievalSize(query cqr.CommonQueryRepr
 	if err != nil {
 		return 0.0, err
 	}
+
 	// Only then can we issue it to Elasticsearch using our API.
-	result, err := es.client.Search(es.index).
+	result, err := es.client.Count(es.index).
 		Query(elastic.NewRawStringQuery(q)).
-		NoStoredFields().
 		Do(context.Background())
 	if err != nil {
 		return 0.0, err
 	}
-	return float64(result.Hits.TotalHits), nil
+	return float64(result), nil
 }
 
 // TermVector retrieves the term vector for a document.
@@ -230,12 +229,10 @@ func (es *ElasticsearchStatisticsSource) TermVector(document string) (TermVector
 // Execute runs the query on Elasticsearch and returns results in trec format.
 func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error) {
 	// Transform the query to an Elasticsearch query.
-	q, err := toElasticsearch(query.Transformed())
+	q, err := toElasticsearch(query.Query)
 	if err != nil {
 		return nil, err
 	}
-
-	ioutil.WriteFile("query.json", []byte(q), 0644)
 
 	// Only then can we issue it to Elasticsearch using our API.
 	if es.Scroll {
@@ -254,7 +251,7 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 				Query(elastic.NewRawStringQuery(q)))
 
 		docs := 0
-		results := trecresults.ResultList{}
+		var results trecresults.ResultList
 
 		for {
 			result, err := svc.Do(context.Background())
@@ -265,19 +262,23 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 				return nil, err
 			}
 
+			if results == nil {
+				results = make(trecresults.ResultList, result.Hits.TotalHits)
+			}
+
 			for _, hit := range result.Hits.Hits {
-				results = append(results, &trecresults.Result{
-					Topic:     query.Topic(),
+				results[docs] = &trecresults.Result{
+					Topic:     query.Topic,
 					Iteration: "Q0",
 					DocId:     hit.Id,
 					Rank:      int64(docs),
 					Score:     *hit.Score,
 					RunName:   options.RunName,
-				})
+				}
 				docs++
 			}
 
-			log.Printf("topic %v - %v/%v", query.Topic(), docs, result.Hits.TotalHits)
+			log.Printf("topic %v - %v/%v", query.Topic, docs, result.Hits.TotalHits)
 		}
 
 		svc.Clear(context.Background())
@@ -301,7 +302,7 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 		results := make(trecresults.ResultList, N)
 		for i, hit := range result.Hits.Hits {
 			results[i] = &trecresults.Result{
-				Topic:     query.Topic(),
+				Topic:     query.Topic,
 				Iteration: "Q0",
 				DocId:     hit.Id,
 				Rank:      int64(i),
@@ -329,48 +330,38 @@ func (es *ElasticsearchStatisticsSource) Analyse(text, analyser string) (tokens 
 // toElasticsearch transforms a cqr query into an Elasticsearch query.
 func toElasticsearch(query cqr.CommonQueryRepresentation) (string, error) {
 	var result map[string]interface{}
-	switch q := query.(type) {
-	case cqr.Keyword:
-		result = map[string]interface{}{
-			"multi_match": map[string]interface{}{
-				"query":  q.QueryString,
-				"fields": q.Fields,
-			},
-		}
-	case cqr.BooleanQuery:
-		// For a Boolean query, it gets a little tricky.
-		// First we need to get the string representation of the cqr.
-		repr, err := backend.NewCQRQuery(q).StringPretty()
-		if err != nil {
-			return "", err
-		}
-
-		// Then we need to compile it into an Elasticsearch query.
-		p := pipeline.NewPipeline(
-			parser.NewCQRParser(),
-			backend.NewElasticsearchCompiler(),
-			pipeline.TransmutePipelineOptions{
-				LexOptions: lexer.LexOptions{
-					FormatParenthesis: true,
-				},
-				RequiresLexing: false,
-			})
-		esQuery, err := p.Execute(repr)
-		if err != nil {
-			return "", err
-		}
-		// After that, we need to unmarshal it to get the underlying structure.
-		var tmpQuery map[string]interface{}
-		s, err := esQuery.String()
-		if err != nil {
-			return "", err
-		}
-		err = json.Unmarshal(bytes.NewBufferString(s).Bytes(), &tmpQuery)
-		if err != nil {
-			return "", err
-		}
-		result = tmpQuery["query"].(map[string]interface{})
+	// For a Boolean query, it gets a little tricky.
+	// First we need to get the string representation of the cqr.
+	repr, err := backend.NewCQRQuery(query).StringPretty()
+	if err != nil {
+		return "", err
 	}
+
+	// Then we need to compile it into an Elasticsearch query.
+	p := pipeline.NewPipeline(
+		parser.NewCQRParser(),
+		backend.NewElasticsearchCompiler(),
+		pipeline.TransmutePipelineOptions{
+			LexOptions: lexer.LexOptions{
+				FormatParenthesis: true,
+			},
+			RequiresLexing: false,
+		})
+	esQuery, err := p.Execute(repr)
+	if err != nil {
+		return "", err
+	}
+	// After that, we need to unmarshal it to get the underlying structure.
+	var tmpQuery map[string]interface{}
+	s, err := esQuery.String()
+	if err != nil {
+		return "", err
+	}
+	err = json.Unmarshal(bytes.NewBufferString(s).Bytes(), &tmpQuery)
+	if err != nil {
+		return "", err
+	}
+	result = tmpQuery["query"].(map[string]interface{})
 
 	b, err := json.Marshal(result)
 	if err != nil {
