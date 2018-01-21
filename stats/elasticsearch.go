@@ -281,7 +281,10 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 			log.Printf("topic %v - %v/%v", query.Topic, docs, result.Hits.TotalHits)
 		}
 
-		svc.Clear(context.Background())
+		err := svc.Clear(context.Background())
+		if err != nil {
+			return nil, err
+		}
 
 		return results, nil
 	} else {

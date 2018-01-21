@@ -7,6 +7,9 @@ import (
 	"github.com/hscells/groove/stats"
 	"log"
 	"github.com/hscells/groove/combinator"
+	"io/ioutil"
+	"github.com/hscells/transmute/backend"
+	"fmt"
 )
 
 type QueryChain struct {
@@ -17,6 +20,7 @@ type QueryChain struct {
 type QueryChainCandidateSelector interface {
 	Select(query TransformedQuery, transformations []Transformation) (TransformedQuery, QueryChainCandidateSelector, error)
 	StoppingCriteria() bool
+	Finalise()
 }
 
 func NewQueryChain(selector QueryChainCandidateSelector, transformations ...Transformation) QueryChain {
@@ -40,6 +44,7 @@ func (qc QueryChain) Execute(query groove.PipelineQuery) (TransformedQuery, erro
 		}
 		stop = qc.CandidateSelector.StoppingCriteria()
 	}
+	qc.CandidateSelector.Finalise()
 	return tq, nil
 }
 
@@ -159,6 +164,11 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 			//	continue
 			//}
 
+			f := fmt.Sprintf("chain/%v", combinator.HashCQR(nq.Query))
+			qr, _ := backend.NewCQRQuery(nq.Query).StringPretty()
+			ioutil.WriteFile(f, []byte(qr), 0644)
+			log.Printf("topic %v - wrote query to %v", nq.Topic, f)
+
 			evaluation := eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results, oc.qrels, query.PipelineQuery.Topic)
 			numRelRet := evaluation[eval.NumRelRet.Name()]
 			numRet := evaluation[eval.NumRet.Name()]
@@ -172,9 +182,20 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 				transformed := groove.NewPipelineQuery(query.PipelineQuery.Name, query.PipelineQuery.Topic, applied.Query)
 				query = query.Append(transformed)
 			}
+
+			results = nil
 		}
 	}
 	return query, oc, nil
+}
+
+func (oc OracleQueryChainCandidateSelector) Finalise() {
+	oc.qrels = trecresults.QrelsFile{}
+	oc.ss = nil
+	for k := range oc.seen {
+		delete(oc.seen, k)
+	}
+	oc.seen = nil
 }
 
 func (oc OracleQueryChainCandidateSelector) StoppingCriteria() (bool) {

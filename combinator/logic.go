@@ -10,6 +10,7 @@ import (
 	"strings"
 	"github.com/pkg/errors"
 	"github.com/TimothyJones/trecresults"
+	"strconv"
 )
 
 var (
@@ -59,10 +60,7 @@ type AdjAtom struct {
 }
 
 // Document is a document that has been retrieved.
-type Document struct {
-	Score float64
-	Id    string
-}
+type Document int32
 
 // Documents are a group of retrieved documents.
 type Documents []Document
@@ -85,9 +83,9 @@ func (d Documents) Results(query groove.PipelineQuery, run string) trecresults.R
 		r[i] = &trecresults.Result{
 			Topic:     query.Topic,
 			Iteration: "Q0",
-			DocId:     doc.Id,
+			DocId:     string(doc),
 			Rank:      int64(i),
-			Score:     doc.Score,
+			Score:     0,
 			RunName:   run,
 		}
 	}
@@ -230,7 +228,7 @@ func (a AdjAtom) Query() cqr.CommonQueryRepresentation {
 }
 
 func (d Document) String() string {
-	return fmt.Sprintf("%v\t%v", d.Id, d.Score)
+	return fmt.Sprintf("%v", d)
 }
 
 // NewAtom creates a new atom.
@@ -278,6 +276,9 @@ func HashCQR(representation cqr.CommonQueryRepresentation) uint64 {
 
 // constructTree creates a logical tree recursively by descending top down.
 func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen map[uint64]LogicalTreeNode) (LogicalTreeNode, map[uint64]LogicalTreeNode, error) {
+	if seen == nil {
+		seen = make(map[uint64]LogicalTreeNode)
+	}
 	switch q := query.Query.(type) {
 	case cqr.Keyword:
 		// Return a seen atom.
@@ -293,21 +294,17 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen m
 		// Transform the results into something that can be used by the combinators.
 		docs := make(Documents, len(results))
 		for i, result := range results {
-			docs[i] = Document{
-				Id:    result.DocId,
-				Score: result.Score,
+			id, err := strconv.ParseInt(result.DocId, 10, 32)
+			if err != nil {
+				return nil, nil, err
 			}
+			docs[i] = Document(id)
 		}
 		// Create the new atom add it to the seen list.
 		a := NewAtom(q, docs)
 		seen[a.Hash] = a
 		return a, seen, nil
 	case cqr.BooleanQuery:
-		// Return a seen combinator.
-		if combinator, ok := seen[HashCQR(query.Query)]; ok {
-			return combinator, seen, nil
-		}
-
 		var operator Operator
 		switch strings.ToLower(q.Operator) {
 		case "or":
@@ -328,10 +325,11 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen m
 			}
 			docs := make(Documents, len(results))
 			for i, result := range results {
-				docs[i] = Document{
-					Id:    result.DocId,
-					Score: result.Score,
+				id, err := strconv.ParseInt(result.DocId, 10, 32)
+				if err != nil {
+					return nil, nil, err
 				}
+				docs[i] = Document(id)
 			}
 			a := NewAdjAtom(q, docs)
 			seen[a.Hash] = a
@@ -346,7 +344,6 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen m
 				}
 			}
 			c := NewCombinator(q, operator, clauses...)
-			seen[c.Hash] = c
 			return c, seen, nil
 		}
 	}
@@ -355,6 +352,9 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen m
 
 // NewLogicalTree creates a new logical tree.
 func NewLogicalTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen map[uint64]LogicalTreeNode) (LogicalTree, map[uint64]LogicalTreeNode, error) {
+	if seen == nil {
+		seen = make(map[uint64]LogicalTreeNode)
+	}
 	root, seen, err := constructTree(query, ss, seen)
 	if err != nil {
 		return LogicalTree{}, nil, nil

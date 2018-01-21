@@ -12,8 +12,8 @@ import (
 	"github.com/hscells/groove/stats"
 	"log"
 	"github.com/hscells/groove/eval"
-	"runtime"
 	"github.com/hscells/groove/rewrite"
+	"runtime"
 )
 
 type empty struct{}
@@ -182,7 +182,7 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 
 		// Set the limit to how many goroutines can be run.
 		// http://jmoiron.net/blog/limiting-concurrency-in-go/
-		concurrency := runtime.NumCPU() * 2
+		concurrency := runtime.NumCPU()
 		//if pipeline.QueryChain.CandidateSelector != nil && len(pipeline.QueryChain.Transformations) > 0 {
 		//	concurrency = 1
 		//}
@@ -204,7 +204,7 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 						return
 					}
 
-					query = groove.NewPipelineQuery(q.Name, q.Topic, nq.PipelineQuery.Query)
+					query = groove.NewPipelineQuery(query.Name, query.Topic, nq.PipelineQuery.Query)
 				}
 
 				// Execute the query.
