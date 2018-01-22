@@ -14,6 +14,7 @@ import (
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/rewrite"
 	"runtime"
+	"sort"
 )
 
 type empty struct{}
@@ -123,8 +124,16 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 				log.Fatal("Elasticsearch transformations only work with an Elasticsearch statistics source.")
 			}
 		}
-
 		measurementQueries[i] = q
+	}
+
+	// Sort the transformed queries by size.
+	sort.Slice(measurementQueries, func(i, j int) bool {
+		return len(analysis.QueryBooleanQueries(measurementQueries[i].Query)) < len(analysis.QueryBooleanQueries(measurementQueries[j].Query))
+	})
+
+	for _, mq := range measurementQueries {
+		log.Println(mq.Topic)
 	}
 
 	// Compute measurements for each of the queries.
@@ -148,6 +157,7 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 			}
 		}
 	}
+
 	// Format the measurement results into specified formats.
 	outputs := make([]string, len(pipeline.MeasurementFormatters))
 	for i, formatter := range pipeline.MeasurementFormatters {
@@ -170,9 +180,6 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 		Measurements: outputs,
 		Type:         groove.Measurement,
 	}
-
-	// Output the transformed queries.
-	transformations := make([]groove.QueryResult, len(measurementQueries))
 
 	// This section is run concurrently, since the results can sometimes get quite large and we don't want to eat ram.
 	if len(pipeline.Evaluations) > 0 || len(pipeline.OutputTrec.Path) > 0 {
@@ -232,7 +239,11 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 					}
 				}
 
-				transformations[i] = groove.QueryResult{Name: query.Name, Topic: query.Topic, Transformation: query.Query}
+				// Send the transformation through the channel.
+				c <- groove.PipelineResult{
+					Transformation: groove.QueryResult{Name: query.Name, Topic: query.Topic, Transformation: query.Query},
+					Type:           groove.Transformation,
+				}
 
 				log.Printf("completed topic %v\n", query.Topic)
 			}(i, q)
@@ -263,12 +274,6 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 			Evaluations: evaluations,
 			Type:        groove.Evaluation,
 		}
-	}
-
-	// Send the through the channel.
-	c <- groove.PipelineResult{
-		Transformations: transformations,
-		Type:            groove.Transformation,
 	}
 
 	// Return the formatted results.

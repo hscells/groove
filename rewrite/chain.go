@@ -3,14 +3,17 @@ package rewrite
 import (
 	"github.com/TimothyJones/trecresults"
 	"github.com/hscells/groove"
-	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/stats"
 	"log"
 	"github.com/hscells/groove/combinator"
 	"io/ioutil"
-	"github.com/hscells/transmute/backend"
 	"fmt"
+	"encoding/json"
+	"github.com/hscells/groove/eval"
+	"time"
 )
+
+type e map[string]float64
 
 type QueryChain struct {
 	Transformations   []Transformation
@@ -127,6 +130,9 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 
 	// Apply the transformations to all of the queries.
 	for _, transformation := range transformations {
+
+		start := time.Now()
+
 		log.Printf("topic %v - generating %v transformation candidates\n", query.PipelineQuery.Topic, transformation.Name())
 
 		queries, err := transformation.Apply(query.PipelineQuery.Query)
@@ -134,11 +140,19 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 			return TransformedQuery{}, oc, err
 		}
 
-		log.Printf("topic %v - generated %v transformation candidates\n", query.PipelineQuery.Topic, len(queries))
+		log.Printf("topic %v - generated %v %v transformation candidates (%v mins)\n", query.PipelineQuery.Topic, len(queries), transformation.Name(), time.Now().Sub(start).Minutes())
 
 		for _, applied := range queries {
+
+			start := time.Now()
 			// The new query.
 			nq := groove.NewPipelineQuery(query.PipelineQuery.Name, query.PipelineQuery.Topic, applied.Query)
+
+			// Test if the query actually is executable.
+			_, err := oc.ss.RetrievalSize(applied.Query)
+			if err != nil {
+				continue
+			}
 
 			// Don't continue if the query is retrieving MORE results and test if the query is capable of being executed.
 			var tree combinator.LogicalTree
@@ -147,11 +161,8 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 				return query, oc, err
 			}
 
+			//fmt.Println(json.MarshalIndent(applied, "", "  "))
 			results := tree.Documents().Results(nq, nq.Name)
-			//resultSize, err := oc.ss.RetrievalSize(applied.Query)
-			//if err != nil {
-			//	continue
-			//}
 			//
 			//log.Printf("topic %v - %v ? %v\n", nq.Topic, resultSize, oc.minResults)
 			//if resultSize == 0 || resultSize > 100000 || resultSize >= oc.minResults {
@@ -164,14 +175,23 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 			//	continue
 			//}
 
-			f := fmt.Sprintf("chain/%v", combinator.HashCQR(nq.Query))
-			qr, _ := backend.NewCQRQuery(nq.Query).StringPretty()
-			ioutil.WriteFile(f, []byte(qr), 0644)
-			log.Printf("topic %v - wrote query to %v", nq.Topic, f)
-
 			evaluation := eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results, oc.qrels, query.PipelineQuery.Topic)
 			numRelRet := evaluation[eval.NumRelRet.Name()]
 			numRet := evaluation[eval.NumRet.Name()]
+
+			// Write the query out to a file.
+			f := fmt.Sprintf("chain/%v", combinator.HashCQR(nq.Query))
+			b, err := json.MarshalIndent(map[string]interface{}{
+				"topic":     nq.Topic,
+				"depth":     oc.depth,
+				"candidate": applied,
+				"eval":      evaluation,
+			}, "", "  ")
+			if err != nil {
+				return query, nil, err
+			}
+			ioutil.WriteFile(f, b, 0644)
+			log.Printf("topic %v - wrote query to %v", nq.Topic, f)
 
 			if numRelRet > 0 && numRelRet >= bestRelRet && numRet <= bestRet {
 				bestRelRet = numRelRet
@@ -182,6 +202,8 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 				transformed := groove.NewPipelineQuery(query.PipelineQuery.Name, query.PipelineQuery.Topic, applied.Query)
 				query = query.Append(transformed)
 			}
+
+			log.Printf("topic %v - query took %v minutes; features: %v", nq.Topic, time.Now().Sub(start).Minutes(), applied.FeatureFamily.String())
 
 			results = nil
 		}

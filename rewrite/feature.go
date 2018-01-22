@@ -54,6 +54,14 @@ func ComputeGlobalFeatures(query groove.PipelineQuery, ss stats.StatisticsSource
 	return
 }
 
+func (ff FeatureFamily) String() string {
+	var s string
+	for _, f := range ff {
+		s += fmt.Sprintf("%v:%v ", f.Id+f.Index, f.Score)
+	}
+	return s
+}
+
 func (lf LearntFeature) WriteLibSVM(writer io.Writer) (int, error) {
 	features := make(map[int64]float64)
 	for _, feature := range lf.FeatureFamily {

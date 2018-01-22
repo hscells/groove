@@ -400,13 +400,13 @@ func remove(slice []string, s int) []string {
 
 func (fr fieldRestrictions) restrictionType(fields []string) float64 {
 	if len(fields) == 1 {
-		if fields[0] == "text" {
+		if strings.Contains(fields[0], "text") {
 			return 1.0
-		} else if fields[0] == "title" {
+		} else if strings.Contains(fields[0], "title") {
 			return 2.0
 		}
 	} else if len(fields) == 2 {
-		if (fields[0] == "text" && fields[1] == "title") || (fields[0] == "title" && fields[1] == "text") {
+		if (strings.Contains(fields[0], "text") && strings.Contains(fields[1], "title")) || (strings.Contains(fields[0], "title") && strings.Contains(fields[1], "text")) {
 			return 3.0
 		}
 	}
@@ -666,7 +666,7 @@ func (ar adjacencyReplacement) permutations(query cqr.CommonQueryRepresentation,
 			}
 		}
 		for _, iq := range invertedQueries {
-			ff := FeatureFamily{NewFeature16(0x0, 0x1, depth)}
+			ff := FeatureFamily{NewFeature16(0x40, 0x0, depth)}
 			queries = append(queries, NewCandidateQuery(iq, ff))
 		}
 	}

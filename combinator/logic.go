@@ -60,7 +60,7 @@ type AdjAtom struct {
 }
 
 // Document is a document that has been retrieved.
-type Document int32
+type Document int
 
 // Documents are a group of retrieved documents.
 type Documents []Document
@@ -83,7 +83,7 @@ func (d Documents) Results(query groove.PipelineQuery, run string) trecresults.R
 		r[i] = &trecresults.Result{
 			Topic:     query.Topic,
 			Iteration: "Q0",
-			DocId:     string(doc),
+			DocId:     strconv.Itoa(int(doc)),
 			Rank:      int64(i),
 			Score:     0,
 			RunName:   run,

@@ -25,13 +25,13 @@ const (
 
 // PipelineResult is the output of a groove pipeline.
 type PipelineResult struct {
-	Topic           int64
-	Measurements    []string
-	Evaluations     []string
-	Transformations []QueryResult
-	TrecResults     *trecresults.ResultList
-	Type            ResultType
-	Error           error
+	Topic          int64
+	Measurements   []string
+	Evaluations    []string
+	Transformation QueryResult
+	TrecResults    *trecresults.ResultList
+	Type           ResultType
+	Error          error
 }
 
 func (qr QueryResult) ToGroovePipelineQuery() PipelineQuery {
