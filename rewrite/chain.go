@@ -11,9 +11,16 @@ import (
 	"encoding/json"
 	"github.com/hscells/groove/eval"
 	"time"
+	"runtime"
+	"runtime/debug"
 )
 
-type e map[string]float64
+type LearntCandidateQuery struct {
+	Topic     int64              `json:"topic"`
+	Depth     int64              `json:"depth"`
+	Candidate CandidateQuery     `json:"candidate"`
+	Eval      map[string]float64 `json:"eval"`
+}
 
 type QueryChain struct {
 	Transformations   []Transformation
@@ -206,6 +213,9 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 			log.Printf("topic %v - query took %v minutes; features: %v", nq.Topic, time.Now().Sub(start).Minutes(), applied.FeatureFamily.String())
 
 			results = nil
+			debug.FreeOSMemory()
+			runtime.GC()
+			debug.PrintStack()
 		}
 	}
 	return query, oc, nil

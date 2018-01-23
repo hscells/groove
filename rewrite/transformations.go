@@ -429,10 +429,10 @@ func (fr fieldRestrictions) permutations(query cqr.CommonQueryRepresentation, de
 			case cqr.Keyword:
 				hasTitle, hasAbstract, posTitle, posAbstract := false, false, 0, 0
 				for j, field := range c.Fields {
-					if field == "title" {
+					if strings.Contains(field, "title") {
 						hasTitle = true
 						posTitle = j
-					} else if field == "text" {
+					} else if strings.Contains(field, "text") {
 						hasAbstract = true
 						posAbstract = j
 					}
