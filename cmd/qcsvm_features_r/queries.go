@@ -55,8 +55,10 @@ func ValueQuery(m map[string]interface{}) Query {
 		ff = append(ff, f)
 	}
 
-	var ev map[string]float64
-	mapstructure.Decode(m["eval"], &ev)
+	ev := make(map[string]float64)
+	for k, v := range m["eval"].(map[string]interface{}) {
+		ev[k] = v.(float64)
+	}
 
 	lq := rewrite.LearntCandidateQuery{
 		Topic: int64(m["topic"].(float64)),

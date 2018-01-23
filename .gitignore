@@ -1,2 +1,5 @@
 .idea/*
 groove
+
+*.model
+*.features

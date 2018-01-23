@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"io/ioutil"
 	"sort"
+	"fmt"
 )
 
 type args struct {
@@ -59,7 +60,7 @@ func main() {
 	for k := range rank {
 		q := rank[k]
 		sort.Slice(q, func(i, j int) bool {
-			return q[i].Score < q[j].Score
+			return q[i].Score > q[j].Score
 		})
 		rank[k] = q
 		topics[i] = k
@@ -70,6 +71,7 @@ func main() {
 
 	for i := 0; i < len(topics); i++ {
 		for _, lf := range rank[topics[i]] {
+			fmt.Println(topics[i], lf.Score)
 			lf.WriteLibSVM(buff)
 		}
 	}
