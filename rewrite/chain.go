@@ -1,3 +1,4 @@
+// Package rewrite uses query chains to rewrite queries.
 package rewrite
 
 import (
@@ -15,6 +16,20 @@ import (
 	"runtime/debug"
 )
 
+// QueryChain contains implementations for transformations to apply to a query and the selector to pick a candidate.
+type QueryChain struct {
+	Transformations   []Transformation
+	CandidateSelector QueryChainCandidateSelector
+}
+
+// QueryChainCandidateSelector describes how transformed queries are chosen from the set of transformations.
+type QueryChainCandidateSelector interface {
+	Select(query TransformedQuery, transformations []Transformation) (TransformedQuery, QueryChainCandidateSelector, error)
+	StoppingCriteria() bool
+	Finalise()
+}
+
+// LearntCandidateQuery is the serialised struct written from the oracle query chain candidate selector.
 type LearntCandidateQuery struct {
 	Topic     int64              `json:"topic"`
 	Depth     int64              `json:"depth"`
@@ -22,17 +37,7 @@ type LearntCandidateQuery struct {
 	Eval      map[string]float64 `json:"eval"`
 }
 
-type QueryChain struct {
-	Transformations   []Transformation
-	CandidateSelector QueryChainCandidateSelector
-}
-
-type QueryChainCandidateSelector interface {
-	Select(query TransformedQuery, transformations []Transformation) (TransformedQuery, QueryChainCandidateSelector, error)
-	StoppingCriteria() bool
-	Finalise()
-}
-
+// NewQueryChain creates a new query chain with implementations for a selector and transformations.
 func NewQueryChain(selector QueryChainCandidateSelector, transformations ...Transformation) QueryChain {
 	return QueryChain{
 		CandidateSelector: selector,
@@ -40,6 +45,9 @@ func NewQueryChain(selector QueryChainCandidateSelector, transformations ...Tran
 	}
 }
 
+// Execute executes a query chain in full. At each "transition point" in the chain, the candidate selector is queried
+// in order to see if the chain should continue or not. At the end of the chain, the selector is cleaned using the
+// finalise method.
 func (qc QueryChain) Execute(query groove.PipelineQuery) (TransformedQuery, error) {
 	var (
 		stop bool
@@ -58,6 +66,7 @@ func (qc QueryChain) Execute(query groove.PipelineQuery) (TransformedQuery, erro
 	return tq, nil
 }
 
+// Features creates features using a oracle query chain candidate selector.
 func (oc OracleQueryChainCandidateSelector) Features(query groove.PipelineQuery, transformations []Transformation) (lf []LearntFeature, err error) {
 
 	bestQuery := query
@@ -221,6 +230,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 	return query, oc, nil
 }
 
+// Finalise cleans up the qrels file, statistic service, and clears the seen map.
 func (oc OracleQueryChainCandidateSelector) Finalise() {
 	oc.qrels = trecresults.QrelsFile{}
 	oc.ss = nil
@@ -230,6 +240,7 @@ func (oc OracleQueryChainCandidateSelector) Finalise() {
 	oc.seen = nil
 }
 
+// StoppingCriteria defines stopping criteria.
 func (oc OracleQueryChainCandidateSelector) StoppingCriteria() (bool) {
 	if oc.depth >= 5 || (oc.bestRelRet == oc.bestRelRet && oc.bestRet == oc.prevRet) {
 		return true
@@ -237,6 +248,7 @@ func (oc OracleQueryChainCandidateSelector) StoppingCriteria() (bool) {
 	return false
 }
 
+// NewOracleQueryChainCandidateSelector creates a new oracle query chain candidate selector.
 func NewOracleQueryChainCandidateSelector(source stats.StatisticsSource, file trecresults.QrelsFile) OracleQueryChainCandidateSelector {
 	oc := OracleQueryChainCandidateSelector{
 		ss:         source,

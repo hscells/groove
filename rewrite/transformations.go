@@ -9,6 +9,7 @@ import (
 	"github.com/hscells/meshexp"
 )
 
+// Transformation is applied to a query to generate a set of query candidates.
 type Transformation interface {
 	Apply(query cqr.CommonQueryRepresentation) (queries []CandidateQuery, err error)
 	Name() string

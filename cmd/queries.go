@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"github.com/hscells/groove/rewrite"
@@ -9,11 +9,19 @@ import (
 	"log"
 )
 
+// Query is used to communicate the deserialized query being sent over a channel.
 type Query struct {
 	Query rewrite.LearntCandidateQuery
 	Error error
 }
 
+// LoadQueries loads queries in a directory. The queries are "lazy-loaded" as some directories may contain hundreds of
+// thousands of queries.
+//
+// q must be passed in, and the receiver must switch on the type contained (error or learnt query candidate).
+//
+// This function is a bit of a hack in that it closes the channel, but take a look at qcsvm_features_c for an example
+// of how to use it.
 func LoadQueries(directory string, q chan Query) {
 	files, err := ioutil.ReadDir(directory)
 	if err != nil {
@@ -41,12 +49,15 @@ func LoadQueries(directory string, q chan Query) {
 	close(q)
 }
 
+// ErrorQuery is a wrapper for an error.
 func ErrorQuery(err error) Query {
 	return Query{
 		Error: err,
 	}
 }
 
+// ValueQuery is a wrapper for a query. This method will actually construct a query from a map[string]interface{},
+// since it contains a cqr.
 func ValueQuery(m map[string]interface{}) Query {
 	var ff rewrite.FeatureFamily
 	for _, feature := range m["candidate"].(map[string]interface{})["FeatureFamily"].([]interface{}) {

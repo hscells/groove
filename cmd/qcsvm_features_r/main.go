@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"sort"
 	"fmt"
+	"github.com/hscells/groove/cmd"
 )
 
 type args struct {
@@ -29,7 +30,7 @@ func main() {
 	var args args
 	arg.MustParse(&args)
 
-	queries := make(chan Query)
+	queries := make(chan cmd.Query)
 
 	rank := make(map[int64][]rewrite.LearntFeature)
 
@@ -53,7 +54,7 @@ func main() {
 		}
 	}()
 
-	LoadQueries(args.Queries, queries)
+	cmd.LoadQueries(args.Queries, queries)
 
 	topics := make([]int64, len(rank))
 	i := 0
@@ -62,17 +63,27 @@ func main() {
 		sort.Slice(q, func(i, j int) bool {
 			return q[i].Score > q[j].Score
 		})
+
+		for _, lf := range q {
+			sort.Slice(lf.FeatureFamily, func(i, j int) bool {
+				return lf.FeatureFamily[i].Id+lf.FeatureFamily[i].Index < lf.FeatureFamily[j].Id+lf.FeatureFamily[j].Index
+			})
+		}
+
 		rank[k] = q
 		topics[i] = k
 		i++
 	}
 
+	sort.Slice(topics, func(i, j int) bool {
+		return topics[i] < topics[j]
+	})
+
 	buff := bytes.NewBufferString("")
 
 	for i := 0; i < len(topics); i++ {
-		for _, lf := range rank[topics[i]] {
-			fmt.Println(topics[i], lf.Score)
-			lf.WriteLibSVM(buff)
+		for j, lf := range rank[topics[i]] {
+			lf.WriteLibSVMRank(buff, topics[i], fmt.Sprintf("%v_%v", topics[i], j+1))
 		}
 	}
 

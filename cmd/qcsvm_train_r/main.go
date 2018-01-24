@@ -28,10 +28,9 @@ type param struct {
 	step  float64
 }
 
-// https://github.com/cjlin1/libsvm/blob/master/tools/grid.py
 var (
-	C     = param{1, 15, 1}
-	Gamma = param{3, -1, -1}
+	C     = param{-5, 15, 0.5}
+	Gamma = param{3, -15, -0.5}
 )
 
 func setParam(c, gamma float64, problem *libSvm.Parameter) {
@@ -63,7 +62,7 @@ func main() {
 
 			fmt.Printf("C: %v Gamma: %v\n", param.C, param.Gamma)
 
-			targets := libSvm.CrossValidation(problem, param, problem.ProblemSize())
+			targets := libSvm.CrossValidation(problem, param, 5)
 			squareErr := libSvm.NewSquareErrorComputer()
 
 			var i = 0

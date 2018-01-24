@@ -1,3 +1,4 @@
+// Package eval contains implementations of different evaluation measures for information retrieval.
 package eval
 
 import (

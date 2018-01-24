@@ -33,6 +33,7 @@ func Analyse(query cqr.CommonQueryRepresentation, source *stats.ElasticsearchSta
 	}
 }
 
+// SetAnalyseField sets the text and title fields to be analysed by the specified analyser.
 func SetAnalyseField(query cqr.CommonQueryRepresentation, source *stats.ElasticsearchStatisticsSource) Transformation {
 	return func() cqr.CommonQueryRepresentation {
 		switch q := query.(type) {

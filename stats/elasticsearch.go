@@ -13,8 +13,8 @@ import (
 	"gopkg.in/olivere/elastic.v5"
 	"log"
 	"github.com/satori/go.uuid"
-	"io"
 	"github.com/hscells/transmute/lexer"
+	"io"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.
@@ -240,14 +240,17 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 		// Scroll search.
 		svc := es.client.Scroll(es.index).
 			FetchSource(false).
+			Pretty(false).
 			Type(es.documentType).
 			KeepAlive("1h").
 			SearchSource(
 			elastic.NewSearchSource().
 				From(0).
 				NoStoredFields().
+				FetchSource(false).
 				Size(options.Size).
-				TrackScores(true).
+				//Slice(elastic.NewSliceQuery().Field("_id").Id(0).Max(10)).
+				TrackScores(false).
 				Query(elastic.NewRawStringQuery(q)))
 
 		docs := 0

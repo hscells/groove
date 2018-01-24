@@ -54,6 +54,33 @@ func ComputeGlobalFeatures(query groove.PipelineQuery, ss stats.StatisticsSource
 	return
 }
 
+// CompactFeatureSVM compacts a feature into a dense format.
+func CompactFeatureSVM(id, index, max byte) byte {
+	c := id + index
+	if id+index <= 1 {
+		return c
+	}
+	switch c {
+	case 0x10:
+		return 0x3
+	case 0x11:
+		return 0x4
+	case 0x20:
+		return 0x5
+	case 0x21:
+		return 0x6
+	case 0x30:
+		return 0x7
+	case 0x31:
+		return 0x8
+	case 0x40:
+		return 0x9
+	default:
+		return 0x0
+	}
+}
+
+// String returns the string of a feature family.
 func (ff FeatureFamily) String() string {
 	var s string
 	for _, f := range ff {
@@ -62,17 +89,24 @@ func (ff FeatureFamily) String() string {
 	return s
 }
 
+// WriteLibSVM writes a LIBSVM compatible line to a writer.
 func (lf LearntFeature) WriteLibSVM(writer io.Writer) (int, error) {
-	features := make(map[int64]float64)
-	for _, feature := range lf.FeatureFamily {
-		index := int64(feature.Id + feature.Index)
-		features[index] = feature.Score
+	line := fmt.Sprintf("%v", lf.Score)
+	for _, f := range lf.FeatureFamily {
+		line += fmt.Sprintf(" %v:%v", CompactFeatureSVM(f.Id, f.Index, f.MaxFeatures), f.Score)
 	}
 
-	line := fmt.Sprintf("%v", lf.Score)
-	for index, value := range features {
-		line += fmt.Sprintf(" %v:%v", index, value)
+	return writer.Write([]byte(line + "\n"))
+}
+
+// WriteLibSVMRank writes a LIBSVM^rank compatible line to a writer.
+func (lf LearntFeature) WriteLibSVMRank(writer io.Writer, topic int64, comment string) (int, error) {
+	line := fmt.Sprintf("%v qid:%v", lf.Score, topic)
+	for _, f := range lf.FeatureFamily {
+		b := CompactFeatureSVM(f.Id, f.Index, f.MaxFeatures)
+		line += fmt.Sprintf(" %v:%v", b+1, f.Score)
 	}
+	line += " # " + comment
 
 	return writer.Write([]byte(line + "\n"))
 }
@@ -125,6 +159,7 @@ func NewFeatureFamily(query groove.PipelineQuery, ss stats.StatisticsSource, fea
 	return ff, nil
 }
 
+// NewTransformedQuery creates a new transformed query.
 func NewTransformedQuery(query groove.PipelineQuery, chain ...cqr.CommonQueryRepresentation) TransformedQuery {
 	return TransformedQuery{
 		QueryChain:    chain,
@@ -132,6 +167,7 @@ func NewTransformedQuery(query groove.PipelineQuery, chain ...cqr.CommonQueryRep
 	}
 }
 
+// NewCandidateQuery creates a new candidate query.
 func NewCandidateQuery(query cqr.CommonQueryRepresentation, ff FeatureFamily) CandidateQuery {
 	return CandidateQuery{
 		FeatureFamily: ff,
