@@ -58,17 +58,32 @@ func main() {
 					var (
 						relRet float64
 						ret    float64
+						//rel float64
 					)
 					if relRet, ok = run.Measurement["num_rel_ret"]; !ok {
 						log.Fatalf("no num_rel_ret in for topic %v", q.Query.Topic)
 					}
-					if ret, ok = run.Measurement["num_rel"]; !ok {
+					if ret, ok = run.Measurement["num_ret"]; !ok {
 						log.Fatalf("no num_rel in for topic %v", q.Query.Topic)
 					}
+					//if rel, ok = run.Measurement["num_rel"]; !ok {
+					//	log.Fatalf("no num_rel in for topic %v", q.Query.Topic)
+					//}
 
-					if q.Query.Eval[eval.NumRelRet.Name()] <= relRet && q.Query.Eval[eval.NumRet.Name()] >= ret {
-						score = 1.0
+					precision := relRet / ret
+					//recall := relRet / rel
+
+					//if q.Query.Eval[eval.NumRelRet.Name()] <= relRet && q.Query.Eval[eval.NumRet.Name()] >= ret {
+					//	score = 1.0
+					//}
+					//
+					if precision >= q.Query.Eval[eval.PrecisionEvaluator.Name()] {
+						score = 1
 					}
+					//if recall >= q.Query.Eval[eval.RecallEvaluator.Name()] {
+					//	score = 1
+					//}
+
 				}
 
 				lf := rewrite.LearntFeature{
@@ -76,7 +91,7 @@ func main() {
 					Score:         score,
 				}
 
-				lf.WriteLibSVM(buff)
+				lf.WriteLibSVM(buff, q.FileName, q.Query.Topic)
 			} else {
 				return
 			}

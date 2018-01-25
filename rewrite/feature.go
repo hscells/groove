@@ -90,10 +90,16 @@ func (ff FeatureFamily) String() string {
 }
 
 // WriteLibSVM writes a LIBSVM compatible line to a writer.
-func (lf LearntFeature) WriteLibSVM(writer io.Writer) (int, error) {
+func (lf LearntFeature) WriteLibSVM(writer io.Writer, comment ...interface{}) (int, error) {
 	line := fmt.Sprintf("%v", lf.Score)
 	for _, f := range lf.FeatureFamily {
 		line += fmt.Sprintf(" %v:%v", CompactFeatureSVM(f.Id, f.Index, f.MaxFeatures), f.Score)
+	}
+	if len(comment) > 0 {
+		line += " #"
+		for _, c := range comment {
+			line += fmt.Sprintf(" %v", c)
+		}
 	}
 
 	return writer.Write([]byte(line + "\n"))

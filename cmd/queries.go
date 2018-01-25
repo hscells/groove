@@ -11,8 +11,9 @@ import (
 
 // Query is used to communicate the deserialized query being sent over a channel.
 type Query struct {
-	Query rewrite.LearntCandidateQuery
-	Error error
+	FileName string
+	Query    rewrite.LearntCandidateQuery
+	Error    error
 }
 
 // LoadQueries loads queries in a directory. The queries are "lazy-loaded" as some directories may contain hundreds of
@@ -42,7 +43,7 @@ func LoadQueries(directory string, q chan Query) {
 		}
 
 		if _, ok := m["topic"]; ok {
-			q <- ValueQuery(m)
+			q <- ValueQuery(m, f.Name())
 		}
 
 	}
@@ -58,7 +59,7 @@ func ErrorQuery(err error) Query {
 
 // ValueQuery is a wrapper for a query. This method will actually construct a query from a map[string]interface{},
 // since it contains a cqr.
-func ValueQuery(m map[string]interface{}) Query {
+func ValueQuery(m map[string]interface{}, filename string) Query {
 	var ff rewrite.FeatureFamily
 	for _, feature := range m["candidate"].(map[string]interface{})["FeatureFamily"].([]interface{}) {
 		var f rewrite.Feature
@@ -80,6 +81,7 @@ func ValueQuery(m map[string]interface{}) Query {
 		},
 	}
 	return Query{
-		Query: lq,
+		FileName: filename,
+		Query:    lq,
 	}
 }

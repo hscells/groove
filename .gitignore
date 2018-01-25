@@ -3,3 +3,6 @@ groove
 
 *.model
 *.features
+*.results
+
+precision/
