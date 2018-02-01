@@ -97,7 +97,7 @@ func RCTFilter(query cqr.CommonQueryRepresentation) Transformation {
 			q = cqr.NewBooleanQuery("and",
 				[]cqr.CommonQueryRepresentation{
 					q, // Original query.
-					cqr.NewBooleanQuery("or", []cqr.CommonQueryRepresentation{// RCT filter.
+					cqr.NewBooleanQuery("or", []cqr.CommonQueryRepresentation{ // RCT filter.
 						cqr.NewKeyword("Randomized Controlled Trials As Topic", "mesh_headings").SetOption("exploded", true),
 						cqr.NewKeyword("Randomized Controlled Trial", "publication_types"),
 						cqr.NewKeyword("Controlled Clinical Trial", "publication_types"),

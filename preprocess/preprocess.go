@@ -22,6 +22,7 @@ func AlphaNum(text string) string {
 	return spaces.ReplaceAllString(alphanum.ReplaceAllString(text, " "), " ")
 }
 
+// StripNumbers removes numbers from a query.
 func StripNumbers(text string) string {
 	return numbers.ReplaceAllString(text, "")
 }

@@ -1,15 +1,15 @@
 package combinator
 
 import (
-	"testing"
+	"fmt"
+	"github.com/hscells/cqr"
+	"github.com/hscells/groove"
+	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
-	"github.com/hscells/transmute/pipeline"
 	"github.com/hscells/transmute/parser"
-	"github.com/hscells/groove"
-	"github.com/hscells/cqr"
-	"github.com/hscells/groove/stats"
-	"fmt"
+	"github.com/hscells/transmute/pipeline"
+	"testing"
 )
 
 func TestLogicalTree(t *testing.T) {

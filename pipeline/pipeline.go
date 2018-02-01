@@ -6,13 +6,13 @@ import (
 	"github.com/TimothyJones/trecresults"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/output"
 	"github.com/hscells/groove/preprocess"
 	"github.com/hscells/groove/query"
+	"github.com/hscells/groove/rewrite"
 	"github.com/hscells/groove/stats"
 	"log"
-	"github.com/hscells/groove/eval"
-	"github.com/hscells/groove/rewrite"
 	"runtime"
 	"sort"
 )
@@ -190,16 +190,14 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 		// Set the limit to how many goroutines can be run.
 		// http://jmoiron.net/blog/limiting-concurrency-in-go/
 		concurrency := runtime.NumCPU()
-		//if pipeline.QueryChain.CandidateSelector != nil && len(pipeline.QueryChain.Transformations) > 0 {
-		//	concurrency = 1
-		//}
+
 		sem := make(chan bool, concurrency)
 		for i, q := range measurementQueries {
 			sem <- true
 			go func(idx int, query groove.PipelineQuery) {
 				defer func() { <-sem }()
 
-				// PipelineQuery chain.
+				// Rewrite the query using a query chain, if one has been specified.
 				if pipeline.QueryChain.CandidateSelector != nil && len(pipeline.QueryChain.Transformations) > 0 {
 					nq, err := pipeline.QueryChain.Execute(query)
 					if err != nil {

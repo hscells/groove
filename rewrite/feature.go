@@ -1,18 +1,18 @@
 package rewrite
 
 import (
-	"github.com/hscells/groove/analysis/preqpp"
-	"github.com/hscells/groove/stats"
+	"fmt"
+	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
-	"github.com/hscells/cqr"
+	"github.com/hscells/groove/analysis/preqpp"
+	"github.com/hscells/groove/stats"
 	"io"
-	"fmt"
 )
 
 // Feature is some value that is applicable to a query transformation.
 type Feature struct {
-	Id          byte
+	ID          byte
 	Index       byte
 	Score       float64
 	MaxFeatures byte
@@ -84,7 +84,7 @@ func CompactFeatureSVM(id, index, max byte) byte {
 func (ff FeatureFamily) String() string {
 	var s string
 	for _, f := range ff {
-		s += fmt.Sprintf("%v:%v ", f.Id+f.Index, f.Score)
+		s += fmt.Sprintf("%v:%v ", f.ID+f.Index, f.Score)
 	}
 	return s
 }
@@ -93,7 +93,7 @@ func (ff FeatureFamily) String() string {
 func (lf LearntFeature) WriteLibSVM(writer io.Writer, comment ...interface{}) (int, error) {
 	line := fmt.Sprintf("%v", lf.Score)
 	for _, f := range lf.FeatureFamily {
-		line += fmt.Sprintf(" %v:%v", CompactFeatureSVM(f.Id, f.Index, f.MaxFeatures), f.Score)
+		line += fmt.Sprintf(" %v:%v", CompactFeatureSVM(f.ID, f.Index, f.MaxFeatures), f.Score)
 	}
 	if len(comment) > 0 {
 		line += " #"
@@ -109,7 +109,7 @@ func (lf LearntFeature) WriteLibSVM(writer io.Writer, comment ...interface{}) (i
 func (lf LearntFeature) WriteLibSVMRank(writer io.Writer, topic int64, comment string) (int, error) {
 	line := fmt.Sprintf("%v qid:%v", lf.Score, topic)
 	for _, f := range lf.FeatureFamily {
-		b := CompactFeatureSVM(f.Id, f.Index, f.MaxFeatures)
+		b := CompactFeatureSVM(f.ID, f.Index, f.MaxFeatures)
 		line += fmt.Sprintf(" %v:%v", b+1, f.Score)
 	}
 	line += " # " + comment
@@ -142,10 +142,10 @@ func (t TransformedQuery) Append(query groove.PipelineQuery) TransformedQuery {
 	return t
 }
 
-// NewFeature is a constructor for a feature.
+// NewFeature16 is a constructor for a feature containing a maximum of 16 features to a feature family.
 func NewFeature16(id byte, index byte, score float64) Feature {
 	return Feature{
-		Id:          id,
+		ID:          id,
 		Index:       index,
 		Score:       score,
 		MaxFeatures: 0xf,

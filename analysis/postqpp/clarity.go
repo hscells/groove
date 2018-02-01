@@ -1,8 +1,8 @@
 package postqpp
 
 import (
-	"github.com/hscells/groove/stats"
 	"github.com/hscells/groove"
+	"github.com/hscells/groove/stats"
 	"gonum.org/v1/gonum/stat"
 )
 

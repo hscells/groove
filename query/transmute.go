@@ -8,8 +8,8 @@ import (
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
 	"io/ioutil"
-	"strconv"
 	"log"
+	"strconv"
 )
 
 var (

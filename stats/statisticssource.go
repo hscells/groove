@@ -2,11 +2,11 @@
 package stats
 
 import (
+	"errors"
 	"github.com/TimothyJones/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"math"
-	"errors"
 )
 
 // SearchOptions are options that the statistics source will use for retrieval.
@@ -23,9 +23,10 @@ type TermVectorTerm struct {
 	Term               string
 }
 
-// TermVectorTerm is a standard format for returning term vectors from statistic sources.
+// TermVector is a standard format for returning term vectors from statistic sources.
 type TermVector []TermVectorTerm
 
+// TermProbability returns a term probability for a term in a language model.
 type TermProbability func(model LanguageModel, term string) float64
 
 // StatisticsSource represents the way statistics are calculated for a collection.
@@ -120,8 +121,8 @@ func NewLanguageModel(source StatisticsSource, docIds []string, scores []float64
 }
 
 // updateTermCountMap updates the count of terms for the language model.
-func (lm *LanguageModel) updateTermCountMap(docId string, weight float64) error {
-	tv, err := lm.StatisticsSource.TermVector(docId)
+func (lm *LanguageModel) updateTermCountMap(docID string, weight float64) error {
+	tv, err := lm.StatisticsSource.TermVector(docID)
 	if err != nil {
 		return err
 	}

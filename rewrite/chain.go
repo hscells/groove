@@ -2,18 +2,18 @@
 package rewrite
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/TimothyJones/trecresults"
 	"github.com/hscells/groove"
-	"github.com/hscells/groove/stats"
-	"log"
 	"github.com/hscells/groove/combinator"
-	"io/ioutil"
-	"fmt"
-	"encoding/json"
 	"github.com/hscells/groove/eval"
-	"time"
+	"github.com/hscells/groove/stats"
+	"io/ioutil"
+	"log"
 	"runtime"
 	"runtime/debug"
+	"time"
 )
 
 // QueryChain contains implementations for transformations to apply to a query and the selector to pick a candidate.
@@ -113,6 +113,20 @@ type OracleQueryChainCandidateSelector struct {
 	seen map[uint64]combinator.LogicalTreeNode
 }
 
+func writeQuery(query groove.PipelineQuery, depth int, candidate CandidateQuery, evaluation map[string]float64) error {
+	f := fmt.Sprintf("chain/%v", combinator.HashCQR(query.Query))
+	b, err := json.MarshalIndent(map[string]interface{}{
+		"topic":     query.Topic,
+		"depth":     depth,
+		"candidate": candidate,
+		"eval":      evaluation,
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(f, b, 0644)
+}
+
 // Select is a grid search for the best possible query transformation chain.
 func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, transformations []Transformation) (TransformedQuery, QueryChainCandidateSelector, error) {
 	oc.depth++
@@ -139,12 +153,14 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 		}
 		oc.bestRelRet = evaluation[eval.NumRelRet.Name()]
 		oc.bestRet = evaluation[eval.NumRet.Name()]
+		writeQuery(query.PipelineQuery, oc.depth, NewCandidateQuery(query.PipelineQuery.Query, FeatureFamily{}), evaluation)
 	}
 
 	bestRelRet, bestRet := oc.bestRelRet, oc.bestRet
 	log.Printf("topic %v - RR %v, RL %v\n", query.PipelineQuery.Topic, oc.bestRelRet, oc.bestRet)
 
 	// Apply the transformations to all of the queries.
+	var transformed groove.PipelineQuery
 	for _, transformation := range transformations {
 
 		start := time.Now()
@@ -177,37 +193,18 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 				return query, oc, err
 			}
 
-			//fmt.Println(json.MarshalIndent(applied, "", "  "))
+			// Now we can transform the results of the logical tree into results to be evaluated.
 			results := tree.Documents().Results(nq, nq.Name)
-			//
-			//log.Printf("topic %v - %v ? %v\n", nq.Topic, resultSize, oc.minResults)
-			//if resultSize == 0 || resultSize > 100000 || resultSize >= oc.minResults {
-			//	continue
-			//}
 
-			// Now, using an oracle heuristic, get the precision and recall for all of the transformations.
-			//results, err := oc.ss.Execute(nq, oc.ss.SearchOptions())
-			//if err != nil {
-			//	continue
-			//}
-
+			// Evaluate the results using qrels.
 			evaluation := eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results, oc.qrels, query.PipelineQuery.Topic)
 			numRelRet := evaluation[eval.NumRelRet.Name()]
 			numRet := evaluation[eval.NumRet.Name()]
 
 			// Write the query out to a file.
-			f := fmt.Sprintf("chain/%v", combinator.HashCQR(nq.Query))
-			b, err := json.MarshalIndent(map[string]interface{}{
-				"topic":     nq.Topic,
-				"depth":     oc.depth,
-				"candidate": applied,
-				"eval":      evaluation,
-			}, "", "  ")
-			if err != nil {
-				return query, nil, err
-			}
-			ioutil.WriteFile(f, b, 0644)
-			log.Printf("topic %v - wrote query to %v", nq.Topic, f)
+			writeQuery(nq, oc.depth, applied, evaluation)
+
+			log.Printf("topic %v - wrote query to %v", nq.Topic, combinator.HashCQR(nq.Query))
 
 			if numRelRet > 0 && numRelRet >= bestRelRet && numRet <= bestRet {
 				bestRelRet = numRelRet
@@ -215,8 +212,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 				oc.bestRelRet = bestRelRet
 				oc.bestRet = bestRet
 				log.Printf("topic %v - P %v, R %v, %v %v, %v %v, %v %v\n", query.PipelineQuery.Topic, evaluation[eval.PrecisionEvaluator.Name()], evaluation[eval.RecallEvaluator.Name()], eval.NumRel.Name(), evaluation[eval.NumRel.Name()], eval.NumRet.Name(), evaluation[eval.NumRet.Name()], eval.NumRelRet.Name(), evaluation[eval.NumRelRet.Name()])
-				transformed := groove.NewPipelineQuery(query.PipelineQuery.Name, query.PipelineQuery.Topic, applied.Query)
-				query = query.Append(transformed)
+				transformed = groove.NewPipelineQuery(query.PipelineQuery.Name, query.PipelineQuery.Topic, applied.Query)
 			}
 
 			log.Printf("topic %v - query took %v minutes; features: %v", nq.Topic, time.Now().Sub(start).Minutes(), applied.FeatureFamily.String())
@@ -227,6 +223,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, trans
 			debug.PrintStack()
 		}
 	}
+	query = query.Append(transformed)
 	return query, oc, nil
 }
 
@@ -241,7 +238,7 @@ func (oc OracleQueryChainCandidateSelector) Finalise() {
 }
 
 // StoppingCriteria defines stopping criteria.
-func (oc OracleQueryChainCandidateSelector) StoppingCriteria() (bool) {
+func (oc OracleQueryChainCandidateSelector) StoppingCriteria() bool {
 	if oc.depth >= 5 || (oc.bestRelRet == oc.bestRelRet && oc.bestRet == oc.prevRet) {
 		return true
 	}

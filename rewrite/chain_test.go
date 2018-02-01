@@ -1,19 +1,19 @@
 package rewrite
 
 import (
-	"testing"
+	"bytes"
+	"fmt"
+	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/cqr"
+	"github.com/hscells/groove"
+	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
-	"github.com/hscells/transmute/pipeline"
 	"github.com/hscells/transmute/parser"
-	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/transmute/pipeline"
 	"io/ioutil"
-	"bytes"
-	"github.com/hscells/groove"
-	"github.com/hscells/cqr"
-	"fmt"
-	"github.com/hscells/groove/eval"
+	"testing"
 )
 
 func TestOracleQueryChainSelector_Select(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"strconv"
 )
 
+// KeywordQuerySource is a source of queries that contain only one "string".
 type KeywordQuerySource struct {
 	fields []string
 }
@@ -38,6 +39,7 @@ func (kw KeywordQuerySource) Load(directory string) ([]groove.PipelineQuery, err
 	return queries, nil
 }
 
+// NewKeywordQuerySource creates a new keyword query source with the specified fields.
 func NewKeywordQuerySource(fields ...string) KeywordQuerySource {
 	return KeywordQuerySource{fields: fields}
 }

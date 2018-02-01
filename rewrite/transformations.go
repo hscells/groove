@@ -1,12 +1,12 @@
 package rewrite
 
 import (
+	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/analysis"
-	"strings"
-	"strconv"
-	"fmt"
 	"github.com/hscells/meshexp"
+	"strconv"
+	"strings"
 )
 
 // Transformation is applied to a query to generate a set of query candidates.
@@ -22,12 +22,17 @@ type fieldRestrictions struct{}
 type adjacencyReplacement struct{}
 
 var (
+	// LogicalOperatorReplacement is a logical operator replacement feature.
 	LogicalOperatorReplacement = logicalOperatorReplacement{}
-	AdjacencyRange             = adjacencyRange{}
-	MeSHExplosion              = meshExplosion{}
-	FieldRestrictions          = fieldRestrictions{}
-	AdjacencyReplacement       = adjacencyReplacement{}
-	d, _                       = meshexp.Default()
+	// AdjacencyRange is an adjacency range feature.
+	AdjacencyRange = adjacencyRange{}
+	// MeSHExplosion is a MeSH explosion feature.
+	MeSHExplosion = meshExplosion{}
+	// FieldRestrictions is a field restrictions feature.
+	FieldRestrictions = fieldRestrictions{}
+	// AdjacencyReplacement is an adjacency replacement feature.
+	AdjacencyReplacement = adjacencyReplacement{}
+	d, _                 = meshexp.Default()
 )
 
 // invert switches logical operators for a Boolean query.

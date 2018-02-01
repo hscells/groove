@@ -4,6 +4,8 @@ groove
 *.model
 *.features
 *.results
+*.json
+*.csv
 
 precision_c/
 precision_r/

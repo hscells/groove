@@ -1,12 +1,12 @@
 package preprocess
 
 import (
+	"fmt"
 	"github.com/hscells/cqr"
+	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/stats"
 	"log"
 	"strings"
-	"fmt"
-	"github.com/hscells/groove/analysis"
 )
 
 // ElasticsearchTransformation is a specific transformation that uses an Elasticsearch statistics source.

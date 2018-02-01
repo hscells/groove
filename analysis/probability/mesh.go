@@ -1,9 +1,9 @@
 package probability
 
 import (
-	"github.com/hscells/groove/stats"
-	"github.com/hscells/groove"
 	"github.com/hscells/cqr"
+	"github.com/hscells/groove"
+	"github.com/hscells/groove/stats"
 	"math"
 )
 

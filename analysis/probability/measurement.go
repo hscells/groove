@@ -2,9 +2,9 @@
 package probability
 
 import (
+	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/groove"
 )
 
 // Probability computes the likelihood of a Measurement affecting precision and recall. For this interface

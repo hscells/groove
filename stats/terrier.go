@@ -46,7 +46,7 @@ func (t TerrierStatisticsSource) Parameters() map[string]float64 {
 // TODO implement this.
 func (t TerrierStatisticsSource) TermFrequency(term, document string) (float64, error) {
 	panic("implement me")
-	docId, err := strconv.Atoi(document)
+	docID, err := strconv.Atoi(document)
 	if err != nil {
 		return 0.0, err
 	}
@@ -66,7 +66,7 @@ func (t TerrierStatisticsSource) TermFrequency(term, document string) (float64, 
 		return 0.0, err
 	}
 	documentIndex := documentIndexRef.(*jnigi.ObjectRef)
-	documentEntry, err := documentIndex.CallMethod(t.env, "getDocumentEntry", "org/terrier/structures/DocumentIndexEntry", docId)
+	documentEntry, err := documentIndex.CallMethod(t.env, "getDocumentEntry", "org/terrier/structures/DocumentIndexEntry", docID)
 
 	postingsRef, err := posting.CallMethod(t.env, "getPostings", "org/terrier/structures/postings/IterablePosting", documentEntry)
 	if err != nil {
@@ -152,7 +152,7 @@ func (t TerrierStatisticsSource) VocabularySize() (float64, error) {
 // Execute issues a query to terrier.
 func (t TerrierStatisticsSource) Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error) {
 	var (
-		scores, docIds []int64
+		scores, docIDs []int64
 		N              int
 	)
 	trecResultSet := trecresults.ResultList{}
@@ -181,9 +181,9 @@ func (t TerrierStatisticsSource) Execute(query groove.PipelineQuery, options Sea
 	}
 
 	// Cast everything to Go.
-	docIds = make([]int64, N)
-	for i, docId := range docIdsRef.([]interface{}) {
-		docIds[i] = docId.(int64)
+	docIDs = make([]int64, N)
+	for i, docID := range docIdsRef.([]interface{}) {
+		docIDs[i] = docID.(int64)
 	}
 
 	scores = make([]int64, N)
@@ -197,7 +197,7 @@ func (t TerrierStatisticsSource) Execute(query groove.PipelineQuery, options Sea
 		trecResultSet[i] = &trecresults.Result{
 			Topic:     query.Topic,
 			Iteration: "Q0",
-			DocId:     strconv.FormatInt(docIds[i], 10),
+			DocId:     strconv.FormatInt(docIDs[i], 10),
 			Rank:      int64(i),
 			Score:     float64(scores[i]),
 			RunName:   options.RunName,
@@ -236,8 +236,8 @@ func search(env *jnigi.Env, query cqr.CommonQueryRepresentation, options SearchO
 	if err != nil {
 		log.Fatal(err)
 	}
-	jQueryId, err := env.NewObject("java/lang/String", []byte(options.RunName))
-	srqRef, err := t.queryManager.CallMethod(env, "newSearchRequest", "org/terrier/querying/SearchRequest", jQueryId, jQuery)
+	jQueryID, err := env.NewObject("java/lang/String", []byte(options.RunName))
+	srqRef, err := t.queryManager.CallMethod(env, "newSearchRequest", "org/terrier/querying/SearchRequest", jQueryID, jQuery)
 	if err != nil {
 		return nil, err
 	}

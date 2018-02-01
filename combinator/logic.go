@@ -3,19 +3,22 @@ package combinator
 
 import (
 	"fmt"
-	"github.com/hscells/cqr"
-	"hash/fnv"
-	"github.com/hscells/groove/stats"
-	"github.com/hscells/groove"
-	"strings"
-	"github.com/pkg/errors"
 	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/cqr"
+	"github.com/hscells/groove"
+	"github.com/hscells/groove/stats"
+	"github.com/pkg/errors"
+	"hash/fnv"
 	"strconv"
+	"strings"
 )
 
 var (
-	OrOperator  = orOperator{}
+	// OrOperator combines documents using `OR`.
+	OrOperator = orOperator{}
+	// AndOperator combines documents using `AND`.
 	AndOperator = andOperator{}
+	// NotOperator combines documents using `NOT`.
 	NotOperator = notOperator{}
 )
 
@@ -77,6 +80,7 @@ type orOperator struct {
 type notOperator struct {
 }
 
+// Results converts the documents from the resulting logical operator tree into eval-compatible trec results.
 func (d Documents) Results(query groove.PipelineQuery, run string) trecresults.ResultList {
 	r := make(trecresults.ResultList, len(d))
 	for i, doc := range d {
@@ -215,18 +219,22 @@ func (notOperator) String() string {
 	return "not"
 }
 
+// Query returns the underlying query of the combinator.
 func (c Combinator) Query() cqr.CommonQueryRepresentation {
 	return c.Clause.Query
 }
 
+// Query returns the underlying query of the atom.
 func (a Atom) Query() cqr.CommonQueryRepresentation {
 	return a.Clause.Query
 }
 
+// Query returns the underlying query of the adjacency operator.
 func (a AdjAtom) Query() cqr.CommonQueryRepresentation {
 	return a.Clause.Query
 }
 
+// String returns the string representation of the documents.
 func (d Document) String() string {
 	return fmt.Sprintf("%v", d)
 }
@@ -274,7 +282,10 @@ func HashCQR(representation cqr.CommonQueryRepresentation) uint64 {
 	return h.Sum64()
 }
 
-// constructTree creates a logical tree recursively by descending top down.
+// constructTree creates a logical tree recursively by descending top down. If the operator of the query is unknown
+// (i.e. it is not one of `or`, `and`, `not`, or an `adj` operator) the default operator will be `or`.
+//
+// Note that once one tree has been constructed, the returned map can be used to save processing.
 func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen map[uint64]LogicalTreeNode) (LogicalTreeNode, map[uint64]LogicalTreeNode, error) {
 	if seen == nil {
 		seen = make(map[uint64]LogicalTreeNode)
@@ -334,23 +345,27 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen m
 			a := NewAdjAtom(q, docs)
 			seen[a.Hash] = a
 			return a, seen, nil
-		} else {
-			clauses := make([]LogicalTreeNode, len(q.Children))
-			for i, child := range q.Children {
-				var err error
-				clauses[i], seen, err = constructTree(groove.NewPipelineQuery(query.Name, query.Topic, child), ss, seen)
-				if err != nil {
-					return nil, seen, err
-				}
-			}
-			c := NewCombinator(q, operator, clauses...)
-			return c, seen, nil
 		}
+
+		// Otherwise, we can just perform the operation with a typical operator.
+		clauses := make([]LogicalTreeNode, len(q.Children))
+		for i, child := range q.Children {
+			var err error
+			clauses[i], seen, err = constructTree(groove.NewPipelineQuery(query.Name, query.Topic, child), ss, seen)
+			if err != nil {
+				return nil, seen, err
+			}
+		}
+		c := NewCombinator(q, operator, clauses...)
+		return c, seen, nil
 	}
 	return nil, nil, errors.New("supplied query is not supported")
 }
 
-// NewLogicalTree creates a new logical tree.
+// NewLogicalTree creates a new logical tree.  If the operator of the query is unknown
+// (i.e. it is not one of `or`, `and`, `not`, or an `adj` operator) the default operator will be `or`.
+//
+// Note that once one tree has been constructed, the returned map can be used to save processing.
 func NewLogicalTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen map[uint64]LogicalTreeNode) (LogicalTree, map[uint64]LogicalTreeNode, error) {
 	if seen == nil {
 		seen = make(map[uint64]LogicalTreeNode)
@@ -364,6 +379,7 @@ func NewLogicalTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen 
 	}, seen, nil
 }
 
+// Documents returns the documents that the tree (query) would return if executed.
 func (root LogicalTree) Documents() Documents {
 	switch c := root.Root.(type) {
 	case Atom:
