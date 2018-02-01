@@ -5,4 +5,15 @@ groove
 *.features
 *.results
 
-precision/
+precision_c/
+precision_r/
+recall_c/
+recall_r/
+f05_r/
+f05_c/
+f1_r/
+f1_c/
+f3_r/
+f3_c/
+wss_c/
+wss_r/

@@ -1,17 +1,44 @@
 package main
 
 import (
-	"github.com/alexflint/go-arg"
-	"log"
-	"github.com/ewalker544/libsvm-go"
+	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
-	"math"
-	"runtime"
+	"github.com/alexflint/go-arg"
+	"github.com/hscells/groove/cmd"
+	"github.com/hscells/trecrun"
+	"io/ioutil"
+	"log"
+	"os"
+	"os/exec"
+	"path"
+	"sort"
+	"strconv"
 )
 
+type result struct {
+	Topic     int64
+	Measure   float64
+	Baseline  float64
+	NumRet    float64
+	NumRel    float64
+	NumRelRet float64
+}
+
+type ranking struct {
+	Rank float64
+	cmd.Feature
+}
+
 type args struct {
-	FeatureFile string `arg:"help:File containing features.,required"`
-	ModelFile   string `arg:"help:File to output model to.,required"`
+	FeatureFile string  `arg:"help:File containing features.,required"`
+	ResultFile  string  `arg:"help:File to output results to.,required"`
+	Queries     string  `arg:"help:Path to queries.,required"`
+	Measure     string  `arg:"help:Measure to optimise.,required"`
+	RunFile     string  `arg:"help:Path to trec_eval run file.,required"`
+	FeatureDir  string  `arg:"help:Directory to output features to.,required"`
+	N           float64 `arg:"help:Number of documents in collection (default is 26758795)."`
 }
 
 func (args) Version() string {
@@ -33,68 +60,116 @@ var (
 	Gamma = param{3, -15, -0.5}
 )
 
-func setParam(c, gamma float64, problem *libSvm.Parameter) {
-	problem.C = c
-	problem.Gamma = gamma
-}
-
 func main() {
 	// Parse the command line arguments.
 	var args args
 	arg.MustParse(&args)
 
-	param := libSvm.NewParameter()
-	param.SvmType = libSvm.C_SVC
-	param.KernelType = libSvm.RBF
-	param.NumCPU = runtime.NumCPU()
+	if args.N > 0 {
+		cmd.N = args.N
+	}
 
-	problem, err := libSvm.NewProblem(args.FeatureFile, param)
+	topics := cmd.LoadAllQueriesForRanking(args.Queries, args.Measure)
+	r, err := os.Open(args.RunFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer r.Close()
+
+	rf, err := trecrun.RunsFromReader(r)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	bestMSQ := math.Inf(1)
-	bestC, bestGamma := 0.0, 0.0
-
-	for c := C.begin; c < C.end; c += C.step {
-		for gamma := Gamma.end; gamma < Gamma.begin; gamma -= Gamma.step {
-			setParam(c, gamma, param)
-
-			fmt.Printf("C: %v Gamma: %v\n", param.C, param.Gamma)
-
-			targets := libSvm.CrossValidation(problem, param, 5)
-			squareErr := libSvm.NewSquareErrorComputer()
-
-			var i = 0
-			for problem.Begin(); !problem.Done(); problem.Next() {
-				y, _ := problem.GetLine()
-				v := targets[i]
-				squareErr.Sum(v, y)
-				i++
-			}
-
-			fmt.Printf("Cross Validation Mean squared error = %.6g\n", squareErr.MeanSquareError())
-			fmt.Printf("Cross Validation Squared correlation coefficient = %.6g\n", squareErr.SquareCorrelationCoeff())
-			if squareErr.MeanSquareError() < bestMSQ {
-				bestMSQ = squareErr.MeanSquareError()
-				bestC = c
-				bestGamma = gamma
+	for i := range topics {
+		testF, err := os.OpenFile(path.Join(args.FeatureDir, fmt.Sprintf("%v.%v", strconv.FormatInt(i, 10), "test")), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+		testBuff := bytes.NewBufferString("")
+		train := make(map[int64][]cmd.Feature)
+		for k, queries := range topics {
+			if k != i {
+				train[k] = queries
+			} else {
+				for j, q := range cmd.SortFeatures(queries) {
+					q.WriteLibSVMRank(testBuff, q.Topic, fmt.Sprintf("%v_%v %v", i, j+1, q.FileName))
+				}
 			}
 		}
+
+		cmd.WriteFeatures(train, path.Join(args.FeatureDir, fmt.Sprintf("%v.%v", strconv.FormatInt(i, 10), "train")))
+		fmt.Println(i)
+		testF.Write(testBuff.Bytes())
+		testF.Close()
 	}
 
-	param.C = bestC
-	param.Gamma = bestGamma
+	os.Exit(1)
+	results := make([]result, len(topics))
 
-	fmt.Printf("best msq: %v best c: %v best gamma: %v\n", bestMSQ, param.C, param.Gamma)
-	fmt.Printf("best msq: %v best c: %v best gamma: %v\n", bestMSQ, bestC, bestGamma)
+	for topic, features := range topics {
+		log.Println(topic)
 
-	model := libSvm.NewModel(param)
-	model.Train(problem)
+		log.Println("learning")
+		ex := exec.Command("svm_rank_learn", "-c", "1", path.Join(args.FeatureDir, fmt.Sprintf("%v.train", topic)), path.Join(args.FeatureDir, fmt.Sprintf("%v.model", topic)))
+		err := ex.Run()
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	fmt.Println(model.Predict(map[int]float64{0: 2.0, 1: 1.0}))
+		log.Println("predicting")
+		ex = exec.Command("svm_rank_classify", path.Join(args.FeatureDir, fmt.Sprintf("%v.test", topic)), path.Join(args.FeatureDir, fmt.Sprintf("%v.model", topic)), path.Join(args.FeatureDir, fmt.Sprintf("%v.predictions", topic)))
+		err = ex.Run()
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	err = model.Dump(args.ModelFile)
+		log.Println("analysing")
+		// Load the file containing the learnt feature.
+		b, err := ioutil.ReadFile(path.Join(args.FeatureDir, fmt.Sprintf("%v.predictions", topic)))
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		scanner := bufio.NewScanner(bytes.NewBuffer(b))
+		i := 0
+		ranks := make([]ranking, len(features))
+		for scanner.Scan() {
+			r, err := strconv.ParseFloat(scanner.Text(), 64)
+			if err != nil {
+				log.Fatal(err)
+			}
+			ranks[i] = ranking{
+				r,
+				features[i],
+			}
+			i++
+		}
+
+		sort.Slice(ranks, func(i, j int) bool {
+			return ranks[i].Rank > ranks[j].Rank
+		})
+
+		measure := ranks[0].Score
+		baseline := cmd.GetMeasurement(args.Measure, rf.Runs[topic])
+
+		e := ranks[0].Eval
+		results = append(results, result{topic, measure, baseline,
+			e["NumRet"], e["NumRel"], e["NumRelRet"]})
+
+		fmt.Println("--------------------------------------------------------")
+		fmt.Printf("topic:                 %v\n", topic)
+		fmt.Printf("baseline:              %v\n", baseline)
+		fmt.Printf("measure:               %v\n", measure)
+	}
+
+	b, err := json.MarshalIndent(results, "", "  ")
+	if err != nil {
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	err = ioutil.WriteFile(args.ResultFile, b, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}

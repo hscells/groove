@@ -1,21 +1,23 @@
 package main
 
 import (
-	"github.com/alexflint/go-arg"
-	"log"
-	"github.com/hscells/groove/rewrite"
-	"github.com/hscells/groove/eval"
 	"bytes"
-	"io/ioutil"
-	"github.com/hscells/trecrun"
-	"os"
+	"fmt"
+	"github.com/alexflint/go-arg"
 	"github.com/hscells/groove/cmd"
+	"github.com/hscells/groove/rewrite"
+	"github.com/hscells/trecrun"
+	"io/ioutil"
+	"log"
+	"os"
 )
 
 type args struct {
-	Queries     string `arg:"help:Path to queries.,required"`
-	RunFile     string `arg:"help:Path to trec_eval run file.,required"`
-	FeatureFile string `arg:"help:File to output features to.,required"`
+	Queries     string  `arg:"help:Path to queries.,required"`
+	RunFile     string  `arg:"help:Path to trec_eval run file.,required"`
+	Measure     string  `arg:"help:Measure to optimise.,required"`
+	FeatureFile string  `arg:"help:File to output features to.,required"`
+	N           float64 `arg:"help:Number of documents in collection (default is 26758795)."`
 }
 
 func (args) Version() string {
@@ -31,7 +33,9 @@ func main() {
 	var args args
 	arg.MustParse(&args)
 
-	queries := make(chan cmd.Query)
+	if args.N > 0 {
+		cmd.N = args.N
+	}
 
 	buff := bytes.NewBufferString("")
 
@@ -44,6 +48,10 @@ func main() {
 		log.Fatal(err)
 	}
 
+	queries := make(chan cmd.Query)
+
+	topics := make(map[int64][]cmd.Feature)
+
 	go func() {
 		for {
 			q, more := <-queries
@@ -55,43 +63,19 @@ func main() {
 				score := 0.0
 
 				if run, ok := rf.Runs[q.Query.Topic]; ok {
-					var (
-						relRet float64
-						ret    float64
-						//rel float64
-					)
-					if relRet, ok = run.Measurement["num_rel_ret"]; !ok {
-						log.Fatalf("no num_rel_ret in for topic %v", q.Query.Topic)
-					}
-					if ret, ok = run.Measurement["num_ret"]; !ok {
-						log.Fatalf("no num_rel in for topic %v", q.Query.Topic)
-					}
-					//if rel, ok = run.Measurement["num_rel"]; !ok {
-					//	log.Fatalf("no num_rel in for topic %v", q.Query.Topic)
-					//}
-
-					precision := relRet / ret
-					//recall := relRet / rel
-
-					//if q.Query.Eval[eval.NumRelRet.Name()] <= relRet && q.Query.Eval[eval.NumRet.Name()] >= ret {
-					//	score = 1.0
-					//}
-					//
-					if precision >= q.Query.Eval[eval.PrecisionEvaluator.Name()] {
-						score = 1
-					}
-					//if recall >= q.Query.Eval[eval.RecallEvaluator.Name()] {
-					//	score = 1
-					//}
-
+					score = cmd.ScoreMeasurement(args.Measure, q.Query.Eval, run)
 				}
 
-				lf := rewrite.LearntFeature{
-					FeatureFamily: q.Query.Candidate.FeatureFamily,
-					Score:         score,
+				lf := cmd.Feature{
+					Topic:    q.Query.Topic,
+					Depth:    q.Query.Depth,
+					FileName: q.FileName,
+					LearntFeature: rewrite.LearntFeature{
+						FeatureFamily: q.Query.Candidate.FeatureFamily,
+						Score:         score,
+					},
 				}
-
-				lf.WriteLibSVM(buff, q.FileName, q.Query.Topic)
+				topics[q.Query.Topic] = append(topics[q.Query.Topic], lf)
 			} else {
 				return
 			}
@@ -99,6 +83,34 @@ func main() {
 	}()
 
 	cmd.LoadQueries(args.Queries, queries)
+
+	for _, features := range topics {
+		// Find the max depth that this query has.
+		var maxDepth int64
+		for _, f := range features {
+			if f.Depth > maxDepth {
+				maxDepth = f.Depth
+			}
+		}
+
+		var ff rewrite.FeatureFamily
+		for depth := 0; int64(depth) < maxDepth; depth++ {
+			f := cmd.BestFeatureAt(int64(depth), features)
+			ff = f.FeatureFamily
+			fmt.Println(depth, ff)
+			for i, f := range features {
+				if f.Depth == int64(depth+1) {
+					features[i].FeatureFamily = append(f.FeatureFamily, ff...)
+				}
+			}
+		}
+	}
+
+	for _, features := range topics {
+		for _, f := range features {
+			f.WriteLibSVM(buff, f.FileName, f.Topic)
+		}
+	}
 
 	ioutil.WriteFile(args.FeatureFile, buff.Bytes(), 0644)
 }

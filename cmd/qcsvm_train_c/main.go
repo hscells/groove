@@ -1,35 +1,36 @@
 package main
 
 import (
-	"github.com/alexflint/go-arg"
-	"log"
-	"github.com/ewalker544/libsvm-go"
-	"fmt"
-	"math"
-	"runtime"
-	"io"
 	"bufio"
-	"strings"
-	"errors"
-	"strconv"
-	"io/ioutil"
-	"path"
-	"encoding/json"
-	"github.com/hscells/groove/cmd"
-	"os"
 	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/alexflint/go-arg"
+	"github.com/ewalker544/libsvm-go"
+	"github.com/hscells/groove/cmd"
+	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/rewrite"
 	"github.com/hscells/trecrun"
-	"github.com/hscells/groove/eval"
+	"io"
+	"io/ioutil"
+	"log"
+	"math"
+	"os"
+	"path"
+	"runtime"
+	"strconv"
+	"strings"
 )
 
 type args struct {
-	FeatureFile string `arg:"help:File containing features.,required"`
-	ResultFile  string `arg:"help:File to output results to.,required"`
-	Queries     string `arg:"help:Path to queries.,required"`
-	Measure     string `arg:"help:Measure to optimise.,required"`
-	RunFile     string `arg:"help:Path to trec_eval run file.,required"`
-	FeatureDir  string `arg:"help:Directory to output features to.,required"`
+	FeatureFile string  `arg:"help:File containing features.,required"`
+	ResultFile  string  `arg:"help:File to output results to.,required"`
+	Queries     string  `arg:"help:Path to queries.,required"`
+	Measure     string  `arg:"help:Measure to optimise.,required"`
+	RunFile     string  `arg:"help:Path to trec_eval run file.,required"`
+	FeatureDir  string  `arg:"help:Directory to output features to.,required"`
+	N           float64 `arg:"help:Number of documents in collection (default is 26758795)."`
 }
 
 func (args) Version() string {
@@ -46,7 +47,13 @@ type param struct {
 	step  float64
 }
 
-type result struct {
+type query struct {
+	Target     float64
+	Prediction float64
+	Query      string
+}
+
+type Result struct {
 	Tp        int
 	Tn        int
 	Fp        int
@@ -54,54 +61,22 @@ type result struct {
 	Topic     int64
 	Precision float64
 	Recall    float64
-	Accuracy  float64
+	NumRel    float64
+	NumRet    float64
+	NumRelRet float64
 	Measure   float64
+	Queries   []query
+}
+
+func (r Result) String() string {
+	return fmt.Sprintf("%v,%v,%v,%v,%v,%v,%v,%v,%v,%v", r.Topic, r.Tp, r.Tn, r.Fp, r.Fn, r.Precision, r.Recall, r.NumRet, r.NumRelRet, r.Measure)
 }
 
 // https://github.com/cjlin1/libsvm/blob/master/tools/grid.py
 var (
-	C     = param{1, 7, 2}
-	Gamma = param{5, 1, -2}
+	C     = param{1, 5, 2}
+	Gamma = param{3, 1, -2}
 )
-
-func toTrecEval(measurement string, e map[string]float64, run trecrun.Run) float64 {
-	var (
-		relRet float64
-		ret    float64
-		rel    float64
-		ok     bool
-	)
-	if relRet, ok = run.Measurement["num_rel_ret"]; !ok {
-		log.Fatalf("no num_rel_ret in for Topic %v", run.Topic)
-	}
-	if ret, ok = run.Measurement["num_ret"]; !ok {
-		log.Fatalf("no num_rel in for Topic %v", run.Topic)
-	}
-	if rel, ok = run.Measurement["num_rel"]; !ok {
-		log.Fatalf("no num_rel in for Topic %v", run.Topic)
-	}
-
-	precision := relRet / ret
-	recall := relRet / rel
-
-	switch measurement {
-	default:
-		return 0
-	case "NumRelRet":
-		if e[eval.NumRelRet.Name()] <= relRet && e[eval.NumRet.Name()] >= ret {
-			return 1
-		}
-	case "Precision":
-		if precision >= e[eval.PrecisionEvaluator.Name()] {
-			return 1
-		}
-	case "Recall":
-		if recall >= e[eval.RecallEvaluator.Name()] {
-			return 1
-		}
-	}
-	return 0
-}
 
 func extractMeasures(reader io.Reader, directory string) (map[int64][]cmd.Query, error) {
 	topics := make(map[int64][]cmd.Query)
@@ -159,6 +134,10 @@ func main() {
 	var args args
 	arg.MustParse(&args)
 
+	if args.N > 0 {
+		cmd.N = args.N
+	}
+
 	// Load the query information.
 	f, err := os.Open(args.FeatureFile)
 	if err != nil {
@@ -182,25 +161,47 @@ func main() {
 		log.Fatal(err)
 	}
 
+	for topic, queries := range topics {
+		var maxDepth int64
+		for _, query := range queries {
+			if query.Query.Depth > maxDepth {
+				maxDepth = query.Query.Depth
+			}
+		}
+
+		var ff rewrite.FeatureFamily
+		for depth := 0; int64(depth) < maxDepth; depth++ {
+			query := cmd.BestQueryAt(int64(depth), queries, args.Measure)
+			ff = query.Query.Candidate.FeatureFamily
+			for j, innerQuery := range queries {
+				if innerQuery.Query.Depth == int64(depth+1) {
+					topics[topic][j].Query.Candidate.FeatureFamily = append(innerQuery.Query.Candidate.FeatureFamily, ff...)
+				}
+			}
+		}
+	}
+
 	for i := range topics {
 		f, err := os.OpenFile(path.Join(args.FeatureDir, strconv.FormatInt(i, 10)), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
 			log.Fatal(err)
 		}
 		buff := bytes.NewBufferString("")
-		for k, v := range topics {
+		for k, queries := range topics {
 			if k != i {
-				for _, q := range v {
+				for _, q := range queries {
 					var score float64
 					if run, ok := rf.Runs[q.Query.Topic]; ok {
-						score = toTrecEval(args.Measure, q.Query.Eval, run)
+						score = cmd.ScoreMeasurement(args.Measure, q.Query.Eval, run)
 					} else {
 						fmt.Println("Topic not found", q.Query.Topic)
 					}
+
 					rewrite.LearntFeature{q.Query.Candidate.FeatureFamily, score}.WriteLibSVM(buff)
 				}
 			}
 		}
+		fmt.Println(i)
 		f.Write(buff.Bytes())
 		f.Close()
 	}
@@ -210,13 +211,14 @@ func main() {
 	param.KernelType = libSvm.RBF
 	param.NumCPU = runtime.NumCPU()
 
-	bestMSQ := math.Inf(1)
-	bestC, bestGamma := 0.0, 0.0
-
-	results := make([]result, len(topics))
+	results := make([]Result, len(topics))
 
 	topicN := 0
-	for topic, v := range topics {
+	for topic, queries := range topics {
+		bestMSQ := math.Inf(1)
+		bestC, bestGamma := 1.0, 1.0
+		gamma := 1.0
+
 		log.Println(topic)
 		// The set of all topics minus T_i.
 		problem, err := libSvm.NewProblem(path.Join(args.FeatureDir, strconv.FormatInt(topic, 10)), param)
@@ -225,30 +227,30 @@ func main() {
 		}
 
 		for c := C.begin; c < C.end; c += C.step {
-			for gamma := Gamma.end; gamma < Gamma.begin; gamma -= Gamma.step {
-				setParam(c, gamma, param)
+			//for gamma := Gamma.end; gamma < Gamma.begin; gamma -= Gamma.step {
+			setParam(c, gamma, param)
 
-				fmt.Printf("C: %v Gamma: %v\n", param.C, param.Gamma)
+			fmt.Printf("C: %v Gamma: %v\n", param.C, param.Gamma)
 
-				targets := libSvm.CrossValidation(problem, param, 5)
-				squareErr := libSvm.NewSquareErrorComputer()
+			targets := libSvm.CrossValidation(problem, param, 5)
+			squareErr := libSvm.NewSquareErrorComputer()
 
-				var i = 0
-				for problem.Begin(); !problem.Done(); problem.Next() {
-					y, _ := problem.GetLine()
-					v := targets[i]
-					squareErr.Sum(v, y)
-					i++
-				}
-
-				fmt.Printf("Cross Validation Mean squared error = %.6g\n", squareErr.MeanSquareError())
-				fmt.Printf("Cross Validation Squared correlation coefficient = %.6g\n", squareErr.SquareCorrelationCoeff())
-				if squareErr.MeanSquareError() < bestMSQ {
-					bestMSQ = squareErr.MeanSquareError()
-					bestC = c
-					bestGamma = gamma
-				}
+			var i = 0
+			for problem.Begin(); !problem.Done(); problem.Next() {
+				y, _ := problem.GetLine()
+				v := targets[i]
+				squareErr.Sum(v, y)
+				i++
 			}
+
+			fmt.Printf("Cross Validation Mean squared error = %.6g\n", squareErr.MeanSquareError())
+			fmt.Printf("Cross Validation Squared correlation coefficient = %.6g\n", squareErr.SquareCorrelationCoeff())
+			if squareErr.MeanSquareError() < bestMSQ {
+				bestMSQ = squareErr.MeanSquareError()
+				bestC = c
+				bestGamma = gamma
+			}
+			//}
 		}
 
 		param.C = bestC
@@ -258,48 +260,125 @@ func main() {
 		model.Train(problem)
 
 		measure := 0.0
-		actual := 0.0
+		p, r := 0.0, 0.0
+		ret, relRet, rel := 0.0, 0.0, 0.0
 		tp, tn, fp, fn := 0, 0, 0, 0
-		for _, l := range v {
+
+		var selected []query
+		for _, l := range queries {
 			features := make(map[int]float64)
 			for _, feature := range l.Query.Candidate.FeatureFamily {
-				features[int(rewrite.CompactFeatureSVM(feature.Id, feature.Index, feature.MaxFeatures))] = feature.Score
+				features[int(rewrite.CompactFeatureSVM(feature.ID, feature.Index, feature.MaxFeatures))] = feature.Score
 			}
 			prediction := model.Predict(features)
-			score := toTrecEval(args.Measure, l.Query.Eval, rf.Runs[l.Query.Topic])
+			score := cmd.ScoreMeasurement(args.Measure, l.Query.Eval, rf.Runs[l.Query.Topic])
+
+			var m float64
+			if args.Measure == "F05" {
+				m = cmd.Fb(l.Query.Eval[eval.PrecisionEvaluator.Name()], l.Query.Eval[eval.RecallEvaluator.Name()], 0.5)
+			} else if args.Measure == "F1" {
+				m = cmd.Fb(l.Query.Eval[eval.PrecisionEvaluator.Name()], l.Query.Eval[eval.RecallEvaluator.Name()], 1)
+			} else if args.Measure == "F3" {
+				m = cmd.Fb(l.Query.Eval[eval.PrecisionEvaluator.Name()], l.Query.Eval[eval.RecallEvaluator.Name()], 3)
+			} else if args.Measure == "WSS" {
+				m = cmd.WSS(cmd.N, l.Query.Eval[eval.NumRet.Name()], l.Query.Eval[eval.RecallEvaluator.Name()])
+			} else {
+				m = l.Query.Eval[args.Measure]
+			}
+
 			if prediction > 0 && score > 0 {
 				tp++
-				measure += l.Query.Eval[args.Measure]
+				measure += m
+				p += l.Query.Eval[eval.PrecisionEvaluator.Name()]
+				r += l.Query.Eval[eval.RecallEvaluator.Name()]
+				ret += l.Query.Eval[eval.NumRet.Name()]
+				rel += l.Query.Eval[eval.NumRel.Name()]
+				relRet += l.Query.Eval[eval.NumRelRet.Name()]
 			} else if prediction > 0 && score < 1 {
 				fp++
-				measure += l.Query.Eval[args.Measure]
+				measure += m
+				p += l.Query.Eval[eval.PrecisionEvaluator.Name()]
+				r += l.Query.Eval[eval.RecallEvaluator.Name()]
+				ret += l.Query.Eval[eval.NumRet.Name()]
+				rel += l.Query.Eval[eval.NumRel.Name()]
+				relRet += l.Query.Eval[eval.NumRelRet.Name()]
 			} else if prediction < 1 && score > 0 {
 				fn++
 			} else if prediction < 1 && score < 1 {
 				tn++
 			}
-			actual += l.Query.Eval[args.Measure]
+
+			selected = append(selected, query{score, prediction, l.FileName})
 		}
 
-		results[topicN] = result{tp, tn, fp, fn, topic,
-			float64(tp) / float64(tp+fp),
-			float64(tp) / float64(tp+fn),
-			float64(tp+tn) / float64(tp+tn+fp+fn),
-			float64(measure) / float64(tp+tn+fp+fn),
+		totalPositive := float64(tp + fp)
+
+		precision := float64(tp) / float64(tp+fp)
+		if tp+fp == 0 {
+			precision = 0.0
 		}
+
+		recall := float64(tp) / float64(tp+fn)
+		if float64(tp+fn) == 0 {
+			recall = 0.0
+		}
+
+		m := float64(measure) / totalPositive
+		P := p / totalPositive
+		R := r / totalPositive
+		Rel := rel / totalPositive
+		Ret := ret / totalPositive
+		RelRet := relRet / totalPositive
+		if totalPositive == 0 {
+			m = 0
+			P = 0
+			R = 0
+			Ret = 0
+			Rel = 0
+			RelRet = 0
+		}
+
+		results[topicN] = Result{tp, tn, fp, fn,
+			topic,
+			P,
+			R,
+			Rel,
+			Ret,
+			RelRet,
+			m,
+			selected,
+		}
+		topicN++
 		fmt.Println("--------------------------------------------------------")
 		fmt.Printf("best msq: %v best c: %v best gamma: %v\n", bestMSQ, param.C, param.Gamma)
-		fmt.Printf("topic:                 %v\n", topic)
-		fmt.Printf("true positives:        %v\n", tp)
-		fmt.Printf("true negatives:        %v\n", tn)
-		fmt.Printf("false positives:       %v\n", fp)
-		fmt.Printf("false negatives:       %v\n", fn)
-		fmt.Printf("total:                 %v\n", tp+tn+fp+fn)
-		fmt.Printf("accuracy:              %v\n", float64(tp+tn)/float64(tp+tn+fp+fn))
-		fmt.Printf("precision:             %v\n", float64(tp)/float64(tp+fp))
-		fmt.Printf("recall:                %v\n", float64(tp)/float64(tp+fn))
-		fmt.Printf("measure:               %v\n", float64(measure)/float64(tp+tn+fp+fn))
+		fmt.Printf("topic:             %v\n", topic)
+		fmt.Printf("true positives:    %v\n", tp)
+		fmt.Printf("true negatives:    %v\n", tn)
+		fmt.Printf("false positives:   %v\n", fp)
+		fmt.Printf("false negatives:   %v\n", fn)
+		fmt.Printf("total:             %v\n", tp+tn+fp+fn)
+		fmt.Printf("precision:         %v\n", precision)
+		fmt.Printf("recall:            %v\n", recall)
+		fmt.Printf("measure:           %v\n", m)
+		fmt.Printf("queries precision: %v\n", P)
+		fmt.Printf("queries recall:    %v\n", R)
 	}
+
+	fmt.Println("Topic,Tp,Tn,Fp,Fn,Precision,Recall,NumRet,NumRelRet,Measure")
+	for _, result := range results {
+		fmt.Println(result)
+	}
+
+	precision := 0.0
+	recall := 0.0
+	accuracy := 0.0
+	measure := 0.0
+	for _, r := range results {
+		precision += r.Precision
+		recall += r.Recall
+		measure += r.Measure
+	}
+	fmt.Println(measure/float64(len(results)), precision/float64(len(results)), recall/float64(len(results)), accuracy/float64(len(results)))
 
 	b, err := json.MarshalIndent(results, "", "  ")
 	if err != nil {
@@ -312,15 +391,4 @@ func main() {
 		log.Fatal(err)
 	}
 
-	precision := 0.0
-	recall := 0.0
-	accuracy := 0.0
-	measure := 0.0
-	for _, r := range results {
-		precision += r.Precision
-		recall += r.Recall
-		accuracy += r.Accuracy
-		measure += r.Measure
-	}
-	fmt.Println(measure/float64(len(results)), precision/float64(len(results)), recall/float64(len(results)), accuracy/float64(len(results)))
 }
