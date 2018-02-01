@@ -1,3 +1,5 @@
+// Package qcsvm_features_r creates a SVM rank file from queries produced as a by-product of the greedy query
+// chain process in order to create rankers for query chains.
 package main
 
 import (

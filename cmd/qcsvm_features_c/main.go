@@ -1,3 +1,5 @@
+// Package qcsvm_features_c creates a LIBSVM-compatible file from queries produced as a by-product of the greedy query
+// chain process in order to create classifiers for query chains.
 package main
 
 import (

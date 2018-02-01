@@ -19,6 +19,7 @@ type Query struct {
 	Error    error
 }
 
+// Feature is a single feature in a feature file.
 type Feature struct {
 	Topic    int64
 	Depth    int64
@@ -28,6 +29,7 @@ type Feature struct {
 }
 
 var (
+	// N is the default number of documents in the collection (can be changed via command-line arguments).
 	N float64 = 26758795
 )
 

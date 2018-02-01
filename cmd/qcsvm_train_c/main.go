@@ -1,3 +1,4 @@
+// Package qcsvm_train_c trains an SVM classifier for query chain rewriting.
 package main
 
 import (

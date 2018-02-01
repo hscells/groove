@@ -1,3 +1,4 @@
+// Package qcsvm_train_r trains a learning to rank SVM ranker for query chain rewriting.
 package main
 
 import (
