@@ -18,8 +18,13 @@ Elasticsearch and finally outputs the result into a JSON file.
 
 ## API Usage
 
+In the below example, we would like to use Elasticsearch to measure some query performance predictors on some Medline
+queries. For the experiment, we would like to pre-process the queries by making each one only contain alpha-numeric
+characters, and in lowercase. Finally, we would like to output the results of the measures into a JSON file.
+
 ```go
 // Construct the pipeline.
+pipelineChannel := make(chan groove.PipelineResult)
 p := NewGroovePipeline(
     query.NewTransmuteQuerySource(query.MedlineTransmutePipeline),
     stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://example.com:9200"),
@@ -27,18 +32,30 @@ p := NewGroovePipeline(
                                            stats.ElasticsearchField("abstract"),
                                            stats.ElasticsearchDocumentType("doc")),
     Preprocess(preprocess.AlphaNum, preprocess.Lowercase),
-    Measurement(analysis.TermCount{}, preqpp.AvgIDF{}),
+    Measurement(analysis.AvgIDF, preqpp.AvgICTF, postqpp.ClarityScore),
     Output(output.JsonFormatter),
 )
 
 // Execute it on a directory of queries.
-s, err := p.Execute("./medline")
-if err != nil {
-    log.Fatal(err)
+go p.Execute("./medline", pipelineChannel)
+for {
+    result := <-pipelineChannel
+    if result.Type == groove.Done {
+        break
+    }
+    switch result.Type {
+    case groove.Measurement:
+        // Process the measurement outputs. Only one type of measurement (JSON).
+        err := ioutil.WriteFile("results.json", bytes.NewBufferString(result.Measurements[0]).Bytes(), 0644)
+        if err != nil {
+            log.Fatal(err)
+        }
+        return
+    case groove.Error:
+        log.Fatal(result.Error)
+        return
+    }
 }
-
-// Print the result.
-log.Println(s[0])
 ```
 
 ## Logo
