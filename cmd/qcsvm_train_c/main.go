@@ -170,13 +170,13 @@ func main() {
 			}
 		}
 
-		var ff rewrite.FeatureFamily
+		var ff rewrite.Features
 		for depth := 0; int64(depth) < maxDepth; depth++ {
 			query := cmd.BestQueryAt(int64(depth), queries, args.Measure)
-			ff = query.Query.Candidate.FeatureFamily
+			ff = query.Query.Candidate.Features
 			for j, innerQuery := range queries {
 				if innerQuery.Query.Depth == int64(depth+1) {
-					topics[topic][j].Query.Candidate.FeatureFamily = append(innerQuery.Query.Candidate.FeatureFamily, ff...)
+					topics[topic][j].Query.Candidate.Features = append(innerQuery.Query.Candidate.Features, ff...)
 				}
 			}
 		}
@@ -198,7 +198,7 @@ func main() {
 						fmt.Println("Topic not found", q.Query.Topic)
 					}
 
-					rewrite.LearntFeature{q.Query.Candidate.FeatureFamily, score}.WriteLibSVM(buff)
+					rewrite.LearntFeature{q.Query.Candidate.Features, score}.WriteLibSVM(buff)
 				}
 			}
 		}
@@ -268,7 +268,7 @@ func main() {
 		var selected []query
 		for _, l := range queries {
 			features := make(map[int]float64)
-			for _, feature := range l.Query.Candidate.FeatureFamily {
+			for _, feature := range l.Query.Candidate.Features {
 				features[int(rewrite.CompactFeatureSVM(feature.ID, feature.Index, feature.MaxFeatures))] = feature.Score
 			}
 			prediction := model.Predict(features)

@@ -25,36 +25,45 @@ characters, and in lowercase. Finally, we would like to output the results of th
 ```go
 // Construct the pipeline.
 pipelineChannel := make(chan groove.PipelineResult)
-p := NewGroovePipeline(
-    query.NewTransmuteQuerySource(query.MedlineTransmutePipeline),
-    stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://example.com:9200"),
-                                           stats.ElasticsearchIndex("pubmed"),
-                                           stats.ElasticsearchField("abstract"),
-                                           stats.ElasticsearchDocumentType("doc")),
-    Preprocess(preprocess.AlphaNum, preprocess.Lowercase),
-    Measurement(analysis.AvgIDF, preqpp.AvgICTF, postqpp.ClarityScore),
-    Output(output.JsonFormatter),
-)
+p := pipeline.NewGroovePipeline(
+	query.NewTransmuteQuerySource(query.MedlineTransmutePipeline),
+	stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://localhost:9200"),
+		stats.ElasticsearchIndex("medline"),
+		stats.ElasticsearchField("abstract"),
+		stats.ElasticsearchScroll(true),
+		stats.ElasticsearchSearchOptions(stats.SearchOptions{
+			Size:    10000,
+			RunName: "qpp",
+		})),
+	pipeline.Measurement(preqpp.AvgICTF, preqpp.SumIDF, preqpp.AvgIDF, preqpp.MaxIDF, preqpp.StdDevIDF, postqpp.ClarityScore),
+	pipeline.Evaluation(eval.PrecisionEvaluator, eval.RecallEvaluator),
+	pipeline.MeasurementOutput(output.JsonMeasurementFormatter),
+	pipeline.EvaluationOutput("medline.qrels", output.JsonEvaluationFormatter),
+	pipeline.TrecOutput("medline_qpp.results"))
 
-// Execute it on a directory of queries.
+// Execute it on a directory of queries. A pipeline executes queries in parallel.
 go p.Execute("./medline", pipelineChannel)
+
 for {
-    result := <-pipelineChannel
-    if result.Type == groove.Done {
-        break
-    }
-    switch result.Type {
-    case groove.Measurement:
-        // Process the measurement outputs. Only one type of measurement (JSON).
-        err := ioutil.WriteFile("results.json", bytes.NewBufferString(result.Measurements[0]).Bytes(), 0644)
-        if err != nil {
-            log.Fatal(err)
-        }
-        return
-    case groove.Error:
-        log.Fatal(result.Error)
-        return
-    }
+	// Continue until completed.
+	result := <-pipelineChannel
+	if result.Type == groove.Done {
+		break
+	}
+	switch result.Type {
+	case groove.Measurement:
+		// Process the measurement outputs.
+		err := ioutil.WriteFile("medline_qpp.json", bytes.NewBufferString(result.Measurements[0]).Bytes(), 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+	case groove.Evaluation:
+		// Process the evaluation outputs.
+		err := ioutil.WriteFile("medline_qpp_eval.json", bytes.NewBufferString(result.Evaluations[0]).Bytes(), 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 }
 ```
 

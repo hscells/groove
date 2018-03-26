@@ -43,8 +43,8 @@ func LoadExcludingQuery(directory, measure string, topic int64) map[int64][]Feat
 						Depth:    q.Query.Depth,
 						FileName: q.FileName,
 						LearntFeature: rewrite.LearntFeature{
-							FeatureFamily: q.Query.Candidate.FeatureFamily,
-							Score:         m,
+							Features: q.Query.Candidate.Features,
+							Score:    m,
 						},
 						Eval: q.Query.Eval,
 					}
@@ -68,13 +68,13 @@ func LoadExcludingQuery(directory, measure string, topic int64) map[int64][]Feat
 			}
 		}
 
-		var ff rewrite.FeatureFamily
+		var ff rewrite.Features
 		for depth := 0; int64(depth) < maxDepth; depth++ {
 			query := BestFeatureAt(int64(depth), queries)
-			ff = query.FeatureFamily
+			ff = query.Features
 			for j, innerQuery := range queries {
 				if innerQuery.Depth == int64(depth+1) {
-					rank[topic][j].FeatureFamily = append(innerQuery.FeatureFamily, ff...)
+					rank[topic][j].Features = append(innerQuery.Features, ff...)
 				}
 			}
 		}
@@ -124,12 +124,12 @@ func SortFeatures(q []Feature) []Feature {
 	})
 
 	for i, lf := range q {
-		sort.Slice(lf.FeatureFamily, func(i, j int) bool {
-			return lf.FeatureFamily[i].ID+lf.FeatureFamily[i].Index < lf.FeatureFamily[j].ID+lf.FeatureFamily[j].Index
+		sort.Slice(lf.Features, func(i, j int) bool {
+			return lf.Features[i].ID+lf.Features[i].Index < lf.Features[j].ID+lf.Features[j].Index
 		})
 
-		var ff rewrite.FeatureFamily
-		for _, feature := range lf.FeatureFamily {
+		var ff rewrite.Features
+		for _, feature := range lf.Features {
 			found := false
 			for _, f := range ff {
 				if f.ID+f.Index == feature.ID+feature.Index {
@@ -140,7 +140,7 @@ func SortFeatures(q []Feature) []Feature {
 				ff = append(ff, feature)
 			}
 		}
-		q[i].FeatureFamily = ff
+		q[i].Features = ff
 	}
 	return q
 }

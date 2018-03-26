@@ -73,8 +73,8 @@ func main() {
 					Depth:    q.Query.Depth,
 					FileName: q.FileName,
 					LearntFeature: rewrite.LearntFeature{
-						FeatureFamily: q.Query.Candidate.FeatureFamily,
-						Score:         score,
+						Features: q.Query.Candidate.Features,
+						Score:    score,
 					},
 				}
 				topics[q.Query.Topic] = append(topics[q.Query.Topic], lf)
@@ -95,14 +95,14 @@ func main() {
 			}
 		}
 
-		var ff rewrite.FeatureFamily
+		var ff rewrite.Features
 		for depth := 0; int64(depth) < maxDepth; depth++ {
 			f := cmd.BestFeatureAt(int64(depth), features)
-			ff = f.FeatureFamily
+			ff = f.Features
 			fmt.Println(depth, ff)
 			for i, f := range features {
 				if f.Depth == int64(depth+1) {
-					features[i].FeatureFamily = append(f.FeatureFamily, ff...)
+					features[i].Features = append(f.Features, ff...)
 				}
 			}
 		}

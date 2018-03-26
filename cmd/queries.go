@@ -263,8 +263,8 @@ func ErrorQuery(err error) Query {
 // ValueQuery is a wrapper for a query. This method will actually construct a query from a map[string]interface{},
 // since it contains a cqr.
 func ValueQuery(m map[string]interface{}, filename string) Query {
-	var ff rewrite.FeatureFamily
-	for _, feature := range m["candidate"].(map[string]interface{})["FeatureFamily"].([]interface{}) {
+	var ff rewrite.Features
+	for _, feature := range m["candidate"].(map[string]interface{})["Features"].([]interface{}) {
 		var f rewrite.Feature
 		mapstructure.Decode(feature, &f)
 		ff = append(ff, f)
@@ -280,7 +280,7 @@ func ValueQuery(m map[string]interface{}, filename string) Query {
 		Depth: int64(m["depth"].(float64)),
 		Eval:  ev,
 		Candidate: rewrite.CandidateQuery{
-			FeatureFamily: ff,
+			Features: ff,
 		},
 	}
 	return Query{
