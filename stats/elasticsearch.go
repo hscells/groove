@@ -13,8 +13,11 @@ import (
 	"github.com/hscells/transmute/pipeline"
 	"github.com/satori/go.uuid"
 	"gopkg.in/olivere/elastic.v5"
-	"io"
 	"log"
+	"fmt"
+	"runtime"
+	"io"
+	"strconv"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.
@@ -84,7 +87,6 @@ func (es *ElasticsearchStatisticsSource) DocumentFrequency(term string) (float64
 	return 0.0, nil
 }
 
-// TotalTermFrequency is a sum of total term frequencies (the sum of total term frequencies of each term in this field).
 // TotalTermFrequency is a sum of total term frequencies (the sum of total term frequencies of each term in this field).
 func (es *ElasticsearchStatisticsSource) TotalTermFrequency(term string) (float64, error) {
 	analyseField := es.field
@@ -226,6 +228,90 @@ func (es *ElasticsearchStatisticsSource) TermVector(document string) (TermVector
 	return tv, nil
 }
 
+// ExecuteFast executes an Elasticsearch query and retrieves only the document ids in the fastest possible way. Do not
+// use this for ranked results as the concurrency of this method does not guanrantee order.
+func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery, options SearchOptions) ([]uint32, error) {
+	// Transform the query to an Elasticsearch query.
+	q, err := toElasticsearch(query.Query)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set the limit to how many goroutines can be run.
+	// http://jmoiron.net/blog/limiting-concurrency-in-go/
+	concurrency := runtime.NumCPU() * 4
+	sem := make(chan bool, concurrency)
+	hits := make([][]uint32, concurrency)
+
+	for i := 0; i < concurrency; i++ {
+		sem <- true
+
+		go func(n int) {
+			defer func() { <-sem }()
+			// Scroll search.
+			svc := es.client.Scroll(es.index).
+				FetchSource(false).
+				Pretty(false).
+				Type(es.documentType).
+				KeepAlive("30m").
+				Slice(elastic.NewSliceQuery().Id(i).Max(concurrency)).
+				SearchSource(
+				elastic.NewSearchSource().
+					NoStoredFields().
+					FetchSource(false).
+					Size(options.Size).
+					TrackScores(false).
+					Query(elastic.NewRawStringQuery(q)))
+
+			for {
+				result, err := svc.Do(context.Background())
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					panic(err)
+				}
+
+				for _, hit := range result.Hits.Hits {
+					id, err := strconv.Atoi(hit.Id)
+					if err != nil {
+						panic(err)
+					}
+					hits[n] = append(hits[n], uint32(id))
+				}
+			}
+
+			err = svc.Clear(context.Background())
+			if err != nil {
+				panic(err)
+			}
+
+		}(i)
+
+	}
+	fmt.Println("waiting")
+	// Wait until the last goroutine has read from the semaphore.
+	for i := 0; i < cap(sem); i++ {
+		sem <- true
+	}
+
+	var results []uint32
+	for _, hit := range hits {
+		results = append(results, hit...)
+	}
+
+	fmt.Println("done")
+
+	//for i, h := range ids {
+	//	fmt.Println(i)
+	//	hits = append(hits, <-h...)
+	//}
+
+	fmt.Println(len(results))
+
+	return results, nil
+}
+
 // Execute runs the query on Elasticsearch and returns results in trec format.
 func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error) {
 	// Transform the query to an Elasticsearch query.
@@ -237,24 +323,21 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 	// Only then can we issue it to Elasticsearch using our API.
 	if es.Scroll {
 
+		var hits []*elastic.SearchHit
+
 		// Scroll search.
 		svc := es.client.Scroll(es.index).
 			FetchSource(false).
 			Pretty(false).
 			Type(es.documentType).
-			KeepAlive("1h").
+			KeepAlive("30m").
 			SearchSource(
-				elastic.NewSearchSource().
-					From(0).
-					NoStoredFields().
-					FetchSource(false).
-					Size(options.Size).
-					//Slice(elastic.NewSliceQuery().Field("_id").Id(0).Max(10)).
-					TrackScores(false).
-					Query(elastic.NewRawStringQuery(q)))
-
-		docs := 0
-		var results trecresults.ResultList
+			elastic.NewSearchSource().
+				NoStoredFields().
+				FetchSource(false).
+				Size(options.Size).
+				TrackScores(false).
+				Query(elastic.NewRawStringQuery(q)))
 
 		for {
 			result, err := svc.Do(context.Background())
@@ -262,31 +345,30 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 				break
 			}
 			if err != nil {
-				return nil, err
+				panic(err)
 			}
 
-			if results == nil {
-				results = make(trecresults.ResultList, result.Hits.TotalHits)
-			}
-
-			for _, hit := range result.Hits.Hits {
-				results[docs] = &trecresults.Result{
-					Topic:     query.Topic,
-					Iteration: "Q0",
-					DocId:     hit.Id,
-					Rank:      int64(docs),
-					Score:     *hit.Score,
-					RunName:   options.RunName,
-				}
-				docs++
-			}
-
-			log.Printf("topic %v - %v/%v", query.Topic, docs, result.Hits.TotalHits)
+			hits = append(hits, result.Hits.Hits...)
 		}
 
-		err := svc.Clear(context.Background())
+		err = svc.Clear(context.Background())
 		if err != nil {
-			return nil, err
+			panic(err)
+		}
+
+		fmt.Println(len(hits))
+
+		// Block until all the channels have completed.
+		results := make(trecresults.ResultList, len(hits))
+		for i, hit := range hits {
+			results[i] = &trecresults.Result{
+				Topic:     query.Topic,
+				Iteration: "Q0",
+				DocId:     hit.Id,
+				Rank:      int64(i),
+				Score:     *hit.Score,
+				RunName:   options.RunName,
+			}
 		}
 
 		return results, nil
@@ -468,7 +550,7 @@ func NewElasticsearchStatisticsSource(options ...func(*ElasticsearchStatisticsSo
 
 		es.client, err = elastic.NewClient(elastic.SetURL("http://localhost:9200"))
 		if err != nil {
-			log.Fatal(err)
+			panic(err)
 		}
 	} else {
 		for _, option := range options {

@@ -15,6 +15,8 @@ import (
 	"log"
 	"runtime"
 	"sort"
+	"io/ioutil"
+	"bytes"
 )
 
 type empty struct{}
@@ -28,10 +30,14 @@ type GroovePipeline struct {
 	Measurements          []analysis.Measurement
 	MeasurementFormatters []output.MeasurementFormatter
 	Evaluations           []eval.Evaluator
-	EvaluationFormatters  []output.EvaluationFormatter
-	EvaluationQrels       trecresults.QrelsFile
+	EvaluationFormatters  EvaluationOutputFormat
 	OutputTrec            output.TrecResults
 	QueryChain            rewrite.QueryChain
+}
+
+type EvaluationOutputFormat struct {
+	EvaluationFormatters []output.EvaluationFormatter
+	EvaluationQrels      trecresults.QrelsFile
 }
 
 // Preprocess adds preprocessors to the pipeline.
@@ -48,18 +54,43 @@ func Measurement(measurements ...analysis.Measurement) func() interface{} {
 	}
 }
 
-// Output adds outputs to the pipeline.
-func Output(formatter ...output.MeasurementFormatter) func() interface{} {
+// Evaluation adds evaluation measures to the pipeline.
+func Evaluation(measures ...eval.Evaluator) func() interface{} {
+	return func() interface{} {
+		return measures
+	}
+}
+
+// MeasurementOutput adds outputs to the pipeline.
+func MeasurementOutput(formatter ...output.MeasurementFormatter) func() interface{} {
 	return func() interface{} {
 		return formatter
 	}
 }
 
-// Trec configures trec output.
-func Trec(path string) func() interface{} {
+// TrecOutput configures trec output.
+func TrecOutput(path string) func() interface{} {
 	return func() interface{} {
 		return output.TrecResults{
 			Path: path,
+		}
+	}
+}
+
+// TrecOutput configures trec output.
+func EvaluationOutput(qrels string, formatters ...output.EvaluationFormatter) func() interface{} {
+	b, err := ioutil.ReadFile(qrels)
+	if err != nil {
+		panic(err)
+	}
+	f, err := trecresults.QrelsFromReader(bytes.NewReader(b))
+	if err != nil {
+		panic(err)
+	}
+	return func() interface{} {
+		return EvaluationOutputFormat{
+			EvaluationQrels:      f,
+			EvaluationFormatters: formatters,
 		}
 	}
 }
@@ -225,10 +256,10 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 
 				// Set the evaluation results.
 				if len(pipeline.Evaluations) > 0 {
-					measurements[query.Topic] = eval.Evaluate(pipeline.Evaluations, &trecResults, pipeline.EvaluationQrels, query.Topic)
+					measurements[query.Topic] = eval.Evaluate(pipeline.Evaluations, &trecResults, pipeline.EvaluationFormatters.EvaluationQrels, query.Topic)
 				}
 
-				// Output the trec results.
+				// MeasurementOutput the trec results.
 				if len(pipeline.OutputTrec.Path) > 0 {
 					c <- groove.PipelineResult{
 						Topic:       query.Topic,
@@ -252,10 +283,10 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 			sem <- true
 		}
 
-		// Output the evaluation results.
-		evaluations := make([]string, len(pipeline.EvaluationFormatters))
+		// MeasurementOutput the evaluation results.
+		evaluations := make([]string, len(pipeline.EvaluationFormatters.EvaluationFormatters))
 		// Now we can finally get to formatting the evaluation results.
-		for i, f := range pipeline.EvaluationFormatters {
+		for i, f := range pipeline.EvaluationFormatters.EvaluationFormatters {
 			r, err := f(measurements)
 			if err != nil {
 				c <- groove.PipelineResult{

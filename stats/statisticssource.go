@@ -7,6 +7,7 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"math"
+	"strconv"
 )
 
 // SearchOptions are options that the statistics source will use for retrieval.
@@ -43,6 +44,39 @@ type StatisticsSource interface {
 	RetrievalSize(query cqr.CommonQueryRepresentation) (float64, error)
 	VocabularySize() (float64, error)
 	Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error)
+}
+
+func GetDocumentIDs(query groove.PipelineQuery, ss StatisticsSource) ([]uint32, error) {
+	var docs []uint32
+
+	// Elasticsearch has a "fast" execute to scroll quickly so we can account for that here.
+	switch x := ss.(type) {
+	case *ElasticsearchStatisticsSource:
+		ids, err := x.ExecuteFast(query, x.SearchOptions())
+		if err != nil {
+			return nil, err
+		}
+		docs = make([]uint32, len(ids))
+		for i, id := range ids {
+			docs[i] = id
+		}
+	default: // By default, we can just perform a regular search on the other systems.
+		results, err := x.Execute(query, x.SearchOptions())
+		if err != nil {
+			return nil, err
+		}
+
+		docs = make([]uint32, len(results))
+
+		for i, result := range results {
+			id, err := strconv.ParseInt(result.DocId, 10, 32)
+			if err != nil {
+				return nil, err
+			}
+			docs[i] = uint32(id)
+		}
+	}
+	return docs, nil
 }
 
 // idf calculates inverse document frequency, or the ratio of of documents in the collection to the number of documents

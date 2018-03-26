@@ -1,12 +1,10 @@
-package rewrite
+package rewrite_test
 
 import (
 	"bytes"
-	"fmt"
 	"github.com/TimothyJones/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
-	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
@@ -14,6 +12,11 @@ import (
 	"github.com/hscells/transmute/pipeline"
 	"io/ioutil"
 	"testing"
+	"github.com/hscells/groove/combinator"
+	"github.com/peterbourgon/diskv"
+	"github.com/hscells/groove/rewrite"
+	"fmt"
+	"github.com/hscells/groove/eval"
 )
 
 func TestOracleQueryChainSelector_Select(t *testing.T) {
@@ -31,7 +34,7 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 2. sMMSE.ti,ab.
 3. Folstein*.ti,ab.
 4. MiniMental.ti,ab.
-5. retain.ti,ab.
+5. mini mental stat*.ti,ab.
 6. or/1-5`
 
 	var topic int64 = 1
@@ -61,10 +64,17 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	selector := NewOracleQueryChainCandidateSelector(ss, qrels)
+	cache := combinator.NewDiskvQueryCache(diskv.New(diskv.Options{
+		BasePath:     "../cache",
+		Transform:    combinator.BlockTransform(8),
+		CacheSizeMax: 4096 * 1024,
+		Compression:  diskv.NewGzipCompression(),
+	}))
 
-	chain := NewQueryChain(selector, AdjacencyRange, LogicalOperatorReplacement, MeSHExplosion, FieldRestrictions)
-	fmt.Printf("Rewriting query with %v possible transformations\n", len(chain.Transformations))
+	selector := rewrite.NewOracleQueryChainCandidateSelector(ss, qrels, cache)
+
+	chain := rewrite.NewQueryChain(selector, rewrite.NewLogicalOperatorTransformer(), rewrite.NewAdjacencyReplacementTransformer(), rewrite.NewAdjacencyRangeTransformer(), rewrite.NewMeSHExplosionTransformer(), rewrite.NewFieldRestrictionsTransformer())
+	//fmt.Printf("Rewriting query with %v possible transformations\n", len(chain.Transformations))
 	q, err := chain.Execute(groove.NewPipelineQuery("test", topic, repr.(cqr.CommonQueryRepresentation)))
 	if err != nil {
 		t.Fatal(err)

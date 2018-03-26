@@ -21,9 +21,10 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 			RequiresLexing: true,
 		})
 
-	rawQuery := `1. a.tw.
-2. b.tw.
-3. 1 and 2
+	rawQuery := `1 Lymphoma/
+2 Hodgkin Disease/
+3 (cancer adj8 neoplasm).tw.
+4 or/1-3
 `
 
 	cq, err := cqrPipeline.Execute(rawQuery)
@@ -35,13 +36,15 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	queries, err := FieldRestrictions.Apply(repr.(cqr.CommonQueryRepresentation))
-	if err != nil {
-		t.Fatal(err)
-	}
+	candidates, err := Variations(repr.(cqr.CommonQueryRepresentation), NewLogicalOperatorTransformer(), NewAdjacencyRangeTransformer(), NewMeSHExplosionTransformer(), NewFieldRestrictionsTransformer(), NewAdjacencyReplacementTransformer())
+
+	//queries, err := LogicalOperatorReplacement.Apply(repr.(cqr.CommonQueryRepresentation))
+	//if err != nil {
+	//	t.Fatal(err)
+	//}
 	fmt.Println("------------------")
-	for _, q := range queries {
-		fmt.Println(q.Query)
+	for i, q := range candidates {
+		fmt.Println(i, q.Query, q.Features)
 	}
 
 }
