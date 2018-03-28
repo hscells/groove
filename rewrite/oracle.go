@@ -96,10 +96,10 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, candi
 		}
 		oc.bestRelRet = evaluation[eval.NumRelRet.Name()]
 		oc.bestRet = evaluation[eval.NumRet.Name()]
-		err = writeQuery(query.PipelineQuery, oc.depth, NewCandidateQuery(query.PipelineQuery.Query, Features{}), evaluation)
-		if err != nil {
-			return TransformedQuery{}, nil, err
-		}
+		//err = writeQuery(query.PipelineQuery, oc.depth, NewCandidateQuery(query.PipelineQuery.Query, Features{}), evaluation)
+		//if err != nil {
+		//	return TransformedQuery{}, nil, err
+		//}
 	}
 
 	bestRelRet, bestRet := oc.bestRelRet, oc.bestRet
@@ -109,6 +109,8 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, candi
 	var transformed groove.PipelineQuery
 
 	for _, applied := range candidates {
+
+		fmt.Println(applied.Features, applied.Query)
 
 		start := time.Now()
 		// The new query.
@@ -136,10 +138,10 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, candi
 		numRet := evaluation[eval.NumRet.Name()]
 
 		// Write the query out to a file.
-		err = writeQuery(nq, oc.depth, applied, evaluation)
-		if err != nil {
-			return TransformedQuery{}, nil, err
-		}
+		//err = writeQuery(nq, oc.depth, applied, evaluation)
+		//if err != nil {
+		//	return TransformedQuery{}, nil, err
+		//}
 
 		log.Printf("topic %v - wrote query to %v", nq.Topic, combinator.HashCQR(nq.Query))
 

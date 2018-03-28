@@ -24,6 +24,18 @@ func QueryTerms(r cqr.CommonQueryRepresentation) (terms []string) {
 	return
 }
 
+func QueryFields(r cqr.CommonQueryRepresentation) (fields []string) {
+	switch q := r.(type) {
+	case cqr.Keyword:
+		return q.Fields
+	case cqr.BooleanQuery:
+		for _, c := range q.Children {
+			fields = append(fields, QueryFields(c)...)
+		}
+	}
+	return
+}
+
 // QueryKeywords extracts the keywords from a query.
 func QueryKeywords(r cqr.CommonQueryRepresentation) (keywords []cqr.Keyword) {
 	switch q := r.(type) {

@@ -48,6 +48,7 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		stats.ElasticsearchIndex("med_stem_sim2"),
 		stats.ElasticsearchDocumentType("doc"),
 		stats.ElasticsearchAnalysedField("stemmed"),
+		//stats.ElasticsearchField("_all"),
 		stats.ElasticsearchScroll(true),
 		stats.ElasticsearchSearchOptions(stats.SearchOptions{Size: 10000, RunName: "test"}))
 	repr, err := cq.Representation()
@@ -73,7 +74,7 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 
 	selector := rewrite.NewOracleQueryChainCandidateSelector(ss, qrels, cache)
 
-	chain := rewrite.NewQueryChain(selector, rewrite.NewLogicalOperatorTransformer(), rewrite.NewAdjacencyReplacementTransformer(), rewrite.NewAdjacencyRangeTransformer(), rewrite.NewMeSHExplosionTransformer(), rewrite.NewFieldRestrictionsTransformer())
+	chain := rewrite.NewQueryChain(selector, ss, rewrite.NewLogicalOperatorTransformer(), rewrite.NewAdjacencyReplacementTransformer(), rewrite.NewAdjacencyRangeTransformer(), rewrite.NewMeSHExplosionTransformer(), rewrite.NewFieldRestrictionsTransformer())
 	//fmt.Printf("Rewriting query with %v possible transformations\n", len(chain.Transformations))
 	q, err := chain.Execute(groove.NewPipelineQuery("test", topic, repr.(cqr.CommonQueryRepresentation)))
 	if err != nil {

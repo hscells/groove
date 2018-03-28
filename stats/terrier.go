@@ -105,7 +105,7 @@ func (t TerrierStatisticsSource) TotalTermFrequency(term string) (float64, error
 
 // InverseDocumentFrequency is the ratio of of documents in the collection to the number of documents the term appears
 // in, logarithmically smoothed.
-func (t TerrierStatisticsSource) InverseDocumentFrequency(term string) (float64, error) {
+func (t TerrierStatisticsSource) InverseDocumentFrequency(term, field string) (float64, error) {
 	N, err := t.DocumentFrequency(term)
 	if err != nil {
 		return 0.0, err

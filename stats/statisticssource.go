@@ -39,8 +39,8 @@ type StatisticsSource interface {
 	TermVector(document string) (TermVector, error)
 
 	DocumentFrequency(term string) (float64, error)
-	TotalTermFrequency(term string) (float64, error)
-	InverseDocumentFrequency(term string) (float64, error)
+	TotalTermFrequency(term, field string) (float64, error)
+	InverseDocumentFrequency(term, field string) (float64, error)
 	RetrievalSize(query cqr.CommonQueryRepresentation) (float64, error)
 	VocabularySize() (float64, error)
 	Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error)

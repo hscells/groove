@@ -36,7 +36,7 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	candidates, err := Variations(repr.(cqr.CommonQueryRepresentation), NewLogicalOperatorTransformer(), NewAdjacencyRangeTransformer(), NewMeSHExplosionTransformer(), NewFieldRestrictionsTransformer(), NewAdjacencyReplacementTransformer())
+	candidates, err := Variations(repr.(cqr.CommonQueryRepresentation), nil, NewLogicalOperatorTransformer(), NewAdjacencyRangeTransformer(), NewMeSHExplosionTransformer(), NewFieldRestrictionsTransformer(), NewAdjacencyReplacementTransformer())
 
 	//queries, err := LogicalOperatorReplacement.Apply(repr.(cqr.CommonQueryRepresentation))
 	//if err != nil {

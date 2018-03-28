@@ -4,9 +4,9 @@ import (
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/stats"
-	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/stat"
 	"math"
+	"gonum.org/v1/gonum/floats"
 )
 
 type summedCollectionQuerySimilarity struct{}
@@ -32,12 +32,16 @@ func (sc summedCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stat
 	terms := analysis.QueryTerms(q.Query)
 
 	sumSCQ := 0.0
-	for _, term := range terms {
-		s, err := collectionQuerySimilarity(term, s)
-		if err != nil {
-			return 0.0, err
+	fields := analysis.QueryFields(q.Query)
+
+	for _, field := range fields {
+		for _, term := range terms {
+			s, err := collectionQuerySimilarity(term, field, s)
+			if err != nil {
+				return 0.0, err
+			}
+			sumSCQ += s
 		}
-		sumSCQ += s
 	}
 
 	return sumSCQ, nil
@@ -51,14 +55,17 @@ func (sc maxCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.S
 	terms := analysis.QueryTerms(q.Query)
 
 	var scq []float64
-	for _, term := range terms {
-		s, err := collectionQuerySimilarity(term, s)
-		if err != nil {
-			return 0.0, err
-		}
-		scq = append(scq, s)
-	}
+	fields := analysis.QueryFields(q.Query)
 
+	for _, field := range fields {
+		for _, term := range terms {
+			s, err := collectionQuerySimilarity(term, field, s)
+			if err != nil {
+				return 0.0, err
+			}
+			scq = append(scq, s)
+		}
+	}
 	return floats.Max(scq), nil
 }
 
@@ -70,23 +77,27 @@ func (sc averageCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s sta
 	terms := analysis.QueryTerms(q.Query)
 
 	var scq []float64
-	for _, term := range terms {
-		s, err := collectionQuerySimilarity(term, s)
-		if err != nil {
-			return 0.0, err
+	fields := analysis.QueryFields(q.Query)
+
+	for _, field := range fields {
+		for _, term := range terms {
+			s, err := collectionQuerySimilarity(term, field, s)
+			if err != nil {
+				return 0.0, err
+			}
+			scq = append(scq, s)
 		}
-		scq = append(scq, s)
 	}
 
 	return stat.Mean(scq, nil), nil
 }
 
-func collectionQuerySimilarity(term string, s stats.StatisticsSource) (float64, error) {
-	tf, err := s.TotalTermFrequency(term)
+func collectionQuerySimilarity(term, field string, s stats.StatisticsSource) (float64, error) {
+	tf, err := s.TotalTermFrequency(term, field)
 	if err != nil {
 		return 0.0, err
 	}
-	idf, err := s.InverseDocumentFrequency(term)
+	idf, err := s.InverseDocumentFrequency(term, field)
 	if err != nil {
 		return 0.0, err
 	}

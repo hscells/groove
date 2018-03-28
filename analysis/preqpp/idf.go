@@ -26,14 +26,18 @@ func (avg avgIDF) Name() string {
 
 func (avg avgIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Query)
-
 	sumIDF := 0.0
-	for _, term := range terms {
-		idf, err := s.InverseDocumentFrequency(term)
-		if err != nil {
-			return 0.0, err
+
+	fields := analysis.QueryFields(q.Query)
+
+	for _, field := range fields {
+		for _, term := range terms {
+			idf, err := s.InverseDocumentFrequency(term, field)
+			if err != nil {
+				return 0.0, err
+			}
+			sumIDF += idf
 		}
-		sumIDF += idf
 	}
 
 	return sumIDF / float64(len(terms)), nil
@@ -47,12 +51,16 @@ func (sum sumIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (flo
 	terms := analysis.QueryTerms(q.Query)
 
 	sumIDF := 0.0
-	for _, term := range terms {
-		idf, err := s.InverseDocumentFrequency(term)
-		if err != nil {
-			return 0.0, err
+	fields := analysis.QueryFields(q.Query)
+
+	for _, field := range fields {
+		for _, term := range terms {
+			idf, err := s.InverseDocumentFrequency(term, field)
+			if err != nil {
+				return 0.0, err
+			}
+			sumIDF += idf
 		}
-		sumIDF += idf
 	}
 
 	return sumIDF, nil
@@ -66,12 +74,16 @@ func (sum maxIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (flo
 	terms := analysis.QueryTerms(q.Query)
 
 	var scores []float64
-	for _, term := range terms {
-		idf, err := s.InverseDocumentFrequency(term)
-		if err != nil {
-			return 0.0, err
+	fields := analysis.QueryFields(q.Query)
+
+	for _, field := range fields {
+		for _, term := range terms {
+			idf, err := s.InverseDocumentFrequency(term, field)
+			if err != nil {
+				return 0.0, err
+			}
+			scores = append(scores, idf)
 		}
-		scores = append(scores, idf)
 	}
 
 	return floats.Max(scores), nil
@@ -85,12 +97,16 @@ func (sum stdDevIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (
 	terms := analysis.QueryTerms(q.Query)
 
 	var scores []float64
-	for _, term := range terms {
-		idf, err := s.InverseDocumentFrequency(term)
-		if err != nil {
-			return 0.0, err
+	fields := analysis.QueryFields(q.Query)
+
+	for _, field := range fields {
+		for _, term := range terms {
+			idf, err := s.InverseDocumentFrequency(term, field)
+			if err != nil {
+				return 0.0, err
+			}
+			scores = append(scores, idf)
 		}
-		scores = append(scores, idf)
 	}
 
 	return stat.StdDev(scores, nil), nil

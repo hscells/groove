@@ -27,12 +27,16 @@ func (avgi avgICTF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (f
 	}
 
 	sumICTF := 0.0
-	for _, term := range terms {
-		tf, err := s.TotalTermFrequency(term)
-		if err != nil {
-			return 0.0, err
+	fields := analysis.QueryFields(q.Query)
+
+	for _, field := range fields {
+		for _, term := range terms {
+			tf, err := s.TotalTermFrequency(term, field)
+			if err != nil {
+				return 0.0, err
+			}
+			sumICTF += math.Log2(W) - math.Log2(1+tf)
 		}
-		sumICTF += math.Log2(W) - math.Log2(1+tf)
 	}
 
 	return (1.0 / float64(len(terms))) * sumICTF, nil

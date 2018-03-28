@@ -88,14 +88,14 @@ func (es *ElasticsearchStatisticsSource) DocumentFrequency(term string) (float64
 }
 
 // TotalTermFrequency is a sum of total term frequencies (the sum of total term frequencies of each term in this field).
-func (es *ElasticsearchStatisticsSource) TotalTermFrequency(term string) (float64, error) {
-	analyseField := es.field
+func (es *ElasticsearchStatisticsSource) TotalTermFrequency(term, field string) (float64, error) {
+	analyseField := field
 	if len(es.AnalyseField) > 0 {
-		analyseField = es.field + "." + es.AnalyseField
+		analyseField = field + "." + es.AnalyseField
 	}
 
 	resp, err := es.client.TermVectors(es.index, es.documentType).
-		Doc(map[string]string{es.field: term}).
+		Doc(map[string]string{field: term}).
 		TermStatistics(true).
 		Offsets(false).
 		Positions(false).
@@ -116,21 +116,21 @@ func (es *ElasticsearchStatisticsSource) TotalTermFrequency(term string) (float6
 
 // InverseDocumentFrequency is the ratio of of documents in the collection to the number of documents the term appears
 // in, logarithmically smoothed.
-func (es *ElasticsearchStatisticsSource) InverseDocumentFrequency(term string) (float64, error) {
+func (es *ElasticsearchStatisticsSource) InverseDocumentFrequency(term, field string) (float64, error) {
 	resp1, err := es.client.IndexStats(es.index).Do(context.Background())
 	if err != nil {
-		log.Fatal(err)
+		return 0.0, err
 	}
 
 	N := resp1.All.Total.Docs.Count
 
 	analyseField := es.field
 	if len(es.AnalyseField) > 0 {
-		analyseField = es.field + "." + es.AnalyseField
+		analyseField = field + "." + es.AnalyseField
 	}
 
 	resp2, err := es.client.TermVectors(es.index, es.documentType).
-		Doc(map[string]string{es.field: term}).
+		Doc(map[string]string{field: term}).
 		FieldStatistics(false).
 		TermStatistics(true).
 		Offsets(false).
@@ -140,9 +140,8 @@ func (es *ElasticsearchStatisticsSource) InverseDocumentFrequency(term string) (
 		PerFieldAnalyzer(map[string]string{analyseField: ""}).
 		Do(context.Background())
 	if err != nil {
-		return 0, err
+		return 0.0, err
 	}
-
 	if tv, ok := resp2.TermVectors[analyseField]; ok {
 		nt := tv.Terms[term].DocFreq
 		if nt == 0 {
@@ -162,7 +161,7 @@ func (es *ElasticsearchStatisticsSource) VocabularySize() (float64, error) {
 	}
 
 	resp, err := es.client.TermVectors(es.index, es.documentType).
-		Doc(map[string]string{es.field: uuid.NewV4().String()}).
+		Doc(map[string]string{"all": uuid.NewV4().String()}).
 		Offsets(false).
 		Positions(false).
 		Payloads(false).
