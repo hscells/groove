@@ -135,6 +135,7 @@ func (es *ElasticsearchStatisticsSource) InverseDocumentFrequency(term, field st
 		TermStatistics(true).
 		Offsets(false).
 		Positions(false).
+		Pretty(false).
 		Payloads(false).
 		Fields(analyseField).
 		PerFieldAnalyzer(map[string]string{analyseField: ""}).
@@ -154,16 +155,18 @@ func (es *ElasticsearchStatisticsSource) InverseDocumentFrequency(term, field st
 }
 
 // VocabularySize is the total number of terms in the vocabulary.
-func (es *ElasticsearchStatisticsSource) VocabularySize() (float64, error) {
-	analyseField := es.field
+func (es *ElasticsearchStatisticsSource) VocabularySize(field string) (float64, error) {
+	analyseField := field
 	if len(es.AnalyseField) > 0 {
-		analyseField = es.field + "." + es.AnalyseField
+		analyseField = field + "." + es.AnalyseField
 	}
 
 	resp, err := es.client.TermVectors(es.index, es.documentType).
-		Doc(map[string]string{"all": uuid.NewV4().String()}).
+		Doc(map[string]string{field: uuid.NewV4().String()}).
 		Offsets(false).
 		Positions(false).
+		Realtime(false).
+		Pretty(false).
 		Payloads(false).
 		Fields(analyseField).
 		PerFieldAnalyzer(map[string]string{analyseField: ""}).
@@ -206,6 +209,7 @@ func (es *ElasticsearchStatisticsSource) TermVector(document string) (TermVector
 		FieldStatistics(true).
 		TermStatistics(true).
 		Offsets(false).
+		Pretty(false).
 		Positions(false).
 		Payloads(false).
 		Fields(analyseField).

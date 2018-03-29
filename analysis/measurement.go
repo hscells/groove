@@ -6,6 +6,8 @@ import (
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/stats"
 	"strings"
+	"github.com/hashicorp/golang-lru"
+	"hash/fnv"
 )
 
 // Measurement is a representation for how a measurement fits into the pipeline.
@@ -16,6 +18,42 @@ type Measurement interface {
 	Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error)
 }
 
+type MeasurementExecutor struct {
+	*lru.Cache
+}
+
+func NewMeasurementExecutor(cacheSize int) MeasurementExecutor {
+	l, _ := lru.New(cacheSize)
+	return MeasurementExecutor{
+		l,
+	}
+}
+
+func hash(representation cqr.CommonQueryRepresentation, measurement Measurement) uint32 {
+	h := fnv.New32()
+	h.Write([]byte(representation.String() + measurement.Name()))
+	return h.Sum32()
+}
+
+func (m MeasurementExecutor) Execute(query groove.PipelineQuery, ss stats.StatisticsSource, measurements ...Measurement) (results []float64, err error) {
+	results = make([]float64, len(measurements))
+	for i, measurement := range measurements {
+		if v, ok := m.Get(hash(query.Query, measurement)); ok {
+			results[i] = v.(float64)
+			continue
+		}
+
+		var v float64
+		v, err = measurement.Execute(query, ss)
+		if err != nil {
+			return
+		}
+		results[i] = v
+		m.Add(hash(query.Query, measurement), v)
+	}
+	return
+}
+
 // QueryTerms extracts the terms from a query.
 func QueryTerms(r cqr.CommonQueryRepresentation) (terms []string) {
 	for _, keyword := range QueryKeywords(r) {
@@ -24,6 +62,7 @@ func QueryTerms(r cqr.CommonQueryRepresentation) (terms []string) {
 	return
 }
 
+// QueryFields extracts the fields from a query.
 func QueryFields(r cqr.CommonQueryRepresentation) (fields []string) {
 	switch q := r.(type) {
 	case cqr.Keyword:

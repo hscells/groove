@@ -5,13 +5,15 @@ import (
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/groove/analysis"
 )
 
 // QueryChain contains implementations for transformations to apply to a query and the selector to pick a candidate.
 type QueryChain struct {
 	Transformations   []Transformer
 	CandidateSelector QueryChainCandidateSelector
-	StatisticsSource  stats.StatisticsSource
+	stats.StatisticsSource
+	analysis.MeasurementExecutor
 }
 
 // QueryChainCandidateSelector describes how transformed queries are chosen from the set of transformations.
@@ -47,7 +49,7 @@ func (qc QueryChain) Execute(query groove.PipelineQuery) (TransformedQuery, erro
 	stop = qc.CandidateSelector.StoppingCriteria()
 	tq := NewTransformedQuery(query)
 	for !stop {
-		candidates, err := Variations(tq.PipelineQuery.Query, qc.StatisticsSource, qc.Transformations...)
+		candidates, err := Variations(tq.PipelineQuery.Query, qc.StatisticsSource, qc.MeasurementExecutor, qc.Transformations...)
 		if err != nil {
 			return TransformedQuery{}, err
 		}

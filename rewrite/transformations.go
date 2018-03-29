@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/groove/analysis"
 )
 
 // Transformer is applied to a query to generate a set of query candidates.
@@ -58,7 +59,7 @@ var (
 	d, _ = meshexp.Default()
 )
 
-func variations(query cqr.CommonQueryRepresentation, context TransformationContext, ss stats.StatisticsSource, transformations ...Transformer) ([]CandidateQuery, error) {
+func variations(query cqr.CommonQueryRepresentation, context TransformationContext, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformer) ([]CandidateQuery, error) {
 	var candidates []CandidateQuery
 	switch q := query.(type) {
 	case cqr.BooleanQuery: // First we look at the variations for a Boolean query (that most likely has children).
@@ -74,7 +75,7 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 		// the parent query and update the child with the generated permutation.
 		for j, child := range q.Children {
 			// Apply this transformation.
-			perms, err := variations(child, context, ss, transformations...)
+			perms, err := variations(child, context, ss, me, transformations...)
 			if err != nil {
 				return nil, err
 			}
@@ -130,7 +131,7 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 
 				for _, applied := range c {
 					ff := ContextFeatures(context)
-					qppFeatures, err := QPPFeatures(query, ss)
+					qppFeatures, err := QPPFeatures(query, ss, me)
 					if err != nil {
 						return nil, err
 					}
@@ -148,12 +149,36 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 // Variations creates query variations of the input query using the specified transformations. Permute will only generate
 // query variations that modify the query in one single place. This means that no transformation is applied twice to an
 // already modified query.
-func Variations(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, transformations ...Transformer) ([]CandidateQuery, error) {
-	c, err := variations(query, TransformationContext{}, ss, transformations...)
-	if err != nil {
-		return nil, err
+func Variations(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformer) ([]CandidateQuery, error) {
+	var vars []CandidateQuery
+
+	type result struct {
+		variations []CandidateQuery
+		error
 	}
-	return c, nil
+
+	results := make(chan result, len(transformations))
+	n := 0
+
+	for _, transformation := range transformations {
+		go func(t Transformer) {
+			c, err := variations(query, TransformationContext{}, ss, me, t)
+			results <- result{c, err}
+			n++
+			if n == len(transformations) {
+				close(results)
+			}
+		}(transformation)
+	}
+
+	for v := range results {
+		if v.error != nil {
+			return nil, v.error
+		}
+		vars = append(vars, v.variations...)
+	}
+
+	return vars, nil
 }
 
 func (r logicalOperatorReplacement) Features(query cqr.CommonQueryRepresentation, context TransformationContext) Features {

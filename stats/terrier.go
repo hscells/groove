@@ -134,7 +134,7 @@ func (t TerrierStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentati
 }
 
 // VocabularySize is the total number of terms in the vocabulary.
-func (t TerrierStatisticsSource) VocabularySize() (float64, error) {
+func (t TerrierStatisticsSource) VocabularySize(field string) (float64, error) {
 	collStatsRef, err := t.idx.CallMethod(t.env, "getCollectionStatistics", "org/terrier/structures/CollectionStatistics")
 	if err != nil {
 		return 0.0, err

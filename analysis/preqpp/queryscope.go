@@ -4,6 +4,7 @@ import (
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/stats"
 	"math"
+	"github.com/hscells/groove/analysis"
 )
 
 type queryScope struct{}
@@ -22,9 +23,14 @@ func (qs queryScope) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (
 	if err != nil {
 		return 0.0, err
 	}
-	N, err := s.VocabularySize()
-	if err != nil {
-		return 0.0, err
+	fields := analysis.QueryFields(q.Query)
+	var N float64
+	for _, field := range fields {
+		n, err := s.VocabularySize(field)
+		if err != nil {
+			return 0.0, err
+		}
+		N += n
 	}
 	return -math.Log((1.0 + Nq) / (1.0 + N)), nil
 }

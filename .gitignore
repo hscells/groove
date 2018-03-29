@@ -3,6 +3,7 @@ groove
 
 cache
 
+*.qrels
 *.model
 *.features
 *.results

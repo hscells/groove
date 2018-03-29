@@ -8,6 +8,7 @@ import (
 	"sort"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/groove/analysis/preqpp"
+	"github.com/hscells/groove/analysis"
 )
 
 // Feature is some value that is applicable to a query transformation.
@@ -80,45 +81,18 @@ func ContextFeatures(context TransformationContext) Features {
 }
 
 // QPPFeatures computes query performance predictor features for a query.
-func QPPFeatures(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource) (Features, error) {
-	var ff Features
-
+func QPPFeatures(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me analysis.MeasurementExecutor) (Features, error) {
 	gq := groove.NewPipelineQuery("qpp", 0, query)
-
-	// AvgIDF.
-	v, err := preqpp.AvgIDF.Execute(gq, ss)
+	features := []int{avgIDFFeature, sumIDFFeature, maxIDFFeature, stdDevIDFFeature, avgICTFFeature}
+	m, err := me.Execute(gq, ss, preqpp.AvgIDF, preqpp.SumIDF, preqpp.MaxIDF, preqpp.StdDevIDF, preqpp.AvgICTF)
 	if err != nil {
 		return nil, err
 	}
-	ff = append(ff, NewFeature(avgIDFFeature, v))
 
-	// SumIDF.
-	v, err = preqpp.SumIDF.Execute(gq, ss)
-	if err != nil {
-		return nil, err
+	ff := make(Features, len(features))
+	for i, feature := range features {
+		ff[i] = NewFeature(feature, m[i])
 	}
-	ff = append(ff, NewFeature(sumIDFFeature, v))
-
-	// MaxIDF.
-	v, err = preqpp.MaxIDF.Execute(gq, ss)
-	if err != nil {
-		return nil, err
-	}
-	ff = append(ff, NewFeature(maxIDFFeature, v))
-
-	// StdDevIDF.
-	v, err = preqpp.StdDevIDF.Execute(gq, ss)
-	if err != nil {
-		return nil, err
-	}
-	ff = append(ff, NewFeature(stdDevIDFFeature, v))
-
-	// AvgICTF.
-	v, err = preqpp.AvgICTF.Execute(gq, ss)
-	if err != nil {
-		return nil, err
-	}
-	ff = append(ff, NewFeature(avgICTFFeature, v))
 
 	return ff, nil
 }
@@ -178,6 +152,13 @@ func (ff Features) AverageScore() float64 {
 	}
 
 	return totalScore / float64(len(ff))
+}
+
+func NewLearntFeature(score float64, features Features) LearntFeature {
+	return LearntFeature{
+		features,
+		score,
+	}
 }
 
 // Append adds the most recent query transformation to the chain and updates the current query.

@@ -42,7 +42,7 @@ type StatisticsSource interface {
 	TotalTermFrequency(term, field string) (float64, error)
 	InverseDocumentFrequency(term, field string) (float64, error)
 	RetrievalSize(query cqr.CommonQueryRepresentation) (float64, error)
-	VocabularySize() (float64, error)
+	VocabularySize(field string) (float64, error)
 	Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error)
 }
 
@@ -122,7 +122,7 @@ func NewLanguageModel(source StatisticsSource, docIds []string, scores []float64
 	}
 
 	// Pre-calculate the vocabulary size.
-	vocab, err := lm.StatisticsSource.VocabularySize()
+	vocab, err := lm.StatisticsSource.VocabularySize("text")
 	if err != nil {
 		return nil, err
 	}

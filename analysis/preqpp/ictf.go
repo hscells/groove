@@ -21,15 +21,14 @@ func (avgi avgICTF) Name() string {
 func (avgi avgICTF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Query)
 
-	W, err := s.VocabularySize()
-	if err != nil {
-		return 0.0, err
-	}
-
 	sumICTF := 0.0
 	fields := analysis.QueryFields(q.Query)
 
 	for _, field := range fields {
+		W, err := s.VocabularySize(field)
+		if err != nil {
+			return 0.0, err
+		}
 		for _, term := range terms {
 			tf, err := s.TotalTermFrequency(term, field)
 			if err != nil {
