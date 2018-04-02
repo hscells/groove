@@ -8,6 +8,10 @@ import (
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
 	"testing"
+	"github.com/hscells/groove/stats"
+	"github.com/hscells/groove/analysis"
+	"github.com/peterbourgon/diskv"
+	"github.com/hscells/groove/combinator"
 )
 
 func TestLogicalOperatorReplacement_Apply(t *testing.T) {
@@ -36,7 +40,23 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	candidates, err := Variations(repr.(cqr.CommonQueryRepresentation), nil, NewLogicalOperatorTransformer(), NewAdjacencyRangeTransformer(), NewMeSHExplosionTransformer(), NewFieldRestrictionsTransformer(), NewAdjacencyReplacementTransformer())
+	ss := stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://sef-is-017660:8200/"),
+		stats.ElasticsearchIndex("med_stem_sim2"),
+		stats.ElasticsearchDocumentType("doc"),
+		stats.ElasticsearchAnalysedField("stemmed"),
+		//stats.ElasticsearchField("_all"),
+		stats.ElasticsearchScroll(true),
+		stats.ElasticsearchSearchOptions(stats.SearchOptions{Size: 10000, RunName: "test"}))
+
+	// Cache for the statistics of the query performance predictors.
+	statisticsCache := diskv.New(diskv.Options{
+		BasePath:     "../statistics_cache",
+		Transform:    combinator.BlockTransform(8),
+		CacheSizeMax: 4096 * 1024,
+		Compression:  diskv.NewGzipCompression(),
+	})
+
+	candidates, err := Variations(repr.(cqr.CommonQueryRepresentation), ss, analysis.NewMeasurementExecutor(statisticsCache), NewLogicalOperatorTransformer(), NewAdjacencyRangeTransformer(), NewMeSHExplosionTransformer(), NewFieldRestrictionsTransformer(), NewAdjacencyReplacementTransformer())
 
 	//queries, err := LogicalOperatorReplacement.Apply(repr.(cqr.CommonQueryRepresentation))
 	//if err != nil {

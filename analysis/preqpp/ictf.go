@@ -21,6 +21,10 @@ func (avgi avgICTF) Name() string {
 func (avgi avgICTF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Query)
 
+	if len(terms) == 0 {
+		return 0.0, nil
+	}
+
 	sumICTF := 0.0
 	fields := analysis.QueryFields(q.Query)
 
@@ -37,6 +41,5 @@ func (avgi avgICTF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (f
 			sumICTF += math.Log2(W) - math.Log2(1+tf)
 		}
 	}
-
 	return (1.0 / float64(len(terms))) * sumICTF, nil
 }

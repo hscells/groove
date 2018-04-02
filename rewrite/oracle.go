@@ -88,7 +88,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, candi
 		if err != nil {
 			return query, oc, err
 		}
-		results := tree.Documents().Results(query.PipelineQuery, query.PipelineQuery.Name)
+		results := tree.Documents(oc.seen).Results(query.PipelineQuery, query.PipelineQuery.Name)
 		oc.minResults = float64(len(results))
 		evaluation := eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results, oc.qrels, query.PipelineQuery.Topic)
 		if err != nil {
@@ -130,7 +130,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query TransformedQuery, candi
 		}
 
 		// Now we can transform the results of the logical tree into results to be evaluated.
-		results := tree.Documents().Results(nq, nq.Name)
+		results := tree.Documents(oc.seen).Results(nq, nq.Name)
 
 		// Evaluate the results using qrels.
 		evaluation := eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results, oc.qrels, query.PipelineQuery.Topic)

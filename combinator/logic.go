@@ -11,6 +11,9 @@ import (
 	"hash/fnv"
 	"strconv"
 	"strings"
+	"sync"
+	"sort"
+	"github.com/xtgo/set"
 )
 
 var (
@@ -20,11 +23,13 @@ var (
 	AndOperator = andOperator{}
 	// NotOperator combines documents using `NOT`.
 	NotOperator = notOperator{}
+
+	mu sync.Mutex
 )
 
 // Operator can combine different nodes of a tree together.
 type Operator interface {
-	Combine(clauses []LogicalTreeNode) Documents
+	Combine(clauses []LogicalTreeNode, cache QueryCacher) Documents
 	String() string
 }
 
@@ -36,15 +41,14 @@ type LogicalTree struct {
 // LogicalTreeNode is a node in a logical tree.
 type LogicalTreeNode interface {
 	Query() cqr.CommonQueryRepresentation
-	Documents() Documents
+	Documents(cache QueryCacher) Documents
 	String() string
 }
 
 // Clause is the most basic component of a logical tree.
 type Clause struct {
-	Hash      uint64
-	Documents Documents
-	Query     cqr.CommonQueryRepresentation
+	Hash  uint64
+	Query cqr.CommonQueryRepresentation
 }
 
 // Combinator is an operator in a query.
@@ -69,6 +73,18 @@ type Document uint32
 
 // Documents are a group of retrieved documents.
 type Documents []Document
+
+func (d Documents) Len() int {
+	return len(d)
+}
+
+func (d Documents) Less(i, j int) bool {
+	return d[i] < d[j]
+}
+
+func (d Documents) Swap(i, j int) {
+	d[i], d[j] = d[j], d[i]
+}
 
 // andOperator is the intersection of documents.
 type andOperator struct {
@@ -98,26 +114,26 @@ func (d Documents) Results(query groove.PipelineQuery, run string) trecresults.R
 	return r
 }
 
-// Set creates a set from a slice of documents.
-func (d Documents) Set() map[Document]bool {
-	m := make(map[Document]bool)
+// Set creates a map from a slice of documents.
+func (d Documents) Set() map[Document]struct{} {
+	m := make(map[Document]struct{}, len(d))
 	for _, doc := range d {
-		m[doc] = true
+		m[doc] = struct{}{}
 	}
 	return m
 }
 
-func (andOperator) Combine(nodes []LogicalTreeNode) Documents {
-	nodeDocs := make([]map[Document]bool, len(nodes))
+func (andOperator) Combine(nodes []LogicalTreeNode, cache QueryCacher) Documents {
+	nodeDocs := make([]map[Document]struct{}, len(nodes))
 	for i, node := range nodes {
-		nodeDocs[i] = node.Documents().Set()
+		nodeDocs[i] = node.Documents(cache).Set()
 	}
 
-	intersection := make(map[Document]bool)
+	intersection := make(map[Document]struct{})
 	for i := 0; i < len(nodeDocs)-1; i++ {
 		for k := range nodeDocs[i] {
-			if nodeDocs[i+1][k] {
-				intersection[k] = true
+			if _, ok := nodeDocs[i+1][k]; ok {
+				intersection[k] = struct{}{}
 			}
 		}
 	}
@@ -136,19 +152,13 @@ func (andOperator) String() string {
 	return "and"
 }
 
-func (orOperator) Combine(nodes []LogicalTreeNode) Documents {
-	union := make(map[Document]bool)
-	for _, node := range nodes {
-		for _, doc := range node.Documents() {
-			union[doc] = true
-		}
-	}
-
+func (orOperator) Combine(nodes []LogicalTreeNode, cache QueryCacher) Documents {
 	var docs Documents
-	for k := range union {
-		docs = append(docs, k)
+	for _, node := range nodes {
+		docs = append(docs, node.Documents(cache)...)
 	}
-
+	sort.Sort(docs)
+	set.Uniq(docs)
 	return docs
 }
 
@@ -156,14 +166,14 @@ func (orOperator) String() string {
 	return "or"
 }
 
-func (notOperator) Combine(nodes []LogicalTreeNode) Documents {
+func (notOperator) Combine(nodes []LogicalTreeNode, cache QueryCacher) Documents {
 	var a Documents
-	b := make([]map[Document]bool, len(nodes))
+	b := make([]map[Document]struct{}, len(nodes))
 
-	a = append(a, nodes[0].Documents()...)
+	a = append(a, nodes[0].Documents(cache)...)
 
 	for i := 1; i < len(nodes); i++ {
-		b[i] = nodes[i].Documents().Set()
+		b[i] = nodes[i].Documents(cache).Set()
 	}
 
 	// Now make b prime, comprising the docs not in a.
@@ -195,8 +205,8 @@ func (c Combinator) Query() cqr.CommonQueryRepresentation {
 }
 
 // Documents returns the documents retrieved by the combinator.
-func (c Combinator) Documents() Documents {
-	return c.Combine(c.Clauses)
+func (c Combinator) Documents(cache QueryCacher) Documents {
+	return c.Combine(c.Clauses, cache)
 }
 
 // String is the combinator name.
@@ -210,8 +220,15 @@ func (a Atom) Query() cqr.CommonQueryRepresentation {
 }
 
 // Documents returns the documents retrieved by the atom.
-func (a Atom) Documents() Documents {
-	return a.Clause.Documents
+func (a Atom) Documents(cache QueryCacher) Documents {
+	docs, err := cache.Get(a.Clause.Query)
+	if err == CacheMissError {
+		return Documents{}
+	}
+	if err != nil {
+		panic(err)
+	}
+	return docs
 }
 
 // String returns the query string.
@@ -225,8 +242,15 @@ func (a AdjAtom) Query() cqr.CommonQueryRepresentation {
 }
 
 // Documents returns the documents retrieved by the adjacency operator.
-func (a AdjAtom) Documents() Documents {
-	return a.Clause.Documents
+func (a AdjAtom) Documents(cache QueryCacher) Documents {
+	docs, err := cache.Get(a.Clause.Query)
+	if err == CacheMissError {
+		return Documents{}
+	}
+	if err != nil {
+		panic(err)
+	}
+	return docs
 }
 
 // String returns the query string.
@@ -240,36 +264,32 @@ func (d Document) String() string {
 }
 
 // NewAtom creates a new atom.
-func NewAtom(keyword cqr.Keyword, docs Documents) Atom {
+func NewAtom(keyword cqr.Keyword) Atom {
 	return Atom{
 		Clause{
-			Hash:      HashCQR(keyword),
-			Documents: docs,
-			Query:     keyword,
+			Hash:  HashCQR(keyword),
+			Query: keyword,
 		},
 	}
 }
 
 // NewAdjAtom creates a new adjacent atom.
-func NewAdjAtom(query cqr.BooleanQuery, docs Documents) AdjAtom {
+func NewAdjAtom(query cqr.BooleanQuery) AdjAtom {
 	return AdjAtom{
 		Clause{
-			Hash:      HashCQR(query),
-			Documents: docs,
-			Query:     query,
+			Hash:  HashCQR(query),
+			Query: query,
 		},
 	}
 }
 
 // NewCombinator creates a new combinator.
 func NewCombinator(query cqr.BooleanQuery, operator Operator, clauses ...LogicalTreeNode) Combinator {
-	docs := operator.Combine(clauses)
 	return Combinator{
 		Operator: operator,
 		Clause: Clause{
-			Hash:      HashCQR(query),
-			Documents: docs,
-			Query:     query,
+			Hash:  HashCQR(query),
+			Query: query,
 		},
 		Clauses: clauses,
 	}
@@ -293,9 +313,12 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen Q
 	switch q := query.Query.(type) {
 	case cqr.Keyword:
 		// Return a seen clause.
-		clause, err := seen.Get(q)
-		if err == nil && clause.Query != nil {
-			return NewAtom(clause.Query.(cqr.Keyword), clause.Documents), seen, nil
+		mu.Lock()
+		var docs Documents
+		docs, err := seen.Get(q)
+		if err == nil && docs != nil {
+			mu.Unlock()
+			return NewAtom(q), seen, nil
 		} else if err != nil && err != CacheMissError {
 			return nil, nil, err
 		}
@@ -305,17 +328,19 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen Q
 			return nil, nil, err
 		}
 
-		docs := make(Documents, len(ids))
+		docs = make(Documents, len(ids))
 		for i, id := range ids {
 			docs[i] = Document(id)
 		}
 
 		// Create the new clause add it to the seen list.
-		a := NewAtom(q, docs)
-		err = seen.Set(a.Query(), a.Clause)
+		a := NewAtom(q)
+		err = seen.Set(a.Query(), docs)
 		if err != nil {
 			return nil, nil, err
 		}
+		mu.Unlock()
+
 		return a, seen, nil
 	case cqr.BooleanQuery:
 		var operator Operator
@@ -333,9 +358,9 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen Q
 		// We need to create a special case for adjacent clauses.
 		if strings.Contains(strings.ToLower(q.Operator), "adj") {
 			// Return a seen clause.
-			clause, err := seen.Get(q)
-			if err == nil && clause.Query != nil {
-				return NewAdjAtom(clause.Query.(cqr.BooleanQuery), clause.Documents), seen, nil
+			docs, err := seen.Get(q)
+			if err == nil && docs != nil {
+				return NewAdjAtom(q), seen, nil
 			} else if err != nil && err != CacheMissError {
 				return nil, nil, err
 			}
@@ -345,13 +370,13 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen Q
 				return nil, nil, err
 			}
 
-			docs := make(Documents, len(ids))
+			docs = make(Documents, len(ids))
 			for i, id := range ids {
 				docs[i] = Document(id)
 			}
 
-			a := NewAdjAtom(q, docs)
-			err = seen.Set(a.Query(), a.Clause)
+			a := NewAdjAtom(q)
+			err = seen.Set(a.Query(), docs)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -391,8 +416,8 @@ func NewLogicalTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen 
 }
 
 // Documents returns the documents that the tree (query) would return if executed.
-func (root LogicalTree) Documents() Documents {
-	return root.Root.Documents()
+func (root LogicalTree) Documents(cache QueryCacher) Documents {
+	return root.Root.Documents(cache)
 }
 
 // ToCQR creates a query backwards from a logical tree.

@@ -6,8 +6,14 @@ import (
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/stats"
 	"strings"
-	"github.com/hashicorp/golang-lru"
 	"hash/fnv"
+	"github.com/peterbourgon/diskv"
+	"strconv"
+	"encoding/binary"
+	"math"
+	"os"
+	"fmt"
+	"reflect"
 )
 
 // Measurement is a representation for how a measurement fits into the pipeline.
@@ -19,28 +25,33 @@ type Measurement interface {
 }
 
 type MeasurementExecutor struct {
-	*lru.Cache
+	*diskv.Diskv
 }
 
-func NewMeasurementExecutor(cacheSize int) MeasurementExecutor {
-	l, _ := lru.New(cacheSize)
+func NewMeasurementExecutor(d *diskv.Diskv) MeasurementExecutor {
 	return MeasurementExecutor{
-		l,
+		d,
 	}
 }
 
-func hash(representation cqr.CommonQueryRepresentation, measurement Measurement) uint32 {
+func hash(representation cqr.CommonQueryRepresentation, measurement Measurement) string {
 	h := fnv.New32()
 	h.Write([]byte(representation.String() + measurement.Name()))
-	return h.Sum32()
+	return strconv.Itoa(int(h.Sum32()))
 }
 
 func (m MeasurementExecutor) Execute(query groove.PipelineQuery, ss stats.StatisticsSource, measurements ...Measurement) (results []float64, err error) {
 	results = make([]float64, len(measurements))
 	for i, measurement := range measurements {
-		if v, ok := m.Get(hash(query.Query, measurement)); ok {
-			results[i] = v.(float64)
+		qHash := hash(query.Query, measurement)
+		if v, err := m.Read(qHash); err == nil && len(v) > 0 {
+			bits := binary.BigEndian.Uint64(v)
+			f := math.Float64frombits(bits)
+			results[i] = f
 			continue
+		} else if reflect.TypeOf(err) != reflect.TypeOf(&os.PathError{}) {
+			fmt.Println(err)
+			return nil, err
 		}
 
 		var v float64
@@ -49,7 +60,9 @@ func (m MeasurementExecutor) Execute(query groove.PipelineQuery, ss stats.Statis
 			return
 		}
 		results[i] = v
-		m.Add(hash(query.Query, measurement), v)
+		buff := make([]byte, 8)
+		binary.BigEndian.PutUint64(buff[:], math.Float64bits(v))
+		m.Write(qHash, buff)
 	}
 	return
 }
@@ -98,6 +111,32 @@ func QueryBooleanQueries(r cqr.CommonQueryRepresentation) (children []cqr.Boolea
 			case cqr.BooleanQuery:
 				children = append(children, c)
 				children = append(children, QueryBooleanQueries(c)...)
+			}
+		}
+	}
+	return
+}
+
+// ExplodedKeywords gets the keywords in the query that are exploded.
+func ExplodedKeywords(r cqr.CommonQueryRepresentation) (exploded []cqr.Keyword) {
+	keywords := QueryKeywords(r)
+	for _, kw := range keywords {
+		if option, ok := kw.Options["exploded"]; ok {
+			if exp, ok := option.(bool); ok && exp {
+				exploded = append(exploded, kw)
+			}
+		}
+	}
+	return
+}
+
+// TruncatedKeywords gets the keywords in the query that are exploded.
+func TruncatedKeywords(r cqr.CommonQueryRepresentation) (truncated []cqr.Keyword) {
+	keywords := QueryKeywords(r)
+	for _, kw := range keywords {
+		if option, ok := kw.Options["truncated"]; ok {
+			if trunc, ok := option.(bool); ok && trunc {
+				truncated = append(truncated, kw)
 			}
 		}
 	}

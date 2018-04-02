@@ -17,6 +17,7 @@ import (
 	"github.com/hscells/groove/rewrite"
 	"fmt"
 	"github.com/hscells/groove/eval"
+	"github.com/hscells/groove/analysis"
 )
 
 func TestOracleQueryChainSelector_Select(t *testing.T) {
@@ -72,9 +73,17 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		Compression:  diskv.NewGzipCompression(),
 	}))
 
+	// Cache for the statistics of the query performance predictors.
+	statisticsCache := diskv.New(diskv.Options{
+		BasePath:     "../statistics_cache",
+		Transform:    combinator.BlockTransform(8),
+		CacheSizeMax: 4096 * 1024,
+		Compression:  diskv.NewGzipCompression(),
+	})
+
 	selector := rewrite.NewOracleQueryChainCandidateSelector(ss, qrels, cache)
 
-	chain := rewrite.NewQueryChain(selector, ss, rewrite.NewLogicalOperatorTransformer(), rewrite.NewAdjacencyReplacementTransformer(), rewrite.NewAdjacencyRangeTransformer(), rewrite.NewMeSHExplosionTransformer(), rewrite.NewFieldRestrictionsTransformer())
+	chain := rewrite.NewQueryChain(selector, ss, analysis.NewMeasurementExecutor(statisticsCache), rewrite.NewLogicalOperatorTransformer(), rewrite.NewAdjacencyReplacementTransformer(), rewrite.NewAdjacencyRangeTransformer(), rewrite.NewMeSHExplosionTransformer(), rewrite.NewFieldRestrictionsTransformer())
 	//fmt.Printf("Rewriting query with %v possible transformations\n", len(chain.Transformations))
 	q, err := chain.Execute(groove.NewPipelineQuery("test", topic, repr.(cqr.CommonQueryRepresentation)))
 	if err != nil {

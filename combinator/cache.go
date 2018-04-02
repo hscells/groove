@@ -27,10 +27,10 @@ func BlockTransform(blockSize int) func(string) []string {
 }
 
 // ClauseToBytes encodes a clause to bytes.
-func ClauseToBytes(node Clause) ([]byte, error) {
+func ClauseToBytes(docs Documents) ([]byte, error) {
 	var buff bytes.Buffer
 	enc := gob.NewEncoder(&buff)
-	err := enc.Encode(node)
+	err := enc.Encode(docs)
 	if err != nil {
 		return nil, err
 	}
@@ -45,8 +45,8 @@ func constructor() {
 
 // QueryCacher models a way to cache (either persistent or not) queries and the documents they retrieve.
 type QueryCacher interface {
-	Get(query cqr.CommonQueryRepresentation) (Clause, error)
-	Set(query cqr.CommonQueryRepresentation, node Clause) error
+	Get(query cqr.CommonQueryRepresentation) (Documents, error)
+	Set(query cqr.CommonQueryRepresentation, docs Documents) error
 }
 
 // QueryCache embeds a privately defined query cacher into a public struct.
@@ -55,47 +55,47 @@ type QueryCache struct {
 }
 
 type mapQueryCache struct {
-	m map[uint64]Clause
+	m map[uint64]Documents
 }
 
-func (m mapQueryCache) Get(query cqr.CommonQueryRepresentation) (Clause, error) {
+func (m mapQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, error) {
 	if d, ok := m.m[HashCQR(query)]; ok {
 		return d, nil
 	}
-	return Clause{}, nil
+	return Documents{}, nil
 }
 
-func (m mapQueryCache) Set(query cqr.CommonQueryRepresentation, node Clause) error {
-	m.m[HashCQR(query)] = node
+func (m mapQueryCache) Set(query cqr.CommonQueryRepresentation, docs Documents) error {
+	m.m[HashCQR(query)] = docs
 	return nil
 }
 
 // NewMapQueryCache creates a query cache out of a regular go map.
 func NewMapQueryCache() QueryCache {
 	constructor()
-	return QueryCache{mapQueryCache{make(map[uint64]Clause)}}
+	return QueryCache{mapQueryCache{make(map[uint64]Documents)}}
 }
 
 type diskvQueryCache struct {
 	*diskv.Diskv
 }
 
-func (d diskvQueryCache) Get(query cqr.CommonQueryRepresentation) (Clause, error) {
+func (d diskvQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, error) {
 	b, err := d.Read(strconv.Itoa(int(HashCQR(query))))
 	if err != nil {
-		return Clause{}, CacheMissError
+		return Documents{}, CacheMissError
 	}
 	dec := gob.NewDecoder(bytes.NewReader(b))
-	var c Clause
+	var c Documents
 	err = dec.Decode(&c)
 	if err != nil {
-		return Clause{}, err
+		return Documents{}, err
 	}
 	return c, nil
 }
 
-func (d diskvQueryCache) Set(query cqr.CommonQueryRepresentation, node Clause) error {
-	b, err := ClauseToBytes(node)
+func (d diskvQueryCache) Set(query cqr.CommonQueryRepresentation, docs Documents) error {
+	b, err := ClauseToBytes(docs)
 	if err != nil {
 		return err
 	}

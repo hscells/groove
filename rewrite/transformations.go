@@ -59,7 +59,7 @@ var (
 	d, _ = meshexp.Default()
 )
 
-func variations(query cqr.CommonQueryRepresentation, context TransformationContext, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformer) ([]CandidateQuery, error) {
+func variations(query cqr.CommonQueryRepresentation, context TransformationContext, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformation) ([]CandidateQuery, error) {
 	var candidates []CandidateQuery
 	switch q := query.(type) {
 	case cqr.BooleanQuery: // First we look at the variations for a Boolean query (that most likely has children).
@@ -85,7 +85,25 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 				tmp := q
 				tmp.Children = children
 				tmp.Children[j] = applied.Query
-				queries = append(queries, NewCandidateQuery(tmp, applied.Features))
+
+				features := applied.Features
+				if len(applied.Features) == 0 {
+					features = ContextFeatures(q, context)
+					switch applied.Query.(type) {
+					case cqr.Keyword:
+						features = append(features, KeywordFeatures(applied.Query.(cqr.Keyword))...)
+					}
+					features = append(features, BooleanFeatures(q)...)
+					features = append(features,
+						NewFeature(totalFieldsFeature, float64(len(analysis.QueryFields(q)))),
+						NewFeature(totalKeywordsFeature, float64(len(analysis.QueryKeywords(q)))),
+						NewFeature(totalTermsFeature, float64(len(analysis.QueryTerms(q)))),
+						NewFeature(totalExplodedFeature, float64(len(analysis.ExplodedKeywords(q)))),
+						NewFeature(totalTruncatedFeature, float64(len(analysis.TruncatedKeywords(q)))),
+						NewFeature(totalClausesFeature, float64(len(analysis.QueryBooleanQueries(q)))))
+				}
+
+				queries = append(queries, NewCandidateQuery(tmp, features))
 			}
 		}
 
@@ -98,8 +116,10 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 				}
 
 				for _, applied := range c {
-					ff := ContextFeatures(context)
-					ff = append(ff, transformation.Features(query, context)...)
+					ff := ContextFeatures(applied, context)
+					ff = append(ff, BooleanFeatures(applied.(cqr.BooleanQuery))...)
+					ff = append(ff, transformation.Features(applied, context)...)
+					ff = append(ff, TransformationTypeFeature(applied, transformation.Transformer))
 					queries = append(queries, NewCandidateQuery(applied, ff))
 				}
 			}
@@ -130,13 +150,15 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 				}
 
 				for _, applied := range c {
-					ff := ContextFeatures(context)
-					qppFeatures, err := QPPFeatures(query, ss, me)
+					ff := ContextFeatures(applied, context)
+					qppFeatures, err := QPPFeatures(applied, ss, me)
 					if err != nil {
 						return nil, err
 					}
 					ff = append(ff, qppFeatures...)
-					ff = append(ff, transformation.Features(query, context)...)
+					ff = append(ff, KeywordFeatures(applied.(cqr.Keyword))...)
+					ff = append(ff, transformation.Features(applied, context)...)
+					ff = append(ff, TransformationTypeFeature(applied, transformation.Transformer))
 					candidates = append(candidates, NewCandidateQuery(applied, ff))
 				}
 			}
@@ -149,7 +171,7 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 // Variations creates query variations of the input query using the specified transformations. Permute will only generate
 // query variations that modify the query in one single place. This means that no transformation is applied twice to an
 // already modified query.
-func Variations(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformer) ([]CandidateQuery, error) {
+func Variations(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformation) ([]CandidateQuery, error) {
 	var vars []CandidateQuery
 
 	type result struct {
@@ -161,7 +183,7 @@ func Variations(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, 
 	n := 0
 
 	for _, transformation := range transformations {
-		go func(t Transformer) {
+		go func(t Transformation) {
 			c, err := variations(query, TransformationContext{}, ss, me, t)
 			results <- result{c, err}
 			n++
@@ -186,6 +208,7 @@ func (r logicalOperatorReplacement) Features(query cqr.CommonQueryRepresentation
 }
 
 func (r logicalOperatorReplacement) Apply(query cqr.CommonQueryRepresentation) (candidate []cqr.CommonQueryRepresentation, err error) {
+	r.replacementType = 0
 	switch q := query.(type) {
 	case cqr.BooleanQuery:
 		switch q.Operator {
@@ -212,6 +235,10 @@ func (logicalOperatorReplacement) Name() string {
 func (r *adjacencyRange) Apply(query cqr.CommonQueryRepresentation) (queries []cqr.CommonQueryRepresentation, err error) {
 	var rangeQueries []cqr.CommonQueryRepresentation
 	var changes []float64
+
+	r.distance = []float64{}
+	r.distanceChange = []float64{}
+
 	switch q := query.(type) {
 	case cqr.BooleanQuery:
 		if strings.Contains(q.Operator, "adj") {
@@ -324,6 +351,8 @@ func (r fieldRestrictions) Apply(query cqr.CommonQueryRepresentation) (queries [
 				break
 			}
 		}
+
+		r.restrictionType = 0
 
 		if hasTitle && !hasAbstract {
 			q1 := cqr.CopyKeyword(q)

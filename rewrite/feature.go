@@ -9,6 +9,7 @@ import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/groove/analysis/preqpp"
 	"github.com/hscells/groove/analysis"
+	"strings"
 )
 
 // Feature is some value that is applicable to a query transformation.
@@ -29,18 +30,33 @@ const (
 	childrenCountFeature
 
 	// Transformation-based features.
+	transformationTypeFeature
 	logicalReplacementTypeFeature
 	adjacencyChangeFeature
 	adjacencyDistanceFeature
 	meshDepthFeature
 	restrictionTypeFeature
 
-	// Pre-QPP-based features
+	// Pre-QPP-based features.
 	avgIDFFeature
 	sumIDFFeature
 	maxIDFFeature
 	stdDevIDFFeature
 	avgICTFFeature
+
+	// Keyword specific features.
+	isExplodedFeature
+	isTruncatedFeature
+	numFieldsFeature
+
+	// Boolean specific features.
+	operatorTypeFeature
+	totalFieldsFeature
+	totalKeywordsFeature
+	totalTermsFeature
+	totalClausesFeature
+	totalExplodedFeature
+	totalTruncatedFeature
 )
 
 func NewFeature(id int, score float64) Feature {
@@ -72,12 +88,74 @@ type CandidateQuery struct {
 	Query cqr.CommonQueryRepresentation
 }
 
-func ContextFeatures(context TransformationContext) Features {
-	return Features{
+func KeywordFeatures(q cqr.Keyword) Features {
+	var features Features
+
+	// Exploded.
+	// 0 - not applicable.
+	// 1 - not exploded.
+	// 2 - exploded.
+	explodedFeature := NewFeature(isExplodedFeature, 0)
+	if _, ok := q.Options["exploded"]; ok {
+		if exploded, ok := q.Options["exploded"].(bool); ok && exploded {
+			explodedFeature.Score = 2
+		} else {
+			explodedFeature.Score = 1
+		}
+	}
+
+	// Truncation. Same feature values as exploded.
+	truncatedFeature := NewFeature(isTruncatedFeature, 0)
+	if _, ok := q.Options["truncated"]; ok {
+		if truncated, ok := q.Options["truncated"].(bool); ok && truncated {
+			truncatedFeature.Score = 2
+		} else {
+			truncatedFeature.Score = 1
+		}
+	}
+
+	// Number of fields the query has.
+	numFields := NewFeature(numFieldsFeature, float64(len(q.Fields)))
+
+	features = append(features, explodedFeature, truncatedFeature, numFields)
+	return features
+}
+
+func BooleanFeatures(q cqr.BooleanQuery) Features {
+	var features Features
+
+	// Operator type feature.
+	// 0 - n/a
+	// 1 - or
+	// 2 - and
+	// 3 - not
+	// 4 - adj
+	operatorType := NewFeature(operatorTypeFeature, 0)
+	switch q.Operator {
+	case "or", "OR":
+		operatorType.Score = 1
+	case "and", "AND":
+		operatorType.Score = 2
+	case "not", "NOT":
+		operatorType.Score = 3
+	default:
+		if strings.Contains(q.Operator, "adj") {
+			operatorType.Score = 4
+		}
+
+	}
+	features = append(features, operatorType)
+
+	return features
+}
+
+func ContextFeatures(query cqr.CommonQueryRepresentation, context TransformationContext) Features {
+	var features Features
+
+	return append(features,
 		NewFeature(depthFeature, context.Depth),
 		NewFeature(clauseTypeFeature, context.ClauseType),
-		NewFeature(childrenCountFeature, context.ChildrenCount),
-	}
+		NewFeature(childrenCountFeature, context.ChildrenCount))
 }
 
 // QPPFeatures computes query performance predictor features for a query.
@@ -97,11 +175,32 @@ func QPPFeatures(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource,
 	return ff, nil
 }
 
+// TransformationTypeFeature is a feature representing the previous feature that was applied to a query.
+func TransformationTypeFeature(query cqr.CommonQueryRepresentation, transformer Transformer) Feature {
+	transformationType := NewFeature(transformationTypeFeature, 0)
+	switch transformer.(type) {
+	case logicalOperatorReplacement:
+		transformationType.Score = 1
+	case *adjacencyRange:
+		transformationType.Score = 2
+	case meshExplosion:
+		transformationType.Score = 3
+	case fieldRestrictions:
+		transformationType.Score = 4
+	case adjacencyReplacement:
+		transformationType.Score = 5
+	}
+	return transformationType
+}
+
 // String returns the string of a Feature family.
 func (ff Features) String() string {
-	var s string
+	s := "0 "
+	sort.Slice(ff, func(i, j int) bool {
+		return ff[i].ID < ff[j].ID
+	})
 	for _, f := range ff {
-		s += fmt.Sprintf("%v:%v ", f.ID, f.Score)
+		s += fmt.Sprintf("%v:%v ", f.ID+1, f.Score)
 	}
 	return s
 }

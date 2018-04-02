@@ -18,6 +18,8 @@ import (
 	"runtime"
 	"io"
 	"strconv"
+	"sync"
+	"strings"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.
@@ -33,6 +35,8 @@ type ElasticsearchStatisticsSource struct {
 	Scroll       bool
 	Analyser     string
 	AnalyseField string
+
+	wg sync.WaitGroup
 }
 
 // SearchOptions gets the immutable search options for the statistics source.
@@ -90,7 +94,7 @@ func (es *ElasticsearchStatisticsSource) DocumentFrequency(term string) (float64
 // TotalTermFrequency is a sum of total term frequencies (the sum of total term frequencies of each term in this field).
 func (es *ElasticsearchStatisticsSource) TotalTermFrequency(term, field string) (float64, error) {
 	analyseField := field
-	if len(es.AnalyseField) > 0 {
+	if strings.Contains(term, "~") && field != "mesh_headings" {
 		analyseField = field + "." + es.AnalyseField
 	}
 
@@ -108,7 +112,8 @@ func (es *ElasticsearchStatisticsSource) TotalTermFrequency(term, field string) 
 	}
 
 	if tv, ok := resp.TermVectors[analyseField]; ok {
-		return float64(tv.Terms[term].Ttf), nil
+		t := strings.ToLower(strings.Replace(strings.Replace(strings.Replace(term, "\"", "", -1), "*", "", -1), "~", "", -1))
+		return float64(tv.Terms[t].Ttf), nil
 	}
 
 	return 0.0, nil
@@ -156,11 +161,6 @@ func (es *ElasticsearchStatisticsSource) InverseDocumentFrequency(term, field st
 
 // VocabularySize is the total number of terms in the vocabulary.
 func (es *ElasticsearchStatisticsSource) VocabularySize(field string) (float64, error) {
-	analyseField := field
-	if len(es.AnalyseField) > 0 {
-		analyseField = field + "." + es.AnalyseField
-	}
-
 	resp, err := es.client.TermVectors(es.index, es.documentType).
 		Doc(map[string]string{field: uuid.NewV4().String()}).
 		Offsets(false).
@@ -168,14 +168,14 @@ func (es *ElasticsearchStatisticsSource) VocabularySize(field string) (float64, 
 		Realtime(false).
 		Pretty(false).
 		Payloads(false).
-		Fields(analyseField).
-		PerFieldAnalyzer(map[string]string{analyseField: ""}).
+		Fields(field).
+		PerFieldAnalyzer(map[string]string{field: ""}).
 		Do(context.Background())
 	if err != nil {
 		return 0.0, err
 	}
 
-	return float64(resp.TermVectors[analyseField].FieldStatistics.SumTtf), nil
+	return float64(resp.TermVectors[field].FieldStatistics.SumTtf), nil
 }
 
 // RetrievalSize is the minimum number of documents that contains at least one of the query terms.
@@ -232,7 +232,7 @@ func (es *ElasticsearchStatisticsSource) TermVector(document string) (TermVector
 }
 
 // ExecuteFast executes an Elasticsearch query and retrieves only the document ids in the fastest possible way. Do not
-// use this for ranked results as the concurrency of this method does not guanrantee order.
+// use this for ranked results as the concurrency of this method does not guarantee order.
 func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery, options SearchOptions) ([]uint32, error) {
 	// Transform the query to an Elasticsearch query.
 	q, err := toElasticsearch(query.Query)
@@ -246,6 +246,7 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 	sem := make(chan bool, concurrency)
 	hits := make([][]uint32, concurrency)
 
+	fmt.Println("executing fast", query.Query)
 	for i := 0; i < concurrency; i++ {
 		sem <- true
 
@@ -256,13 +257,14 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 				FetchSource(false).
 				Pretty(false).
 				Type(es.documentType).
-				KeepAlive("30m").
-				Slice(elastic.NewSliceQuery().Id(i).Max(concurrency)).
+				KeepAlive("10m").
+				Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
 				SearchSource(
 				elastic.NewSearchSource().
 					NoStoredFields().
 					FetchSource(false).
 					Size(options.Size).
+					Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
 					TrackScores(false).
 					Query(elastic.NewRawStringQuery(q)))
 
@@ -282,6 +284,7 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 					}
 					hits[n] = append(hits[n], uint32(id))
 				}
+				fmt.Printf("%v: %v/%v\n", query.Query, len(hits[n]), result.Hits.TotalHits)
 			}
 
 			err = svc.Clear(context.Background())
@@ -292,7 +295,7 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 		}(i)
 
 	}
-	fmt.Println("waiting")
+
 	// Wait until the last goroutine has read from the semaphore.
 	for i := 0; i < cap(sem); i++ {
 		sem <- true

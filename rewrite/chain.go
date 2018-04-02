@@ -10,7 +10,7 @@ import (
 
 // QueryChain contains implementations for transformations to apply to a query and the selector to pick a candidate.
 type QueryChain struct {
-	Transformations   []Transformer
+	Transformations   []Transformation
 	CandidateSelector QueryChainCandidateSelector
 	stats.StatisticsSource
 	analysis.MeasurementExecutor
@@ -31,11 +31,12 @@ type LearntCandidateQuery struct {
 }
 
 // NewQueryChain creates a new query chain with implementations for a selector and transformations.
-func NewQueryChain(selector QueryChainCandidateSelector, ss stats.StatisticsSource, transformations ...Transformer) QueryChain {
+func NewQueryChain(selector QueryChainCandidateSelector, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformation) QueryChain {
 	return QueryChain{
-		CandidateSelector: selector,
-		Transformations:   transformations,
-		StatisticsSource:  ss,
+		CandidateSelector:   selector,
+		Transformations:     transformations,
+		MeasurementExecutor: me,
+		StatisticsSource:    ss,
 	}
 }
 

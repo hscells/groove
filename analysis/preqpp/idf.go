@@ -109,5 +109,19 @@ func (sum stdDevIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (
 		}
 	}
 
+	if len(scores) == 0 {
+		return 0.0, nil
+	}
+
+	n0 := 0
+	for _, s := range scores {
+		if s == 0 {
+			n0++
+		}
+	}
+	if n0 == len(scores) {
+		return 0.0, nil
+	}
+
 	return stat.StdDev(scores, nil), nil
 }
