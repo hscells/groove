@@ -1,14 +1,15 @@
 package rewrite
 
 import (
-	"github.com/hscells/cqr"
-	"github.com/hscells/meshexp"
-	"strings"
-	"strconv"
 	"fmt"
+	"github.com/hscells/cqr"
+	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/groove/analysis"
+	"github.com/hscells/meshexp"
+	"strconv"
+	"strings"
+	"sync"
 )
 
 // Transformer is applied to a query to generate a set of query candidates.
@@ -61,6 +62,17 @@ var (
 
 func variations(query cqr.CommonQueryRepresentation, context TransformationContext, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformation) ([]CandidateQuery, error) {
 	var candidates []CandidateQuery
+
+	// Compute features (and pre-transformation features) for the original Boolean query.
+	preDeltas, err := deltas(query, ss, me)
+	if err != nil {
+		return nil, err
+	}
+	preFeatures := contextFeatures(context)
+	for feature, score := range preDeltas {
+		preFeatures = append(preFeatures, NewFeature(feature, score))
+	}
+
 	switch q := query.(type) {
 	case cqr.BooleanQuery: // First we look at the variations for a Boolean query (that most likely has children).
 		var queries []CandidateQuery
@@ -68,6 +80,7 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 			AddDepth(1).
 			SetClauseType(booleanClause).
 			SetChildrenCount(float64(len(q.Children)))
+
 		// In order to generate variations for a Boolean query, we must generate all the variations for children,
 		// and then overwrite the child with the particular permutation. This ensures that exactly one permutation is
 		// generated and no variations combine with each other.
@@ -88,19 +101,45 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 
 				features := applied.Features
 				if len(applied.Features) == 0 {
-					features = ContextFeatures(q, context)
+					// Context features.
+					features = contextFeatures(context)
+
+					// Optional keyword features.
 					switch applied.Query.(type) {
 					case cqr.Keyword:
-						features = append(features, KeywordFeatures(applied.Query.(cqr.Keyword))...)
+						features = append(features, keywordFeatures(applied.Query.(cqr.Keyword))...)
 					}
-					features = append(features, BooleanFeatures(q)...)
-					features = append(features,
-						NewFeature(totalFieldsFeature, float64(len(analysis.QueryFields(q)))),
-						NewFeature(totalKeywordsFeature, float64(len(analysis.QueryKeywords(q)))),
-						NewFeature(totalTermsFeature, float64(len(analysis.QueryTerms(q)))),
-						NewFeature(totalExplodedFeature, float64(len(analysis.ExplodedKeywords(q)))),
-						NewFeature(totalTruncatedFeature, float64(len(analysis.TruncatedKeywords(q)))),
-						NewFeature(totalClausesFeature, float64(len(analysis.QueryBooleanQueries(q)))))
+
+					// Boolean features.
+					features = append(features, booleanFeatures(tmp)...)
+
+					// Features about the entire Boolean query.
+					foundTotal := false
+					for _, feature := range features {
+						if feature.ID == totalFieldsFeature {
+							foundTotal = true
+							break
+						}
+					}
+					if !foundTotal {
+						features = append(features,
+							NewFeature(totalFieldsFeature, float64(len(analysis.QueryFields(tmp)))),
+							NewFeature(totalKeywordsFeature, float64(len(analysis.QueryKeywords(tmp)))),
+							NewFeature(totalTermsFeature, float64(len(analysis.QueryTerms(tmp)))),
+							NewFeature(totalExplodedFeature, float64(len(analysis.ExplodedKeywords(tmp)))),
+							NewFeature(totalTruncatedFeature, float64(len(analysis.TruncatedKeywords(tmp)))),
+							NewFeature(totalClausesFeature, float64(len(analysis.QueryBooleanQueries(tmp)))))
+					}
+
+					deltas, err := deltas(tmp, ss, me)
+					if err != nil {
+						return nil, err
+					}
+
+					for feature, score := range deltas {
+						features = append(features, NewFeature(feature, score))
+					}
+					features = append(features, computeDeltas(preDeltas, deltas)...)
 				}
 
 				queries = append(queries, NewCandidateQuery(tmp, features))
@@ -116,11 +155,39 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 				}
 
 				for _, applied := range c {
-					ff := ContextFeatures(applied, context)
-					ff = append(ff, BooleanFeatures(applied.(cqr.BooleanQuery))...)
-					ff = append(ff, transformation.Features(applied, context)...)
-					ff = append(ff, TransformationTypeFeature(applied, transformation.Transformer))
-					queries = append(queries, NewCandidateQuery(applied, ff))
+					features := contextFeatures(context)
+					features = append(features, booleanFeatures(applied.(cqr.BooleanQuery))...)
+					features = append(features, transformation.Features(applied, context)...)
+					features = append(features, transformationFeature(transformation.Transformer))
+					// Features about the entire Boolean query.
+					foundTotal := false
+					for _, feature := range features {
+						if feature.ID == totalFieldsFeature {
+							foundTotal = true
+							break
+						}
+					}
+					if !foundTotal {
+						features = append(features,
+							NewFeature(totalFieldsFeature, float64(len(analysis.QueryFields(q)))),
+							NewFeature(totalKeywordsFeature, float64(len(analysis.QueryKeywords(q)))),
+							NewFeature(totalTermsFeature, float64(len(analysis.QueryTerms(q)))),
+							NewFeature(totalExplodedFeature, float64(len(analysis.ExplodedKeywords(q)))),
+							NewFeature(totalTruncatedFeature, float64(len(analysis.TruncatedKeywords(q)))),
+							NewFeature(totalClausesFeature, float64(len(analysis.QueryBooleanQueries(q)))))
+					}
+
+					deltas, err := deltas(applied, ss, me)
+					if err != nil {
+						return nil, err
+					}
+
+					for feature, score := range deltas {
+						features = append(features, NewFeature(feature, score))
+					}
+					features = append(features, computeDeltas(preDeltas, deltas)...)
+
+					queries = append(queries, NewCandidateQuery(applied, features))
 				}
 			}
 		}
@@ -136,12 +203,16 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 			delete(queryMap, k)
 		}
 	case cqr.Keyword: // In the second case for keywords there is no recursion and we only generate variations.
+		// Populate the context.
 		context = context.
 			AddDepth(1).
 			SetClauseType(keywordClause).
 			SetChildrenCount(0)
-		candidates = append(candidates, NewCandidateQuery(q, Features{}))
-		// First, apply the transformations to the current Boolean query.
+
+		// Add the original query to the list of candidates.
+		candidates = append(candidates, NewCandidateQuery(q, preFeatures))
+
+		// Next, apply the transformations to the current query.
 		for _, transformation := range transformations {
 			if transformation.Applicable(q) {
 				c, err := transformation.Apply(q)
@@ -150,16 +221,21 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 				}
 
 				for _, applied := range c {
-					ff := ContextFeatures(applied, context)
-					qppFeatures, err := QPPFeatures(applied, ss, me)
+					features := contextFeatures(context)
+					deltas, err := deltas(applied, ss, me)
 					if err != nil {
 						return nil, err
 					}
-					ff = append(ff, qppFeatures...)
-					ff = append(ff, KeywordFeatures(applied.(cqr.Keyword))...)
-					ff = append(ff, transformation.Features(applied, context)...)
-					ff = append(ff, TransformationTypeFeature(applied, transformation.Transformer))
-					candidates = append(candidates, NewCandidateQuery(applied, ff))
+
+					for feature, score := range deltas {
+						features = append(features, NewFeature(feature, score))
+					}
+
+					features = append(features, computeDeltas(preDeltas, deltas)...)
+					features = append(features, keywordFeatures(applied.(cqr.Keyword))...)
+					features = append(features, transformation.Features(applied, context)...)
+					features = append(features, transformationFeature(transformation.Transformer))
+					candidates = append(candidates, NewCandidateQuery(applied, features))
 				}
 			}
 		}
@@ -173,32 +249,24 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 // already modified query.
 func Variations(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformation) ([]CandidateQuery, error) {
 	var vars []CandidateQuery
-
-	type result struct {
-		variations []CandidateQuery
-		error
-	}
-
-	results := make(chan result, len(transformations))
-	n := 0
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 
 	for _, transformation := range transformations {
+		wg.Add(1)
 		go func(t Transformation) {
+			defer wg.Done()
 			c, err := variations(query, TransformationContext{}, ss, me, t)
-			results <- result{c, err}
-			n++
-			if n == len(transformations) {
-				close(results)
+			if err != nil {
+				panic(err)
 			}
+			mu.Lock()
+			vars = append(vars, c...)
+			mu.Unlock()
 		}(transformation)
 	}
 
-	for v := range results {
-		if v.error != nil {
-			return nil, v.error
-		}
-		vars = append(vars, v.variations...)
-	}
+	wg.Wait()
 
 	return vars, nil
 }

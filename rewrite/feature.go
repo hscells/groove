@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
+	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/analysis/preqpp"
+	"github.com/hscells/groove/stats"
 	"io"
 	"sort"
-	"github.com/hscells/groove/stats"
-	"github.com/hscells/groove/analysis/preqpp"
-	"github.com/hscells/groove/analysis"
 	"strings"
 )
 
@@ -23,10 +23,12 @@ func (f Feature) Set(score float64) Feature {
 	return f
 }
 
+type deltaFeatures map[int]float64
+
 const (
 	// Context features.
 	depthFeature         = iota
-	clauseTypeFeature
+	clauseTypeFeature     // This isn't the operator type, it's the type of the clause (keyword query/Boolean query).
 	childrenCountFeature
 
 	// Transformation-based features.
@@ -57,6 +59,15 @@ const (
 	totalClausesFeature
 	totalExplodedFeature
 	totalTruncatedFeature
+
+	// Delta features.
+	retrievedFeature
+	deltaRetrievedFeature
+	deltaAvgIDFFeature
+	deltaSumIDFFeature
+	deltaMaxIDFFeature
+	deltaStdDevIDFFeature
+	deltaAvgICTFFeature
 )
 
 func NewFeature(id int, score float64) Feature {
@@ -88,7 +99,7 @@ type CandidateQuery struct {
 	Query cqr.CommonQueryRepresentation
 }
 
-func KeywordFeatures(q cqr.Keyword) Features {
+func keywordFeatures(q cqr.Keyword) Features {
 	var features Features
 
 	// Exploded.
@@ -121,7 +132,7 @@ func KeywordFeatures(q cqr.Keyword) Features {
 	return features
 }
 
-func BooleanFeatures(q cqr.BooleanQuery) Features {
+func booleanFeatures(q cqr.BooleanQuery) Features {
 	var features Features
 
 	// Operator type feature.
@@ -149,7 +160,7 @@ func BooleanFeatures(q cqr.BooleanQuery) Features {
 	return features
 }
 
-func ContextFeatures(query cqr.CommonQueryRepresentation, context TransformationContext) Features {
+func contextFeatures(context TransformationContext) Features {
 	var features Features
 
 	return append(features,
@@ -159,24 +170,69 @@ func ContextFeatures(query cqr.CommonQueryRepresentation, context Transformation
 }
 
 // QPPFeatures computes query performance predictor features for a query.
-func QPPFeatures(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me analysis.MeasurementExecutor) (Features, error) {
-	gq := groove.NewPipelineQuery("qpp", 0, query)
-	features := []int{avgIDFFeature, sumIDFFeature, maxIDFFeature, stdDevIDFFeature, avgICTFFeature}
-	m, err := me.Execute(gq, ss, preqpp.AvgIDF, preqpp.SumIDF, preqpp.MaxIDF, preqpp.StdDevIDF, preqpp.AvgICTF)
+func deltas(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me analysis.MeasurementExecutor) (deltaFeatures, error) {
+	deltas := make(deltaFeatures)
+
+	switch q := query.(type) {
+	case cqr.Keyword:
+		gq := groove.NewPipelineQuery("qpp", 0, q)
+		features := []int{avgIDFFeature, sumIDFFeature, maxIDFFeature, stdDevIDFFeature, avgICTFFeature}
+		m, err := me.Execute(gq, ss, preqpp.AvgIDF, preqpp.SumIDF, preqpp.MaxIDF, preqpp.StdDevIDF, preqpp.AvgICTF)
+		if err != nil {
+			return nil, err
+		}
+
+		for i, feature := range features {
+			deltas[feature] = m[i]
+		}
+	}
+
+	numRet, err := ss.RetrievalSize(query)
 	if err != nil {
-		return nil, err
+		return deltaFeatures{}, err
 	}
 
-	ff := make(Features, len(features))
-	for i, feature := range features {
-		ff[i] = NewFeature(feature, m[i])
-	}
+	deltas[retrievedFeature] = numRet
 
-	return ff, nil
+	return deltas, nil
 }
 
-// TransformationTypeFeature is a feature representing the previous feature that was applied to a query.
-func TransformationTypeFeature(query cqr.CommonQueryRepresentation, transformer Transformer) Feature {
+func calcDelta(feature int, score float64, features deltaFeatures) float64 {
+	if y, ok := features[feature]; ok {
+		return score - y
+	}
+	return 0
+}
+
+func computeDeltas(preTransformation deltaFeatures, postTransformation deltaFeatures) Features {
+	var features Features
+	i := 0
+	for feature, x := range preTransformation {
+		var deltaFeature int
+		switch feature {
+		case retrievedFeature:
+			deltaFeature = deltaRetrievedFeature
+		case deltaAvgIDFFeature:
+			deltaFeature = deltaAvgIDFFeature
+		case deltaSumIDFFeature:
+			deltaFeature = deltaSumIDFFeature
+		case deltaMaxIDFFeature:
+			deltaFeature = deltaMaxIDFFeature
+		case deltaStdDevIDFFeature:
+			deltaFeature = deltaStdDevIDFFeature
+		case deltaAvgICTFFeature:
+			deltaFeature = deltaAvgICTFFeature
+		default:
+			continue
+		}
+		features = append(features, NewFeature(deltaFeature, calcDelta(feature, x, postTransformation)))
+		i++
+	}
+	return features
+}
+
+// transformationFeature is a feature representing the previous feature that was applied to a query.
+func transformationFeature(transformer Transformer) Feature {
 	transformationType := NewFeature(transformationTypeFeature, 0)
 	switch transformer.(type) {
 	case logicalOperatorReplacement:
