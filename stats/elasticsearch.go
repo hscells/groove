@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/TimothyJones/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
@@ -13,13 +14,12 @@ import (
 	"github.com/hscells/transmute/pipeline"
 	"github.com/satori/go.uuid"
 	"gopkg.in/olivere/elastic.v5"
-	"log"
-	"fmt"
-	"runtime"
 	"io"
+	"log"
+	"runtime"
 	"strconv"
-	"sync"
 	"strings"
+	"sync"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.
@@ -260,13 +260,13 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 				KeepAlive("10m").
 				Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
 				SearchSource(
-				elastic.NewSearchSource().
-					NoStoredFields().
-					FetchSource(false).
-					Size(options.Size).
-					Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
-					TrackScores(false).
-					Query(elastic.NewRawStringQuery(q)))
+					elastic.NewSearchSource().
+						NoStoredFields().
+						FetchSource(false).
+						Size(options.Size).
+						Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
+						TrackScores(false).
+						Query(elastic.NewRawStringQuery(q)))
 
 			for {
 				result, err := svc.Do(context.Background())
@@ -338,12 +338,12 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 			Type(es.documentType).
 			KeepAlive("30m").
 			SearchSource(
-			elastic.NewSearchSource().
-				NoStoredFields().
-				FetchSource(false).
-				Size(options.Size).
-				TrackScores(false).
-				Query(elastic.NewRawStringQuery(q)))
+				elastic.NewSearchSource().
+					NoStoredFields().
+					FetchSource(false).
+					Size(options.Size).
+					TrackScores(false).
+					Query(elastic.NewRawStringQuery(q)))
 
 		for {
 			result, err := svc.Do(context.Background())

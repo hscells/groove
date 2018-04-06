@@ -2,18 +2,18 @@
 package analysis
 
 import (
+	"encoding/binary"
+	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/stats"
-	"strings"
-	"hash/fnv"
 	"github.com/peterbourgon/diskv"
-	"strconv"
-	"encoding/binary"
+	"hash/fnv"
 	"math"
 	"os"
-	"fmt"
 	"reflect"
+	"strconv"
+	"strings"
 )
 
 // Measurement is a representation for how a measurement fits into the pipeline.

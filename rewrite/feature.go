@@ -206,27 +206,25 @@ func calcDelta(feature int, score float64, features deltaFeatures) float64 {
 
 func computeDeltas(preTransformation deltaFeatures, postTransformation deltaFeatures) Features {
 	var features Features
-	i := 0
 	for feature, x := range preTransformation {
 		var deltaFeature int
 		switch feature {
 		case retrievedFeature:
 			deltaFeature = deltaRetrievedFeature
-		case deltaAvgIDFFeature:
+		case avgIDFFeature:
 			deltaFeature = deltaAvgIDFFeature
-		case deltaSumIDFFeature:
+		case sumIDFFeature:
 			deltaFeature = deltaSumIDFFeature
-		case deltaMaxIDFFeature:
+		case maxIDFFeature:
 			deltaFeature = deltaMaxIDFFeature
-		case deltaStdDevIDFFeature:
+		case stdDevIDFFeature:
 			deltaFeature = deltaStdDevIDFFeature
-		case deltaAvgICTFFeature:
+		case avgICTFFeature:
 			deltaFeature = deltaAvgICTFFeature
 		default:
 			continue
 		}
 		features = append(features, NewFeature(deltaFeature, calcDelta(feature, x, postTransformation)))
-		i++
 	}
 	return features
 }

@@ -8,12 +8,12 @@ import (
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/stats"
 	"github.com/pkg/errors"
+	"github.com/xtgo/set"
 	"hash/fnv"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"sort"
-	"github.com/xtgo/set"
 )
 
 var (

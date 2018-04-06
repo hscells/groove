@@ -1,17 +1,17 @@
 package rewrite
 
 import (
-	"github.com/hscells/svmrank"
-	"io/ioutil"
-	"bytes"
 	"bufio"
-	"strconv"
-	"os"
-	"sort"
+	"bytes"
+	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
-	"fmt"
+	"github.com/hscells/svmrank"
+	"io/ioutil"
 	"math"
+	"os"
+	"sort"
+	"strconv"
 )
 
 type LTRQueryCandidateSelector struct {

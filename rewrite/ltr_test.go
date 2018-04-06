@@ -1,23 +1,23 @@
 package rewrite_test
 
 import (
-	"testing"
+	"bytes"
+	"fmt"
+	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/cqr"
+	"github.com/hscells/groove"
+	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/combinator"
+	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/rewrite"
+	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
-	"github.com/hscells/transmute/pipeline"
 	"github.com/hscells/transmute/parser"
-	"github.com/hscells/groove"
-	"github.com/hscells/cqr"
-	"fmt"
-	"github.com/hscells/groove/eval"
-	"github.com/hscells/groove/stats"
-	"github.com/TimothyJones/trecresults"
-	"bytes"
-	"io/ioutil"
+	"github.com/hscells/transmute/pipeline"
 	"github.com/peterbourgon/diskv"
-	"github.com/hscells/groove/combinator"
-	"github.com/hscells/groove/analysis"
+	"io/ioutil"
+	"testing"
 )
 
 func TestLTR(t *testing.T) {
@@ -31,24 +31,14 @@ func TestLTR(t *testing.T) {
 			RequiresLexing: true,
 		})
 
-	rawQuery := `1. exp ORTHODONTICS/
-2. orthodontic$.mp.
-3. or/1-2
-4. (retention or retain$).mp.
-5. (stabilise$ or stabilize$).mp.
-6. (fraenectom$ or frenectom$).mp.
-7. (fiberotom$ or fibreotom$).mp.
-8. "interproximal stripping".mp.
-9. pericision.mp.
-10. reproximat$.mp.
-11. ((gingiv$ or periodont$).mp. adj4 surg$).mp.
-12. (retain or retention).mp.
-13. 11 and 12
-14. or/4-10
-15. 13 or 14
-16. 3 and 15`
+	rawQuery := `1. MMSE*.ti,ab.
+2. sMMSE.ti,ab.
+3. Folstein*.ti,ab.
+4. MiniMental.ti,ab.
+5. mini mental stat*.ti,ab.
+6. or/1-5`
 
-	var topic int64 = 6
+	var topic int64 = 1
 
 	cq, err := cqrPipeline.Execute(rawQuery)
 	if err != nil {
@@ -86,7 +76,7 @@ func TestLTR(t *testing.T) {
 		Compression:  diskv.NewGzipCompression(),
 	})
 
-	ltr := rewrite.NewLTRQueryCandidateSelector("precision.model")
+	ltr := rewrite.NewLTRQueryCandidateSelector("precision2.model")
 	qc := rewrite.NewQueryChain(ltr, ss, analysis.NewMeasurementExecutor(statisticsCache), rewrite.NewAdjacencyReplacementTransformer(), rewrite.NewAdjacencyRangeTransformer(), rewrite.NewMeSHExplosionTransformer(), rewrite.NewFieldRestrictionsTransformer(), rewrite.NewLogicalOperatorTransformer())
 	tq, err := qc.Execute(gq)
 	if err != nil {
@@ -104,6 +94,7 @@ func TestLTR(t *testing.T) {
 		d1[i] = combinator.Document(r)
 	}
 
+	fmt.Println(tq.PipelineQuery)
 	results2, err := ss.ExecuteFast(tq.PipelineQuery, ss.SearchOptions())
 	if err != nil {
 		t.Fatal(err)
@@ -115,6 +106,8 @@ func TestLTR(t *testing.T) {
 
 	r1 := d1.Results(gq, gq.Name)
 	r2 := d2.Results(gq, gq.Name)
+
+	fmt.Println(len(r1), len(r2))
 
 	fmt.Println(repr.(cqr.CommonQueryRepresentation))
 	fmt.Println(eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &r1, qrels, topic))

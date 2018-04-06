@@ -6,6 +6,7 @@ import (
 	"github.com/hscells/groove/stats"
 	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/stat"
+	"math"
 )
 
 type avgIDF struct{}
@@ -86,6 +87,10 @@ func (sum maxIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (flo
 		}
 	}
 
+	if len(scores) == 0 {
+		return 0, nil
+	}
+
 	return floats.Max(scores), nil
 }
 
@@ -99,6 +104,10 @@ func (sum stdDevIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (
 	var scores []float64
 	fields := analysis.QueryFields(q.Query)
 
+	if len(terms) == 1 && len(fields) == 1 {
+		return 0, nil
+	}
+
 	for _, field := range fields {
 		for _, term := range terms {
 			idf, err := s.InverseDocumentFrequency(term, field)
@@ -109,19 +118,10 @@ func (sum stdDevIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (
 		}
 	}
 
-	if len(scores) == 0 {
-		return 0.0, nil
-	}
+	stdDev := stat.StdDev(scores, nil)
 
-	n0 := 0
-	for _, s := range scores {
-		if s == 0 {
-			n0++
-		}
+	if stdDev != math.NaN() || stdDev != -math.Inf(-1) || stdDev != math.Inf(1) {
+		return stdDev, nil
 	}
-	if n0 == len(scores) {
-		return 0.0, nil
-	}
-
-	return stat.StdDev(scores, nil), nil
+	return 0, nil
 }

@@ -4,9 +4,9 @@ import (
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/stats"
+	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/stat"
 	"math"
-	"gonum.org/v1/gonum/floats"
 )
 
 type summedCollectionQuerySimilarity struct{}

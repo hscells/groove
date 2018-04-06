@@ -1,16 +1,16 @@
 package rewrite
 
 import (
-	"github.com/hscells/groove/eval"
-	"github.com/hscells/groove"
-	"time"
-	"github.com/TimothyJones/trecresults"
-	"github.com/hscells/groove/combinator"
+	"encoding/json"
 	"fmt"
+	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/groove"
+	"github.com/hscells/groove/combinator"
+	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/stats"
 	"io/ioutil"
-	"encoding/json"
 	"log"
+	"time"
 )
 
 // OracleQueryChainCandidateSelector finds the best possible combination of query rewrites.

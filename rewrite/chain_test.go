@@ -2,22 +2,22 @@ package rewrite_test
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/TimothyJones/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
+	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/combinator"
+	"github.com/hscells/groove/eval"
+	"github.com/hscells/groove/rewrite"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
+	"github.com/peterbourgon/diskv"
 	"io/ioutil"
 	"testing"
-	"github.com/hscells/groove/combinator"
-	"github.com/peterbourgon/diskv"
-	"github.com/hscells/groove/rewrite"
-	"fmt"
-	"github.com/hscells/groove/eval"
-	"github.com/hscells/groove/analysis"
 )
 
 func TestOracleQueryChainSelector_Select(t *testing.T) {

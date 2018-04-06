@@ -1,12 +1,13 @@
 package combinator
 
 import (
+	"bytes"
+	"encoding/gob"
+	"errors"
+	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/peterbourgon/diskv"
-	"encoding/gob"
-	"bytes"
 	"strconv"
-	"errors"
 )
 
 var CacheMissError = errors.New("cache miss error")
@@ -26,8 +27,11 @@ func BlockTransform(blockSize int) func(string) []string {
 	}
 }
 
-// ClauseToBytes encodes a clause to bytes.
-func ClauseToBytes(docs Documents) ([]byte, error) {
+// docsToBytes encodes a clause to bytes.
+func docsToBytes(docs Documents) ([]byte, error) {
+	if len(docs) == 0 {
+		return []byte{}, nil
+	}
 	var buff bytes.Buffer
 	enc := gob.NewEncoder(&buff)
 	err := enc.Encode(docs)
@@ -83,7 +87,11 @@ type diskvQueryCache struct {
 func (d diskvQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, error) {
 	b, err := d.Read(strconv.Itoa(int(HashCQR(query))))
 	if err != nil {
+		fmt.Println(err)
 		return Documents{}, CacheMissError
+	}
+	if len(b) == 0 {
+		return Documents{}, nil
 	}
 	dec := gob.NewDecoder(bytes.NewReader(b))
 	var c Documents
@@ -95,8 +103,9 @@ func (d diskvQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, er
 }
 
 func (d diskvQueryCache) Set(query cqr.CommonQueryRepresentation, docs Documents) error {
-	b, err := ClauseToBytes(docs)
+	b, err := docsToBytes(docs)
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 	return d.Write(strconv.Itoa(int(HashCQR(query))), b)

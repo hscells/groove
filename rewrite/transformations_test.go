@@ -3,15 +3,15 @@ package rewrite
 import (
 	"fmt"
 	"github.com/hscells/cqr"
+	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/combinator"
+	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
-	"testing"
-	"github.com/hscells/groove/stats"
-	"github.com/hscells/groove/analysis"
 	"github.com/peterbourgon/diskv"
-	"github.com/hscells/groove/combinator"
+	"testing"
 )
 
 func TestLogicalOperatorReplacement_Apply(t *testing.T) {

@@ -3,9 +3,9 @@ package rewrite
 
 import (
 	"github.com/hscells/groove"
+	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/groove/analysis"
 )
 
 // QueryChain contains implementations for transformations to apply to a query and the selector to pick a candidate.

@@ -2,6 +2,7 @@
 package pipeline
 
 import (
+	"bytes"
 	"errors"
 	"github.com/TimothyJones/trecresults"
 	"github.com/hscells/groove"
@@ -12,11 +13,10 @@ import (
 	"github.com/hscells/groove/query"
 	"github.com/hscells/groove/rewrite"
 	"github.com/hscells/groove/stats"
+	"io/ioutil"
 	"log"
 	"runtime"
 	"sort"
-	"io/ioutil"
-	"bytes"
 )
 
 type empty struct{}
