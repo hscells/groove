@@ -95,7 +95,7 @@ func (t TerrierStatisticsSource) DocumentFrequency(term string) (float64, error)
 }
 
 // TotalTermFrequency is a sum of total term frequencies (the sum of total term frequencies of each term in this field).
-func (t TerrierStatisticsSource) TotalTermFrequency(term string) (float64, error) {
+func (t TerrierStatisticsSource) TotalTermFrequency(term, field string) (float64, error) {
 	tf, err := lexiconEntryForTerm(t.env, t.idx, "term", "getFrequency")
 	if err != nil {
 		return 0.0, err

@@ -25,12 +25,12 @@ type Measurement interface {
 }
 
 type MeasurementExecutor struct {
-	*diskv.Diskv
+	cache *diskv.Diskv
 }
 
 func NewMeasurementExecutor(d *diskv.Diskv) MeasurementExecutor {
 	return MeasurementExecutor{
-		d,
+		cache: d,
 	}
 }
 
@@ -44,7 +44,7 @@ func (m MeasurementExecutor) Execute(query groove.PipelineQuery, ss stats.Statis
 	results = make([]float64, len(measurements))
 	for i, measurement := range measurements {
 		qHash := hash(query.Query, measurement)
-		if v, err := m.Read(qHash); err == nil && len(v) > 0 {
+		if v, err := m.cache.Read(qHash); err == nil && len(v) > 0 {
 			bits := binary.BigEndian.Uint64(v)
 			f := math.Float64frombits(bits)
 			results[i] = f
@@ -62,7 +62,7 @@ func (m MeasurementExecutor) Execute(query groove.PipelineQuery, ss stats.Statis
 		results[i] = v
 		buff := make([]byte, 8)
 		binary.BigEndian.PutUint64(buff[:], math.Float64bits(v))
-		m.Write(qHash, buff)
+		m.cache.Write(qHash, buff)
 	}
 	return
 }

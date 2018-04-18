@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/TimothyJones/trecresults"
+	"github.com/alexflint/go-arg"
+	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
@@ -22,9 +24,7 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
-	"runtime/pprof"
 	"sync"
-	"github.com/alexflint/go-arg"
 )
 
 type args struct {
@@ -54,6 +54,40 @@ func sample(n int, a []rewrite.CandidateQuery) []rewrite.CandidateQuery {
 		c[i] = a[s[i]]
 	}
 	return c
+}
+
+func generateCandidates(query cqr.CommonQueryRepresentation, depth int, maxDepth int, cache map[uint64]struct{}, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...rewrite.Transformation) ([]rewrite.CandidateQuery, error) {
+	var variations []rewrite.CandidateQuery
+
+	if depth >= maxDepth {
+		return variations, nil
+	}
+
+	candidates, err := rewrite.Variations(rewrite.NewCandidateQuery(query, nil), ss, me, transformations...)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("%v...", depth)
+
+	for _, candidate := range candidates {
+		hash := combinator.HashCQR(candidate.Query)
+		if _, ok := cache[hash]; !ok {
+			variations = append(variations, candidate)
+			cache[hash] = struct{}{}
+			c, err := generateCandidates(candidate.Query, depth+1, maxDepth, cache, ss, me, transformations...)
+			if err != nil {
+				panic(err)
+			}
+			for _, x := range c {
+				h := combinator.HashCQR(x.Query)
+				variations = append(variations, x)
+				cache[h] = struct{}{}
+			}
+		}
+	}
+
+	return variations, nil
 }
 
 func main() {
@@ -140,14 +174,10 @@ func main() {
 
 	nTimes := args.Depth
 
-	profFile, err := os.Create("genfeatures.pprof")
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	for _, cq := range queries {
-		var queryCandidates []groove.PipelineQuery
-		queryCandidates = append(queryCandidates, cq)
+		cache := make(map[uint64]struct{})
+		var queryCandidates []rewrite.CandidateQuery
+		queryCandidates = append(queryCandidates, rewrite.NewCandidateQuery(cq.Query, nil))
 		for i := 0; i < nTimes; i++ {
 			log.Printf("loop #%v with %v candidate(s)", i, len(queryCandidates))
 			for _, q := range queryCandidates {
@@ -161,12 +191,22 @@ func main() {
 				// Generate variations.
 				fmt.Println("generating variations...")
 
-				candidates, err := rewrite.Variations(q.Query, ss, me, transformations...)
+				candidates, err := rewrite.Variations(q, ss, me, transformations...)
 				if err != nil {
 					panic(err)
 				}
 
 				fmt.Println("generated", len(candidates), "candidates")
+
+				for i := 0; i < len(candidates); i++ {
+					hash := combinator.HashCQR(candidates[i].Query)
+					if _, ok := cache[hash]; !ok {
+						candidates = append(candidates[:i], candidates[i+1:]...)
+						cache[hash] = struct{}{}
+					}
+				}
+
+				fmt.Println("cut to", len(candidates), "candidates")
 
 				// Sample 20% of the candidates that were generated.
 				candidates = sample(20, candidates)
@@ -180,13 +220,13 @@ func main() {
 				sem := make(chan bool, concurrency)
 				for i, candidate := range candidates {
 					sem <- true
-					queryCandidates = append(queryCandidates, groove.NewPipelineQuery(q.Name, q.Topic, candidate.Query))
+					queryCandidates = append(queryCandidates, candidate)
 
 					//innerWg.Add(1)
 					go func(c rewrite.CandidateQuery, n int) {
 						defer func() { <-sem }()
 						//defer innerWg.Done()
-						gq := groove.NewPipelineQuery(q.Name, q.Topic, c.Query)
+						gq := groove.NewPipelineQuery(cq.Name, cq.Topic, c.Query)
 						tree, _, err := combinator.NewLogicalTree(gq, ss, queryCache)
 						if err != nil {
 							fmt.Println(err)
@@ -235,7 +275,5 @@ func main() {
 		//wg.Wait()
 	}
 
-	pprof.WriteHeapProfile(profFile)
-	profFile.Close()
 	return
 }

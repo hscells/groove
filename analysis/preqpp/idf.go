@@ -120,7 +120,7 @@ func (sum stdDevIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (
 
 	stdDev := stat.StdDev(scores, nil)
 
-	if stdDev != math.NaN() || stdDev != -math.Inf(-1) || stdDev != math.Inf(1) {
+	if stdDev > math.Inf(-1) && stdDev < math.Inf(1) && !math.IsNaN(stdDev) {
 		return stdDev, nil
 	}
 	return 0, nil

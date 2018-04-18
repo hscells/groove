@@ -158,7 +158,8 @@ func (orOperator) Combine(nodes []LogicalTreeNode, cache QueryCacher) Documents 
 		docs = append(docs, node.Documents(cache)...)
 	}
 	sort.Sort(docs)
-	set.Uniq(docs)
+	size := set.Uniq(docs)
+	docs = docs[:size]
 	return docs
 }
 
@@ -313,13 +314,15 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen Q
 	switch q := query.Query.(type) {
 	case cqr.Keyword:
 		// Return a seen clause.
-		mu.Lock()
 		var docs Documents
+
+		mu.Lock()
 		docs, err := seen.Get(q)
 		if err == nil && docs != nil {
 			mu.Unlock()
 			return NewAtom(q), seen, nil
 		} else if err != nil && err != CacheMissError {
+			mu.Unlock()
 			return nil, nil, err
 		}
 

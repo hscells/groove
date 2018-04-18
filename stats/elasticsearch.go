@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.
@@ -193,6 +194,7 @@ func (es *ElasticsearchStatisticsSource) RetrievalSize(query cqr.CommonQueryRepr
 	if err != nil {
 		return 0.0, err
 	}
+
 	return float64(result), nil
 }
 
@@ -260,13 +262,13 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 				KeepAlive("10m").
 				Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
 				SearchSource(
-					elastic.NewSearchSource().
-						NoStoredFields().
-						FetchSource(false).
-						Size(options.Size).
-						Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
-						TrackScores(false).
-						Query(elastic.NewRawStringQuery(q)))
+				elastic.NewSearchSource().
+					NoStoredFields().
+					FetchSource(false).
+					Size(options.Size).
+					Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
+					TrackScores(false).
+					Query(elastic.NewRawStringQuery(q)))
 
 			for {
 				result, err := svc.Do(context.Background())
@@ -338,12 +340,12 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 			Type(es.documentType).
 			KeepAlive("30m").
 			SearchSource(
-				elastic.NewSearchSource().
-					NoStoredFields().
-					FetchSource(false).
-					Size(options.Size).
-					TrackScores(false).
-					Query(elastic.NewRawStringQuery(q)))
+			elastic.NewSearchSource().
+				NoStoredFields().
+				FetchSource(false).
+				Size(options.Size).
+				TrackScores(false).
+				Query(elastic.NewRawStringQuery(q)))
 
 		for {
 			result, err := svc.Do(context.Background())
@@ -554,7 +556,7 @@ func NewElasticsearchStatisticsSource(options ...func(*ElasticsearchStatisticsSo
 	if len(options) == 0 {
 		var err error
 
-		es.client, err = elastic.NewClient(elastic.SetURL("http://localhost:9200"))
+		es.client, err = elastic.NewClient(elastic.SetURL("http://localhost:9200"), elastic.SetSniff(true), elastic.SetHealthcheckTimeout(1*time.Hour))
 		if err != nil {
 			panic(err)
 		}

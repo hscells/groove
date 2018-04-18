@@ -50,7 +50,7 @@ func (qc QueryChain) Execute(query groove.PipelineQuery) (TransformedQuery, erro
 	stop = qc.CandidateSelector.StoppingCriteria()
 	tq := NewTransformedQuery(query)
 	for !stop {
-		candidates, err := Variations(tq.PipelineQuery.Query, qc.StatisticsSource, qc.MeasurementExecutor, qc.Transformations...)
+		candidates, err := Variations(NewCandidateQuery(tq.PipelineQuery.Query, nil), qc.StatisticsSource, qc.MeasurementExecutor, qc.Transformations...)
 		if err != nil {
 			return TransformedQuery{}, err
 		}

@@ -12,6 +12,14 @@ import (
 	"sync"
 )
 
+const (
+	logicalOperatorTransformation      = iota
+	adjacencyRangeTransformation
+	meshExplosionTransformation
+	fieldRestrictionsTransformation
+	adjacencyReplacementTransformation
+)
+
 // Transformer is applied to a query to generate a set of query candidates.
 type Transformer interface {
 	Apply(query cqr.CommonQueryRepresentation) (queries []cqr.CommonQueryRepresentation, err error)
@@ -21,6 +29,7 @@ type Transformer interface {
 }
 
 type Transformation struct {
+	ID int
 	Transformer
 }
 
@@ -41,30 +50,30 @@ type fieldRestrictions struct {
 type adjacencyReplacement struct{}
 
 func NewLogicalOperatorTransformer() Transformation {
-	return Transformation{logicalOperatorReplacement{}}
+	return Transformation{logicalOperatorTransformation, logicalOperatorReplacement{}}
 }
 func NewAdjacencyRangeTransformer() Transformation {
-	return Transformation{&adjacencyRange{}}
+	return Transformation{adjacencyRangeTransformation, &adjacencyRange{}}
 }
 func NewMeSHExplosionTransformer() Transformation {
-	return Transformation{meshExplosion{}}
+	return Transformation{meshExplosionTransformation, meshExplosion{}}
 }
 func NewFieldRestrictionsTransformer() Transformation {
-	return Transformation{fieldRestrictions{}}
+	return Transformation{fieldRestrictionsTransformation, fieldRestrictions{}}
 }
 func NewAdjacencyReplacementTransformer() Transformation {
-	return Transformation{adjacencyReplacement{}}
+	return Transformation{adjacencyReplacementTransformation, adjacencyReplacement{}}
 }
 
 var (
 	d, _ = meshexp.Default()
 )
 
-func variations(query cqr.CommonQueryRepresentation, context TransformationContext, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformation) ([]CandidateQuery, error) {
+func variations(query CandidateQuery, context TransformationContext, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformation) ([]CandidateQuery, error) {
 	var candidates []CandidateQuery
 
 	// Compute features (and pre-transformation features) for the original Boolean query.
-	preDeltas, err := deltas(query, ss, me)
+	preDeltas, err := deltas(query.Query, ss, me)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +82,7 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 		preFeatures = append(preFeatures, NewFeature(feature, score))
 	}
 
-	switch q := query.(type) {
+	switch q := query.Query.(type) {
 	case cqr.BooleanQuery: // First we look at the variations for a Boolean query (that most likely has children).
 		var queries []CandidateQuery
 		context = context.
@@ -88,7 +97,7 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 		// the parent query and update the child with the generated permutation.
 		for j, child := range q.Children {
 			// Apply this transformation.
-			perms, err := variations(child, context, ss, me, transformations...)
+			perms, err := variations(NewCandidateQuery(child, nil), context, ss, me, transformations...)
 			if err != nil {
 				return nil, err
 			}
@@ -142,13 +151,14 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 					features = append(features, computeDeltas(preDeltas, deltas)...)
 				}
 
-				queries = append(queries, NewCandidateQuery(tmp, features))
+				queries = append(queries, NewCandidateQuery(tmp, features).SetTransformationID(applied.TransformationID).Append(query))
 			}
 		}
 
 		// Apply the transformations to the current Boolean query.
 		for _, transformation := range transformations {
 			if transformation.Applicable(q) {
+				query.TransformationID = transformation.ID
 				c, err := transformation.Apply(q)
 				if err != nil {
 					return nil, err
@@ -187,7 +197,7 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 					}
 					features = append(features, computeDeltas(preDeltas, deltas)...)
 
-					queries = append(queries, NewCandidateQuery(applied, features))
+					queries = append(queries, NewCandidateQuery(applied, features).SetTransformationID(transformation.ID).Append(query))
 				}
 			}
 		}
@@ -210,11 +220,12 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 			SetChildrenCount(0)
 
 		// Add the original query to the list of candidates.
-		candidates = append(candidates, NewCandidateQuery(q, preFeatures))
+		candidates = append(candidates, NewCandidateQuery(q, preFeatures).Append(query))
 
 		// Next, apply the transformations to the current query.
 		for _, transformation := range transformations {
 			if transformation.Applicable(q) {
+				query.TransformationID = transformation.ID
 				c, err := transformation.Apply(q)
 				if err != nil {
 					return nil, err
@@ -235,7 +246,7 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 					features = append(features, keywordFeatures(applied.(cqr.Keyword))...)
 					features = append(features, transformation.Features(applied, context)...)
 					features = append(features, transformationFeature(transformation.Transformer))
-					candidates = append(candidates, NewCandidateQuery(applied, features))
+					candidates = append(candidates, NewCandidateQuery(applied, features).SetTransformationID(transformation.ID).Append(query))
 				}
 			}
 		}
@@ -247,7 +258,7 @@ func variations(query cqr.CommonQueryRepresentation, context TransformationConte
 // Variations creates query variations of the input query using the specified transformations. Permute will only generate
 // query variations that modify the query in one single place. This means that no transformation is applied twice to an
 // already modified query.
-func Variations(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformation) ([]CandidateQuery, error) {
+func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformation) ([]CandidateQuery, error) {
 	var vars []CandidateQuery
 	var wg sync.WaitGroup
 	var mu sync.Mutex

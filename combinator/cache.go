@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
-	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/peterbourgon/diskv"
 	"strconv"
+	"fmt"
 )
 
 var CacheMissError = errors.New("cache miss error")
@@ -53,41 +53,35 @@ type QueryCacher interface {
 	Set(query cqr.CommonQueryRepresentation, docs Documents) error
 }
 
-// QueryCache embeds a privately defined query cacher into a public struct.
-type QueryCache struct {
-	QueryCacher
-}
-
-type mapQueryCache struct {
+type MapQueryCache struct {
 	m map[uint64]Documents
 }
 
-func (m mapQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, error) {
+func (m MapQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, error) {
 	if d, ok := m.m[HashCQR(query)]; ok {
 		return d, nil
 	}
 	return Documents{}, nil
 }
 
-func (m mapQueryCache) Set(query cqr.CommonQueryRepresentation, docs Documents) error {
+func (m MapQueryCache) Set(query cqr.CommonQueryRepresentation, docs Documents) error {
 	m.m[HashCQR(query)] = docs
 	return nil
 }
 
 // NewMapQueryCache creates a query cache out of a regular go map.
-func NewMapQueryCache() QueryCache {
+func NewMapQueryCache() QueryCacher {
 	constructor()
-	return QueryCache{mapQueryCache{make(map[uint64]Documents)}}
+	return MapQueryCache{make(map[uint64]Documents)}
 }
 
-type diskvQueryCache struct {
+type DiskvQueryCache struct {
 	*diskv.Diskv
 }
 
-func (d diskvQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, error) {
+func (d DiskvQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, error) {
 	b, err := d.Read(strconv.Itoa(int(HashCQR(query))))
 	if err != nil {
-		fmt.Println(err)
 		return Documents{}, CacheMissError
 	}
 	if len(b) == 0 {
@@ -102,7 +96,7 @@ func (d diskvQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, er
 	return c, nil
 }
 
-func (d diskvQueryCache) Set(query cqr.CommonQueryRepresentation, docs Documents) error {
+func (d DiskvQueryCache) Set(query cqr.CommonQueryRepresentation, docs Documents) error {
 	b, err := docsToBytes(docs)
 	if err != nil {
 		fmt.Println(err)
@@ -112,7 +106,7 @@ func (d diskvQueryCache) Set(query cqr.CommonQueryRepresentation, docs Documents
 }
 
 // NewDiskvQueryCache creates a new on-disk cache with the specified diskv parameters.
-func NewDiskvQueryCache(dv *diskv.Diskv) QueryCache {
+func NewDiskvQueryCache(dv *diskv.Diskv) QueryCacher {
 	constructor()
-	return QueryCache{diskvQueryCache{dv}}
+	return DiskvQueryCache{dv}
 }

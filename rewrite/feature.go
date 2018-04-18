@@ -10,6 +10,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"github.com/xtgo/set"
 )
 
 // Feature is some value that is applicable to a query transformation.
@@ -27,7 +28,8 @@ type deltaFeatures map[int]float64
 
 const (
 	// Context features.
-	depthFeature         = iota
+	nilFeature           = iota
+	depthFeature
 	clauseTypeFeature     // This isn't the operator type, it's the type of the clause (keyword query/Boolean query).
 	childrenCountFeature
 
@@ -68,6 +70,9 @@ const (
 	deltaMaxIDFFeature
 	deltaStdDevIDFFeature
 	deltaAvgICTFFeature
+
+	// Chain of transformations !!THIS MUST BE THE LAST FEATURE IN THE LIST!!
+	chainFeatures
 )
 
 func NewFeature(id int, score float64) Feature {
@@ -96,7 +101,9 @@ type TransformedQuery struct {
 // CandidateQuery is a possible transformation a query can take.
 type CandidateQuery struct {
 	Features
-	Query cqr.CommonQueryRepresentation
+	Query            cqr.CommonQueryRepresentation
+	TransformationID int
+	Chain            []CandidateQuery
 }
 
 func keywordFeatures(q cqr.Keyword) Features {
@@ -176,8 +183,8 @@ func deltas(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me a
 	switch q := query.(type) {
 	case cqr.Keyword:
 		gq := groove.NewPipelineQuery("qpp", 0, q)
-		features := []int{avgIDFFeature, sumIDFFeature, maxIDFFeature, stdDevIDFFeature, avgICTFFeature}
-		m, err := me.Execute(gq, ss, preqpp.AvgIDF, preqpp.SumIDF, preqpp.MaxIDF, preqpp.StdDevIDF, preqpp.AvgICTF)
+		features := []int{avgIDFFeature, sumIDFFeature, maxIDFFeature, stdDevIDFFeature, avgICTFFeature, retrievedFeature}
+		m, err := me.Execute(gq, ss, preqpp.AvgIDF, preqpp.SumIDF, preqpp.MaxIDF, preqpp.StdDevIDF, preqpp.AvgICTF, preqpp.RetrievalSize)
 		if err != nil {
 			return nil, err
 		}
@@ -186,13 +193,6 @@ func deltas(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me a
 			deltas[feature] = m[i]
 		}
 	}
-
-	numRet, err := ss.RetrievalSize(query)
-	if err != nil {
-		return deltaFeatures{}, err
-	}
-
-	deltas[retrievedFeature] = numRet
 
 	return deltas, nil
 }
@@ -249,12 +249,12 @@ func transformationFeature(transformer Transformer) Feature {
 
 // String returns the string of a Feature family.
 func (ff Features) String() string {
+	sort.Sort(ff)
+	size := set.Uniq(ff)
+	tmp := ff[:size]
 	s := "0 "
-	sort.Slice(ff, func(i, j int) bool {
-		return ff[i].ID < ff[j].ID
-	})
-	for _, f := range ff {
-		s += fmt.Sprintf("%v:%v ", f.ID+1, f.Score)
+	for _, f := range tmp {
+		s += fmt.Sprintf("%v:%v ", f.ID, f.Score)
 	}
 	return s
 }
@@ -262,8 +262,10 @@ func (ff Features) String() string {
 // WriteLibSVM writes a LIBSVM compatible line to a writer.
 func (lf LearntFeature) WriteLibSVM(writer io.Writer, comment ...interface{}) (int, error) {
 	sort.Sort(lf.Features)
+	size := set.Uniq(lf.Features)
+	ff := lf.Features[:size]
 	line := fmt.Sprintf("%v", lf.Score)
-	for _, f := range lf.Features {
+	for _, f := range ff {
 		line += fmt.Sprintf(" %v:%v", f.ID, f.Score)
 	}
 	if len(comment) > 0 {
@@ -279,10 +281,11 @@ func (lf LearntFeature) WriteLibSVM(writer io.Writer, comment ...interface{}) (i
 // WriteLibSVMRank writes a LIBSVM^rank compatible line to a writer.
 func (lf LearntFeature) WriteLibSVMRank(writer io.Writer, topic int64, comment string) (int, error) {
 	sort.Sort(lf.Features)
+	size := set.Uniq(lf.Features)
+	ff := lf.Features[:size]
 	line := fmt.Sprintf("%v qid:%v", lf.Score, topic)
-	for _, f := range lf.Features {
-		b := f.ID
-		line += fmt.Sprintf(" %v:%v", b+1, f.Score)
+	for _, f := range ff {
+		line += fmt.Sprintf(" %v:%v", f.ID, f.Score)
 	}
 	line += " # " + comment
 
@@ -332,7 +335,29 @@ func NewTransformedQuery(query groove.PipelineQuery, chain ...cqr.CommonQueryRep
 // NewCandidateQuery creates a new candidate query.
 func NewCandidateQuery(query cqr.CommonQueryRepresentation, ff Features) CandidateQuery {
 	return CandidateQuery{
-		Features: ff,
-		Query:    query,
+		Features:         ff,
+		Query:            query,
+		TransformationID: -1,
 	}
+}
+
+func (c CandidateQuery) SetTransformationID(id int) CandidateQuery {
+	c.TransformationID = id
+	return c
+}
+
+// Append adds the previous query to the chain of transformations so far so we can keep track of which transformations
+// have been applied up until this point, and for features about the query.
+func (c CandidateQuery) Append(query CandidateQuery) CandidateQuery {
+	// Chain features is the minimum possible index for these features.
+	idx := chainFeatures
+	if len(c.Chain) > 0 {
+		idx = chainFeatures + len(c.Chain)
+	}
+	c.Chain = append(c.Chain, query.Chain...)
+	c.Chain = append(c.Chain, query)
+	for i, candidate := range c.Chain {
+		c.Features = append(c.Features, NewFeature(idx+i, float64(candidate.TransformationID)))
+	}
+	return c
 }
