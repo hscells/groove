@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/transmute/backend"
@@ -15,7 +15,6 @@ import (
 	"github.com/satori/go.uuid"
 	"gopkg.in/olivere/elastic.v5"
 	"io"
-	"log"
 	"runtime"
 	"strconv"
 	"strings"
@@ -94,25 +93,25 @@ func (es *ElasticsearchStatisticsSource) DocumentFrequency(term string) (float64
 
 // TotalTermFrequency is a sum of total term frequencies (the sum of total term frequencies of each term in this field).
 func (es *ElasticsearchStatisticsSource) TotalTermFrequency(term, field string) (float64, error) {
-	analyseField := field
-	if strings.Contains(term, "~") && field != "mesh_headings" {
-		analyseField = field + "." + es.AnalyseField
-	}
+	docField := strings.Replace(field, es.AnalyseField, "", -1)
 
-	resp, err := es.client.TermVectors(es.index, es.documentType).
+	req := es.client.TermVectors(es.index, es.documentType).
 		Doc(map[string]string{field: term}).
 		TermStatistics(true).
 		Offsets(false).
 		Positions(false).
-		Payloads(false).
-		Fields(analyseField).
-		PerFieldAnalyzer(map[string]string{analyseField: ""}).
-		Do(context.Background())
+		Payloads(false)
+
+	if strings.ContainsRune(term, '*') {
+		req = req.PerFieldAnalyzer(map[string]string{docField: "medline_analyser"})
+	}
+
+	resp, err := req.Do(context.Background())
 	if err != nil {
 		return 0.0, err
 	}
 
-	if tv, ok := resp.TermVectors[analyseField]; ok {
+	if tv, ok := resp.TermVectors[field]; ok {
 		t := strings.ToLower(strings.Replace(strings.Replace(strings.Replace(term, "\"", "", -1), "*", "", -1), "~", "", -1))
 		return float64(tv.Terms[t].Ttf), nil
 	}
@@ -130,26 +129,27 @@ func (es *ElasticsearchStatisticsSource) InverseDocumentFrequency(term, field st
 
 	N := resp1.All.Total.Docs.Count
 
-	analyseField := es.field
-	if len(es.AnalyseField) > 0 {
-		analyseField = field + "." + es.AnalyseField
-	}
+	docField := strings.Replace(field, es.AnalyseField, "", -1)
 
-	resp2, err := es.client.TermVectors(es.index, es.documentType).
-		Doc(map[string]string{field: term}).
+	req := es.client.TermVectors(es.index, es.documentType).
+		Doc(map[string]string{docField: term}).
 		FieldStatistics(false).
 		TermStatistics(true).
 		Offsets(false).
 		Positions(false).
 		Pretty(false).
-		Payloads(false).
-		Fields(analyseField).
-		PerFieldAnalyzer(map[string]string{analyseField: ""}).
-		Do(context.Background())
+		Payloads(false)
+
+	if strings.ContainsRune(term, '*') {
+		req = req.PerFieldAnalyzer(map[string]string{docField: "medline_analyser"})
+	}
+
+	resp2, err := req.Do(context.Background())
 	if err != nil {
 		return 0.0, err
 	}
-	if tv, ok := resp2.TermVectors[analyseField]; ok {
+
+	if tv, ok := resp2.TermVectors[field]; ok {
 		nt := tv.Terms[term].DocFreq
 		if nt == 0 {
 			return 0.0, nil
@@ -206,7 +206,7 @@ func (es *ElasticsearchStatisticsSource) TermVector(document string) (TermVector
 		analyseField = es.field + "." + es.AnalyseField
 	}
 
-	resp, err := es.client.TermVectors(es.index, es.documentType).
+	req := es.client.TermVectors(es.index, es.documentType).
 		Id(document).
 		FieldStatistics(true).
 		TermStatistics(true).
@@ -214,9 +214,13 @@ func (es *ElasticsearchStatisticsSource) TermVector(document string) (TermVector
 		Pretty(false).
 		Positions(false).
 		Payloads(false).
-		Fields(analyseField).
-		PerFieldAnalyzer(map[string]string{analyseField: ""}).
-		Do(context.Background())
+		Fields(analyseField)
+
+	if len(es.AnalyseField) > 0 {
+		req = req.PerFieldAnalyzer(map[string]string{es.field: "medline_analyser"})
+	}
+
+	resp, err := req.Do(context.Background())
 	if err != nil {
 		return tv, err
 	}
@@ -244,7 +248,7 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 
 	// Set the limit to how many goroutines can be run.
 	// http://jmoiron.net/blog/limiting-concurrency-in-go/
-	concurrency := runtime.NumCPU() * 4
+	concurrency := runtime.NumCPU()
 	sem := make(chan bool, concurrency)
 	hits := make([][]uint32, concurrency)
 
@@ -254,6 +258,9 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 
 		go func(n int) {
 			defer func() { <-sem }()
+		search:
+			hits[n] = []uint32{}
+
 			// Scroll search.
 			svc := es.client.Scroll(es.index).
 				FetchSource(false).
@@ -275,6 +282,11 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 				if err == io.EOF {
 					break
 				}
+				if elastic.IsConnErr(err) {
+					fmt.Println(err)
+					fmt.Println("retrying...")
+					goto search
+				}
 				if err != nil {
 					panic(err)
 				}
@@ -286,14 +298,13 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 					}
 					hits[n] = append(hits[n], uint32(id))
 				}
-				fmt.Printf("%v: %v/%v\n", query.Query, len(hits[n]), result.Hits.TotalHits)
+				fmt.Printf("%v: %v/%v\n", n, len(hits[n]), result.Hits.TotalHits)
 			}
 
 			err = svc.Clear(context.Background())
 			if err != nil {
 				panic(err)
 			}
-
 		}(i)
 
 	}
@@ -473,12 +484,12 @@ func ElasticsearchHosts(hosts ...string) func(*ElasticsearchStatisticsSource) {
 		if len(hosts) == 0 {
 			es.client, err = elastic.NewClient(elastic.SetURL("http://localhost:9200"))
 			if err != nil {
-				log.Fatal(err)
+				panic(err)
 			}
 		} else {
 			es.client, err = elastic.NewClient(elastic.SetURL(hosts...))
 			if err != nil {
-				log.Fatal(err)
+				panic(err)
 			}
 		}
 		return
@@ -556,7 +567,9 @@ func NewElasticsearchStatisticsSource(options ...func(*ElasticsearchStatisticsSo
 	if len(options) == 0 {
 		var err error
 
-		es.client, err = elastic.NewClient(elastic.SetURL("http://localhost:9200"), elastic.SetSniff(true), elastic.SetHealthcheckTimeout(1*time.Hour))
+		es.client, err = elastic.NewClient(elastic.SetURL("http://localhost:9200"),
+			elastic.SetSniff(false),
+			elastic.SetHealthcheckTimeout(1*time.Hour))
 		if err != nil {
 			panic(err)
 		}

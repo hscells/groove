@@ -8,12 +8,12 @@ import (
 // In most circumstances, the `transformed` query should be used, as it is the preprocessed,
 // transformed, and rewritten query.
 type PipelineQuery struct {
-	Topic int64
+	Topic string
 	Name  string
 	Query cqr.CommonQueryRepresentation
 }
 
 // NewPipelineQuery creates a new groove pipeline query.
-func NewPipelineQuery(name string, topic int64, query cqr.CommonQueryRepresentation) PipelineQuery {
+func NewPipelineQuery(name string, topic string, query cqr.CommonQueryRepresentation) PipelineQuery {
 	return PipelineQuery{Name: name, Topic: topic, Query: query}
 }

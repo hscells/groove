@@ -4,7 +4,7 @@ package pipeline
 import (
 	"bytes"
 	"errors"
-	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/trecresults"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/eval"
@@ -17,6 +17,7 @@ import (
 	"log"
 	"runtime"
 	"sort"
+	"github.com/hscells/groove/combinator"
 )
 
 type empty struct{}
@@ -216,7 +217,7 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 	if len(pipeline.Evaluations) > 0 || len(pipeline.OutputTrec.Path) > 0 {
 
 		// Store the measurements to be output later.
-		measurements := make(map[int64]map[string]float64)
+		measurements := make(map[string]map[string]float64)
 
 		// Set the limit to how many goroutines can be run.
 		// http://jmoiron.net/blog/limiting-concurrency-in-go/
@@ -244,7 +245,13 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 				}
 
 				// Execute the query.
-				trecResults, err := pipeline.StatisticsSource.Execute(query, pipeline.StatisticsSource.SearchOptions())
+				docIds, err := stats.GetDocumentIDs(query, pipeline.StatisticsSource)
+				results := make(combinator.Documents, len(docIds))
+				for i, id := range docIds {
+					results[i] = combinator.Document(id)
+				}
+				trecResults := results.Results(query, query.Name)
+				//trecResults, err := pipeline.StatisticsSource.Execute(query, pipeline.StatisticsSource.SearchOptions())
 				if err != nil {
 					c <- groove.PipelineResult{
 						Topic: query.Topic,

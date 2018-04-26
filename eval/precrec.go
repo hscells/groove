@@ -1,7 +1,7 @@
 package eval
 
 import (
-	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/trecresults"
 )
 
 type recallEvaluator struct{}

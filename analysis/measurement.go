@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"github.com/hscells/groove/combinator"
 )
 
 // Measurement is a representation for how a measurement fits into the pipeline.
@@ -24,13 +25,38 @@ type Measurement interface {
 	Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error)
 }
 
-type MeasurementExecutor struct {
-	cache *diskv.Diskv
+type MeasurementCacher interface {
+	Read(key string) ([]byte, error)
+	Write(key string, val []byte) error
 }
 
-func NewMeasurementExecutor(d *diskv.Diskv) MeasurementExecutor {
+type MemoryMeasurementCache map[string][]byte
+
+func (m MemoryMeasurementCache) Read(key string) ([]byte, error) {
+	if v, ok := m[key]; ok {
+		return v, nil
+	}
+	return nil, combinator.CacheMissError
+}
+
+func (m MemoryMeasurementCache) Write(key string, val []byte) error {
+	m[key] = val
+	return nil
+}
+
+type MeasurementExecutor struct {
+	cache MeasurementCacher
+}
+
+func NewDiskMeasurementExecutor(d *diskv.Diskv) MeasurementExecutor {
 	return MeasurementExecutor{
 		cache: d,
+	}
+}
+
+func NewMemoryMeasurementExecutor() MeasurementExecutor {
+	return MeasurementExecutor{
+		cache: make(MemoryMeasurementCache),
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"io/ioutil"
-	"strconv"
 )
 
 // KeywordQuerySource is a source of queries that contain only one "string".
@@ -30,9 +29,9 @@ func (kw KeywordQuerySource) Load(directory string) ([]groove.PipelineQuery, err
 
 		cqrQuery := cqr.Keyword{QueryString: string(source), Fields: kw.fields}
 
-		topic, err := strconv.Atoi(f.Name())
+		topic := f.Name()
 
-		queries[i] = groove.NewPipelineQuery(f.Name(), int64(topic), cqrQuery)
+		queries[i] = groove.NewPipelineQuery(f.Name(), topic, cqrQuery)
 	}
 
 	// Finally, return the queries.

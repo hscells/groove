@@ -2,6 +2,8 @@
 groove
 
 cache
+statistics_cache
+file_cache
 
 *.qrels
 *.model
@@ -22,3 +24,10 @@ f3_r/
 f3_c/
 wss_c/
 wss_r/
+
+*.pprof
+*.output
+main
+
+genfeatures
+clef2018

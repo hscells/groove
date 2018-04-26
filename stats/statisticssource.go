@@ -3,7 +3,7 @@ package stats
 
 import (
 	"errors"
-	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"math"

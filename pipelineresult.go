@@ -1,13 +1,13 @@
 package groove
 
 import (
-	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/trecresults"
 	"github.com/hscells/cqr"
 )
 
 // QueryResult is the result of a transformation.
 type QueryResult struct {
-	Topic          int64
+	Topic          string
 	Name           string
 	Transformation cqr.CommonQueryRepresentation
 }
@@ -32,7 +32,7 @@ const (
 
 // PipelineResult is the output of a groove pipeline.
 type PipelineResult struct {
-	Topic          int64
+	Topic          string
 	Measurements   []string
 	Evaluations    []string
 	Transformation QueryResult

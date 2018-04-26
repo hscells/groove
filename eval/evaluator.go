@@ -2,7 +2,7 @@
 package eval
 
 import (
-	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/trecresults"
 )
 
 // Evaluator is an interface for evaluating a retrieved list of documents.
@@ -12,8 +12,9 @@ type Evaluator interface {
 }
 
 // Evaluate scores documents using supplied evaluation measurements.
-func Evaluate(evaluators []Evaluator, results *trecresults.ResultList, qrels trecresults.QrelsFile, topic int64) map[string]float64 {
+func Evaluate(evaluators []Evaluator, results *trecresults.ResultList, qrels trecresults.QrelsFile, topic string) map[string]float64 {
 	scores := map[string]float64{}
+
 	q := qrels.Qrels[topic]
 
 	// When we retrieve documents, evaluate them.

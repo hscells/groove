@@ -5,7 +5,6 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/stats"
-	"log"
 	"strings"
 )
 
@@ -19,7 +18,7 @@ func Analyse(query cqr.CommonQueryRepresentation, source *stats.ElasticsearchSta
 		case cqr.Keyword:
 			tokens, err := source.Analyse(q.QueryString, source.Analyser)
 			if err != nil {
-				log.Fatal(err)
+				panic(err)
 			}
 			return cqr.NewKeyword(strings.Join(tokens, " "), q.Fields...)
 		case cqr.BooleanQuery:

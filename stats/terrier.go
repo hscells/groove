@@ -2,7 +2,7 @@ package stats
 
 import (
 	"fmt"
-	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/jnigi"
@@ -111,7 +111,7 @@ func (t TerrierStatisticsSource) InverseDocumentFrequency(term, field string) (f
 		return 0.0, err
 	}
 
-	nt, err := t.TotalTermFrequency(term)
+	nt, err := t.TotalTermFrequency(term, field)
 	if err != nil {
 		return 0.0, err
 	}

@@ -1,6 +1,6 @@
 package output
 
-import "github.com/TimothyJones/trecresults"
+import "github.com/hscells/trecresults"
 
 // TrecResults represents the output format for trec results.
 type TrecResults struct {
