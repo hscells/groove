@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"gopkg.in/olivere/elastic.v5"
 )
 
 const (
@@ -267,8 +268,13 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 		wg.Add(1)
 		go func(t Transformation) {
 			defer wg.Done()
+		vars:
 			c, err := variations(query, TransformationContext{}, ss, me, t)
 			if err != nil {
+				if elastic.IsConnErr(err) {
+					fmt.Println(err, "...retrying...")
+					goto vars
+				}
 				panic(err)
 			}
 			mu.Lock()

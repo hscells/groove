@@ -3,7 +3,7 @@ package rewrite_test
 import (
 	"bytes"
 	"fmt"
-	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
@@ -38,7 +38,7 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 5. mini mental stat*.ti,ab.
 6. or/1-5`
 
-	var topic int64 = 1
+	topic := "1"
 
 	cq, err := cqrPipeline.Execute(rawQuery)
 	if err != nil {
@@ -83,7 +83,7 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 
 	selector := rewrite.NewOracleQueryChainCandidateSelector(ss, qrels, cache)
 
-	chain := rewrite.NewQueryChain(selector, ss, analysis.NewMeasurementExecutor(statisticsCache), rewrite.NewLogicalOperatorTransformer(), rewrite.NewAdjacencyReplacementTransformer(), rewrite.NewAdjacencyRangeTransformer(), rewrite.NewMeSHExplosionTransformer(), rewrite.NewFieldRestrictionsTransformer())
+	chain := rewrite.NewQueryChain(selector, ss, analysis.NewDiskMeasurementExecutor(statisticsCache), rewrite.NewLogicalOperatorTransformer(), rewrite.NewAdjacencyReplacementTransformer(), rewrite.NewAdjacencyRangeTransformer(), rewrite.NewMeSHExplosionTransformer(), rewrite.NewFieldRestrictionsTransformer())
 	//fmt.Printf("Rewriting query with %v possible transformations\n", len(chain.Transformations))
 	q, err := chain.Execute(groove.NewPipelineQuery("test", topic, repr.(cqr.CommonQueryRepresentation)))
 	if err != nil {

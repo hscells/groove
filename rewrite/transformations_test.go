@@ -56,7 +56,7 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 		Compression:  diskv.NewGzipCompression(),
 	})
 
-	candidates, err := Variations(repr.(cqr.CommonQueryRepresentation), ss, analysis.NewMeasurementExecutor(statisticsCache), NewLogicalOperatorTransformer(), NewAdjacencyRangeTransformer(), NewMeSHExplosionTransformer(), NewFieldRestrictionsTransformer(), NewAdjacencyReplacementTransformer())
+	candidates, err := Variations(NewCandidateQuery(repr.(cqr.CommonQueryRepresentation), nil), ss, analysis.NewDiskMeasurementExecutor(statisticsCache), NewLogicalOperatorTransformer(), NewAdjacencyRangeTransformer(), NewMeSHExplosionTransformer(), NewFieldRestrictionsTransformer(), NewAdjacencyReplacementTransformer())
 
 	//queries, err := LogicalOperatorReplacement.Apply(repr.(cqr.CommonQueryRepresentation))
 	//if err != nil {

@@ -21,8 +21,8 @@ type Query struct {
 
 // Feature is a single feature in a feature file.
 type Feature struct {
-	Topic    int64
 	Depth    int64
+	Topic    string
 	FileName string
 	Eval     map[string]float64
 	rewrite.LearntFeature

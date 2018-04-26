@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/trecresults"
 	"github.com/alexflint/go-arg"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
@@ -136,12 +136,7 @@ func main() {
 
 	// TODO make this come from command line arguments.
 	// Cache for queries and the documents they retrieve.
-	queryCache := combinator.NewDiskvQueryCache(diskv.New(diskv.Options{
-		BasePath:  "cache",
-		Transform: combinator.BlockTransform(8),
-		//CacheSizeMax: 4096 * 1024,
-		Compression: diskv.NewGzipCompression(),
-	}))
+	queryCache := combinator.NewFileQueryCache("file_cache")
 	// Cache for the statistics of the query performance predictors.
 	statisticsCache := diskv.New(diskv.Options{
 		BasePath:     "statistics_cache",
@@ -158,7 +153,7 @@ func main() {
 	defer f.Close()
 
 	// Measurement Executor
-	me := analysis.NewMeasurementExecutor(statisticsCache)
+	me := analysis.NewDiskMeasurementExecutor(statisticsCache)
 
 	// We would like to generate a large amount of training data for the learning to rank
 
@@ -175,12 +170,14 @@ func main() {
 	nTimes := args.Depth
 
 	for _, cq := range queries {
-		cache := make(map[uint64]struct{})
 		var queryCandidates []rewrite.CandidateQuery
+		var nextCandidates []rewrite.CandidateQuery
 		queryCandidates = append(queryCandidates, rewrite.NewCandidateQuery(cq.Query, nil))
 		for i := 0; i < nTimes; i++ {
 			log.Printf("loop #%v with %v candidate(s)", i, len(queryCandidates))
-			for _, q := range queryCandidates {
+			for j, q := range queryCandidates {
+				cache := make(map[uint64]struct{})
+
 				//wg.Add(1)
 				//defer wg.Done()
 
@@ -190,6 +187,7 @@ func main() {
 
 				// Generate variations.
 				fmt.Println("generating variations...")
+				fmt.Println(len(queryCandidates)-j, "to go")
 
 				candidates, err := rewrite.Variations(q, ss, me, transformations...)
 				if err != nil {
@@ -197,7 +195,6 @@ func main() {
 				}
 
 				fmt.Println("generated", len(candidates), "candidates")
-
 				for i := 0; i < len(candidates); i++ {
 					hash := combinator.HashCQR(candidates[i].Query)
 					if _, ok := cache[hash]; !ok {
@@ -215,18 +212,24 @@ func main() {
 
 				// Set the limit to how many goroutines can be run.
 				// http://jmoiron.net/blog/limiting-concurrency-in-go/
+				maxConcurrency := 8
 				concurrency := runtime.NumCPU()
+				if concurrency > maxConcurrency {
+					concurrency = maxConcurrency
+				}
+				fmt.Println("nthreads:", concurrency)
 
 				sem := make(chan bool, concurrency)
 				for i, candidate := range candidates {
 					sem <- true
-					queryCandidates = append(queryCandidates, candidate)
+					nextCandidates = append(nextCandidates, candidate)
 
 					//innerWg.Add(1)
 					go func(c rewrite.CandidateQuery, n int) {
 						defer func() { <-sem }()
 						//defer innerWg.Done()
 						gq := groove.NewPipelineQuery(cq.Name, cq.Topic, c.Query)
+
 						tree, _, err := combinator.NewLogicalTree(gq, ss, queryCache)
 						if err != nil {
 							fmt.Println(err)
@@ -234,16 +237,6 @@ func main() {
 						}
 						r := tree.Documents(queryCache).Results(gq, "features")
 
-						//ids, err := stats.GetDocumentIDs(gq, ss)
-						//if err != nil {
-						//	panic(err)
-						//}
-						//
-						//results := make(combinator.Documents, len(ids))
-						//for i, id := range ids {
-						//	results[i] = combinator.Document(id)
-						//}
-						//r := results.Results(gq, gq.Name)
 						evaluation := eval.Evaluate(evaluators, &r, qrels, gq.Topic)
 
 						lf := rewrite.NewLearntFeature(evaluation["Precision"], c.Features)
@@ -256,10 +249,6 @@ func main() {
 
 						fmt.Printf("%v/%v [%v] %v\n", n, len(candidates), lf.Score, lf.Features)
 
-						//tree.Root = nil
-						//debug.FreeOSMemory()
-						//runtime.GC()
-
 						mu.Lock()
 						f.Write(buff.Bytes())
 						mu.Unlock()
@@ -271,6 +260,7 @@ func main() {
 				}
 				fmt.Println("finished processing variations")
 			}
+			queryCandidates = nextCandidates
 		}
 		//wg.Wait()
 	}

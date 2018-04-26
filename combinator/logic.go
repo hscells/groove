@@ -3,7 +3,7 @@ package combinator
 
 import (
 	"fmt"
-	"github.com/TimothyJones/trecresults"
+	"github.com/hscells/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/stats"
@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"math"
 )
 
 var (
@@ -124,27 +125,38 @@ func (d Documents) Set() map[Document]struct{} {
 }
 
 func (andOperator) Combine(nodes []LogicalTreeNode, cache QueryCacher) Documents {
-	nodeDocs := make([]map[Document]struct{}, len(nodes))
+	if len(nodes) == 0 {
+		return Documents{}
+	}
+	if len(nodes) == 1 {
+		return nodes[0].Documents(cache)
+	}
+
+	var wg sync.WaitGroup
+	docIDs := make([]Documents, len(nodes))
 	for i, node := range nodes {
-		nodeDocs[i] = node.Documents(cache).Set()
-	}
-
-	intersection := make(map[Document]struct{})
-	for i := 0; i < len(nodeDocs)-1; i++ {
-		for k := range nodeDocs[i] {
-			if _, ok := nodeDocs[i+1][k]; ok {
-				intersection[k] = struct{}{}
+		wg.Add(1)
+		go func(n LogicalTreeNode, j int) {
+			defer wg.Done()
+			docIDs[j] = n.Documents(cache)
+			if !sort.IsSorted(docIDs[j]) {
+				sort.Sort(docIDs[j])
 			}
-		}
+		}(node, i)
 	}
+	wg.Wait()
 
-	docs := make(Documents, len(intersection))
-	i := 0
-	for doc := range intersection {
-		docs[i] = doc
-		i++
+	// initial set of nodes
+	docs := docIDs[0]
+	for i := 1; i < len(docIDs); i++ {
+		pivot := len(docs)
+		next := docIDs[i]
+
+		docs = append(docs, next...)
+
+		size := set.Inter(docs, pivot)
+		docs = docs[:size]
 	}
-
 	return docs
 }
 
@@ -153,11 +165,59 @@ func (andOperator) String() string {
 }
 
 func (orOperator) Combine(nodes []LogicalTreeNode, cache QueryCacher) Documents {
-	var docs Documents
-	for _, node := range nodes {
-		docs = append(docs, node.Documents(cache)...)
+	if len(nodes) == 0 {
+		return Documents{}
 	}
-	sort.Sort(docs)
+	if len(nodes) == 1 {
+		return nodes[0].Documents(cache)
+	}
+
+	totalDocs := 0
+	var docIds []Documents
+	var wg sync.WaitGroup
+	for i, node := range nodes {
+		wg.Add(1)
+		go func(n LogicalTreeNode, j int) {
+			defer wg.Done()
+			d := n.Documents(cache)
+			if len(d) > 0 {
+				mu.Lock()
+				docIds = append(docIds, d)
+				totalDocs += len(d)
+				mu.Unlock()
+			}
+		}(node, i)
+	}
+	wg.Wait()
+
+	idx := make([]int, len(docIds))
+	docs := make(Documents, totalDocs)
+	k := 0
+	//var docs Documents
+	for len(docIds) > 0 {
+		j := -1
+		minDoc := Document(math.MaxUint32)
+		for i := 0; i < len(docIds); i++ {
+			ptr := idx[i]
+			d := docIds[i]
+			if d[ptr] < minDoc {
+				minDoc = d[ptr]
+				j = i
+			}
+		}
+		docs[k] = minDoc
+		k++
+		//docs = append(docs, minDoc)
+		idx[j]++
+
+		if idx[j] >= len(docIds[j]) {
+			// Delete the slice.
+			docIds = append(docIds[:j], docIds[j+1:]...)
+			idx = append(idx[:j], idx[j+1:]...)
+		}
+	}
+
+	//sort.Sort(docs)
 	size := set.Uniq(docs)
 	docs = docs[:size]
 	return docs

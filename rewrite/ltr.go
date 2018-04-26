@@ -15,7 +15,7 @@ import (
 )
 
 type LTRQueryCandidateSelector struct {
-	depth     int
+	depth     int32
 	modelFile string
 }
 
@@ -42,7 +42,6 @@ func getRanking(filename string, candidates []CandidateQuery) (cqr.CommonQueryRe
 		if err != nil {
 			return nil, err
 		}
-		fmt.Println(candidates[i])
 		ranks[i] = ranking{
 			r,
 			candidates[i].Query,
@@ -73,26 +72,31 @@ func (sel LTRQueryCandidateSelector) Select(query TransformedQuery, transformati
 	}
 	svmrank.Predict("tmp.features", sel.modelFile, "tmp.output")
 	candidate, err := getRanking("tmp.output", transformations)
-	if err != nil {
-		return TransformedQuery{}, nil, err
-	}
-	if candidate == nil {
-		sel.depth = int(math.Inf(1))
-		return query, sel, nil
-	}
 
 	sel.depth++
 	f.Truncate(0)
 	f.Seek(0, 0)
-	err = os.Remove("tmp.output")
+	err2 := os.Remove("tmp.features")
+	if err2 != nil {
+		return TransformedQuery{}, nil, err2
+	}
+
 	if err != nil {
 		return TransformedQuery{}, nil, err
 	}
+	if candidate == nil {
+		sel.depth = math.MaxInt32
+		return query, sel, nil
+	}
+	if query.PipelineQuery.Query.String() == candidate.String() {
+		sel.depth = math.MaxInt32
+	}
+
 	return query.Append(groove.NewPipelineQuery(query.PipelineQuery.Name, query.PipelineQuery.Topic, candidate)), sel, nil
 }
 
 func (sel LTRQueryCandidateSelector) StoppingCriteria() bool {
-	return sel.depth >= 5
+	return sel.depth >= 1
 }
 
 func NewLTRQueryCandidateSelector(modelFile string) LTRQueryCandidateSelector {

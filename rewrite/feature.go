@@ -182,7 +182,7 @@ func deltas(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me a
 
 	switch q := query.(type) {
 	case cqr.Keyword:
-		gq := groove.NewPipelineQuery("qpp", 0, q)
+		gq := groove.NewPipelineQuery("qpp", "test", q)
 		features := []int{avgIDFFeature, sumIDFFeature, maxIDFFeature, stdDevIDFFeature, avgICTFFeature, retrievedFeature}
 		m, err := me.Execute(gq, ss, preqpp.AvgIDF, preqpp.SumIDF, preqpp.MaxIDF, preqpp.StdDevIDF, preqpp.AvgICTF, preqpp.RetrievalSize)
 		if err != nil {
@@ -279,7 +279,7 @@ func (lf LearntFeature) WriteLibSVM(writer io.Writer, comment ...interface{}) (i
 }
 
 // WriteLibSVMRank writes a LIBSVM^rank compatible line to a writer.
-func (lf LearntFeature) WriteLibSVMRank(writer io.Writer, topic int64, comment string) (int, error) {
+func (lf LearntFeature) WriteLibSVMRank(writer io.Writer, topic, comment string) (int, error) {
 	sort.Sort(lf.Features)
 	size := set.Uniq(lf.Features)
 	ff := lf.Features[:size]

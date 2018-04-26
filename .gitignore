@@ -26,6 +26,8 @@ wss_c/
 wss_r/
 
 *.pprof
+*.prof
+*.test
 *.output
 main
 

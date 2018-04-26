@@ -1,9 +1,10 @@
-package combinator
+package combinator_test
 
 import (
 	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
+	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
@@ -23,12 +24,123 @@ func TestLogicalTree(t *testing.T) {
 			RequiresLexing: true,
 		})
 
-	rawQuery := `1. MMSE*.ti,ab.
-2. sMMSE.ti,ab.
-3. Folstein*.ti,ab.
-4. MiniMental.ti,ab.
-5. retain.ti,ab.
-6. or/1-5`
+	rawQuery := `1. objective.tw.
+2. assess.tw.
+3. accuracy.tw.
+4. galactomannan.tw.
+5. invasive.tw.
+6. aspergillosis.tw.
+7. immunocompromised.tw.
+8. objectives.tw.
+9. aimed.tw.
+10. sources.tw.
+11. heterogeneity.tw.
+12. subgroups.tw.
+13. interpretations.tw.
+14. criteria.tw.
+15. 1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9 or 10 or 11 or 12 or 13 or 14
+16. assessed.tw.
+17. accuracy.tw.
+18. galactomannan.tw.
+19. sandwich.tw.
+20. elisa.tw.
+21. either.tw.
+22. retrospective.tw.
+23. collection.tw.
+24. alone.tw.
+25. 16 or 17 or 18 or 19 or 20 or 21 or 22 or 23 or 24
+26. include.tw.
+27. neutropenia.tw.
+28. whose.tw.
+29. neutrophils.tw.
+30. functionally.tw.
+31. included.tw.
+32. haematological.tw.
+33. malignancies.tw.
+34. receiving.tw.
+35. haematopoietic.tw.
+36. transplants.tw.
+37. chemotherapeutics.tw.
+38. immunosuppressive.tw.
+39. organ.tw.
+40. transplant.tw.
+41. recipients.tw.
+42. prolonged.tw.
+43. condition.tw.
+44. compromising.tw.
+45. granulomatous.tw.
+46. cgd.tw.
+47. inherited.tw.
+48. abnormality.tw.
+49. 26 or 27 or 28 or 29 or 30 or 31 or 32 or 33 or 34 or 35 or 36 or 37 or 38 or 39 or 40 or 41 or 42 or 43 or 44 or 45 or 46 or 47 or 48
+50. commercially.tw.
+51. galactomannan.tw.
+52. sandwich.tw.
+53. elisa.tw.
+54. included.tw.
+55. concerning.tw.
+56. excluded.tw.
+57. addressing.tw.
+58. bal.tw.
+59. fluids.tw.
+60. csf.tw.
+61. peritoneal.tw.
+62. evaluating.tw.
+63. 50 or 51 or 52 or 53 or 54 or 55 or 56 or 57 or 58 or 59 or 60 or 61 or 62
+64. condition.tw.
+65. invasive.tw.
+66. aspergillosis.tw.
+67. called.tw.
+68. 64 or 65 or 66 or 67
+69. standards.tw.
+70. define.tw.
+71. condition.tw.
+72. autopsy.tw.
+73. criteria.tw.
+74. de.tw.
+75. pauw.tw.
+76. demonstration.tw.
+77. hyphal.tw.
+78. invasion.tw.
+79. biopsies.tw.
+80. aspergillus.tw.
+81. gold.tw.
+82. specimens.tw.
+83. histopathological.tw.
+84. rarely.tw.
+85. therefore.tw.
+86. decided.tw.
+87. take.tw.
+88. divide.tw.
+89. categories.tw.
+90. proven.tw.
+91. invasive.tw.
+92. aspergillosis.tw.
+93. probably.tw.
+94. possibly.tw.
+95. see.tw.
+96. table.tw.
+97. division.tw.
+98. microbiological.tw.
+99. shown.tw.
+100. match.tw.
+101. especially.tw.
+102. true.tw.
+103. investigating.tw.
+104. example.tw.
+105. recommended.tw.
+106. probable.tw.
+107. exclusion.tw.
+108. regarded.tw.
+109. atypical.tw.
+110. likely.tw.
+111. accuracy.tw.
+112. excluded.tw.
+113. explicitly.tw.
+114. excluding.tw.
+115. clear.tw.
+116. 69 or 70 or 71 or 72 or 73 or 74 or 75 or 76 or 77 or 78 or 79 or 80 or 81 or 82 or 83 or 84 or 85 or 86 or 87 or 88 or 89 or 90 or 91 or 92 or 93 or 94 or 95 or 96 or 97 or 98 or 99 or 100 or 101 or 102 or 103 or 104 or 105 or 106 or 107 or 108 or 109 or 110 or 111 or 112 or 113 or 114 or 115
+117. 15 and 25 and 49 and 63 and 68 and 116`
 
 	ss := stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://sef-is-017660:8200/"),
 		stats.ElasticsearchIndex("med_stem_sim2"),
@@ -45,19 +157,29 @@ func TestLogicalTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	query := groove.NewPipelineQuery("0", 1, repr.(cqr.CommonQueryRepresentation))
+	query := groove.NewPipelineQuery("0", "1", repr.(cqr.CommonQueryRepresentation))
 
-	tree, _, err := NewLogicalTree(query, ss, make(map[uint64]LogicalTreeNode))
+	cache := combinator.NewFileQueryCache("cache")
+
+	//f, _ := os.Create("logic_test.pprof")
+	//pprof.StartCPUProfile(f)
+	//defer pprof.StopCPUProfile()
+
+	fmt.Println("constructing tree")
+	tree, _, err := combinator.NewLogicalTree(query, ss, cache)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	r, err := ss.Execute(query, ss.SearchOptions())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	fmt.Println(ss.RetrievalSize(query.Query))
-	fmt.Println(len(r))
-	fmt.Println(len(tree.Documents()))
+	//
+	//r, err := ss.Execute(query, ss.SearchOptions())
+	//if err != nil {
+	//	t.Fatal(err)
+	//}
+	//
+	//fmt.Println("retrieving using elasticsearch")
+	s, _ := ss.RetrievalSize(query.Query)
+	fmt.Println("retrieval size:", s)
+	//fmt.Println("r:", len(r))
+	fmt.Println("combining tree nodes")
+	fmt.Println("tree:", len(tree.Documents(cache)))
 }
