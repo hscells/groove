@@ -1,8 +1,8 @@
 package preqpp
 
 import (
-	"github.com/hscells/groove/stats"
 	"github.com/hscells/groove"
+	"github.com/hscells/groove/stats"
 )
 
 // RetrievalSize is the total number of results retrieved for a query.

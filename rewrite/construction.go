@@ -2,8 +2,8 @@ package rewrite
 
 import (
 	"github.com/hscells/cqr"
-	"gopkg.in/neurosnap/sentences.v1"
 	"github.com/jdkato/prose/tokenize"
+	"gopkg.in/neurosnap/sentences.v1"
 	"strings"
 )
 

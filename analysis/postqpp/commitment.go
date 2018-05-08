@@ -1,9 +1,9 @@
 package postqpp
 
 import (
-	"github.com/hscells/trecresults"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/trecresults"
 	"math"
 )
 

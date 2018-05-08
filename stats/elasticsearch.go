@@ -5,13 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/hscells/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
+	"github.com/hscells/trecresults"
 	"github.com/satori/go.uuid"
 	"gopkg.in/olivere/elastic.v5"
 	"io"
@@ -268,13 +268,13 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 				KeepAlive("10m").
 				Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
 				SearchSource(
-				elastic.NewSearchSource().
-					NoStoredFields().
-					FetchSource(false).
-					Size(options.Size).
-					Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
-					TrackScores(false).
-					Query(elastic.NewRawStringQuery(q)))
+					elastic.NewSearchSource().
+						NoStoredFields().
+						FetchSource(false).
+						Size(options.Size).
+						Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
+						TrackScores(false).
+						Query(elastic.NewRawStringQuery(q)))
 
 			for {
 				result, err := svc.Do(context.Background())
@@ -350,12 +350,12 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 			Type(es.documentType).
 			KeepAlive("30m").
 			SearchSource(
-			elastic.NewSearchSource().
-				NoStoredFields().
-				FetchSource(false).
-				Size(options.Size).
-				TrackScores(false).
-				Query(elastic.NewRawStringQuery(q)))
+				elastic.NewSearchSource().
+					NoStoredFields().
+					FetchSource(false).
+					Size(options.Size).
+					TrackScores(false).
+					Query(elastic.NewRawStringQuery(q)))
 
 		for {
 			result, err := svc.Do(context.Background())

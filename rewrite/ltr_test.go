@@ -3,7 +3,6 @@ package rewrite_test
 import (
 	"bytes"
 	"fmt"
-	"github.com/hscells/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
@@ -15,6 +14,7 @@ import (
 	"github.com/hscells/transmute/lexer"
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
+	"github.com/hscells/trecresults"
 	"github.com/peterbourgon/diskv"
 	"io/ioutil"
 	"testing"

@@ -3,9 +3,9 @@ package stats
 
 import (
 	"errors"
-	"github.com/hscells/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
+	"github.com/hscells/trecresults"
 	"math"
 	"strconv"
 )

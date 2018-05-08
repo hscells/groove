@@ -7,10 +7,10 @@ import (
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/analysis/preqpp"
 	"github.com/hscells/groove/stats"
+	"github.com/xtgo/set"
 	"io"
 	"sort"
 	"strings"
-	"github.com/xtgo/set"
 )
 
 // Feature is some value that is applicable to a query transformation.
@@ -29,9 +29,9 @@ type deltaFeatures map[int]float64
 
 const (
 	// Context features.
-	nilFeature           = iota
+	nilFeature = iota
 	depthFeature
-	clauseTypeFeature     // This isn't the operator type, it's the type of the clause (keyword query/Boolean query).
+	clauseTypeFeature // This isn't the operator type, it's the type of the clause (keyword query/Boolean query).
 	childrenCountFeature
 
 	// Transformation-based features.

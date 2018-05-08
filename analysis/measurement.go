@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
+	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
 	"github.com/peterbourgon/diskv"
 	"hash/fnv"
@@ -14,7 +15,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"github.com/hscells/groove/combinator"
 )
 
 // Measurement is a representation for how a measurement fits into the pipeline.

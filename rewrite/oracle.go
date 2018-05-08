@@ -3,11 +3,11 @@ package rewrite
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/hscells/trecresults"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/trecresults"
 	"io/ioutil"
 	"log"
 	"time"

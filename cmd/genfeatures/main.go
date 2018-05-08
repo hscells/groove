@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/hscells/trecresults"
 	"github.com/alexflint/go-arg"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
@@ -17,6 +16,7 @@ import (
 	"github.com/hscells/transmute/lexer"
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
+	"github.com/hscells/trecresults"
 	"github.com/peterbourgon/diskv"
 	"io/ioutil"
 	"log"

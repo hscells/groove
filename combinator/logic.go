@@ -3,18 +3,18 @@ package combinator
 
 import (
 	"fmt"
-	"github.com/hscells/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/trecresults"
 	"github.com/pkg/errors"
 	"github.com/xtgo/set"
 	"hash/fnv"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"math"
 )
 
 var (

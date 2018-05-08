@@ -2,18 +2,18 @@ package combinator
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/gob"
 	"errors"
+	"fmt"
+	"github.com/hashicorp/golang-lru"
 	"github.com/hscells/cqr"
 	"github.com/peterbourgon/diskv"
-	"strconv"
-	"fmt"
-	"sort"
 	"io/ioutil"
-	"path"
-	"encoding/binary"
 	"os"
-	"github.com/hashicorp/golang-lru"
+	"path"
+	"sort"
+	"strconv"
 )
 
 // ErrCacheMiss indicates that a read did not fail, but the item was not present in the cache.

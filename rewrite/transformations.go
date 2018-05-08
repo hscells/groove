@@ -7,14 +7,14 @@ import (
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/meshexp"
+	"gopkg.in/olivere/elastic.v5"
 	"strconv"
 	"strings"
 	"sync"
-	"gopkg.in/olivere/elastic.v5"
 )
 
 const (
-	logicalOperatorTransformation      = iota
+	logicalOperatorTransformation = iota
 	adjacencyRangeTransformation
 	meshExplosionTransformation
 	fieldRestrictionsTransformation

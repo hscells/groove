@@ -2,13 +2,13 @@ package stats
 
 import (
 	"fmt"
-	"github.com/hscells/trecresults"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/jnigi"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
+	"github.com/hscells/trecresults"
 	"github.com/magiconair/properties"
 	"log"
 	"path/filepath"
