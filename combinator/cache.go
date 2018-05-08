@@ -16,7 +16,8 @@ import (
 	"github.com/hashicorp/golang-lru"
 )
 
-var CacheMissError = errors.New("cache miss error")
+// ErrCacheMiss indicates that a read did not fail, but the item was not present in the cache.
+var ErrCacheMiss = errors.New("cache miss error")
 
 // BlockTransform determines how diskv should partition folders.
 func BlockTransform(blockSize int) func(string) []string {
@@ -33,7 +34,7 @@ func BlockTransform(blockSize int) func(string) []string {
 	}
 }
 
-// docsToBytes encodes a clause to bytes.
+// docsToBytes encodes a retrieved set of documents  to bytes.
 func docsToBytes(docs Documents) ([]byte, error) {
 	if len(docs) == 0 {
 		return []byte{}, nil
@@ -59,17 +60,20 @@ type QueryCacher interface {
 	Set(query cqr.CommonQueryRepresentation, docs Documents) error
 }
 
+// MapQueryCache caches results to memory.
 type MapQueryCache struct {
 	m map[uint64]Documents
 }
 
+// Get looks up results in a map.
 func (m MapQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, error) {
 	if d, ok := m.m[HashCQR(query)]; ok {
 		return d, nil
 	}
-	return Documents{}, CacheMissError
+	return Documents{}, ErrCacheMiss
 }
 
+// Set caches results to a map.
 func (m MapQueryCache) Set(query cqr.CommonQueryRepresentation, docs Documents) error {
 	sort.Sort(docs)
 	m.m[HashCQR(query)] = docs
@@ -82,14 +86,16 @@ func NewMapQueryCache() QueryCacher {
 	return MapQueryCache{make(map[uint64]Documents)}
 }
 
+// DiskvQueryCache caches results using diskv.
 type DiskvQueryCache struct {
 	*diskv.Diskv
 }
 
+// Get looks up results from disk.
 func (d DiskvQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, error) {
 	b, err := d.Read(strconv.Itoa(int(HashCQR(query))))
 	if err != nil {
-		return Documents{}, CacheMissError
+		return Documents{}, ErrCacheMiss
 	}
 	if len(b) == 0 {
 		return Documents{}, nil
@@ -103,6 +109,7 @@ func (d DiskvQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, er
 	return c, nil
 }
 
+// Set caches results to disk.
 func (d DiskvQueryCache) Set(query cqr.CommonQueryRepresentation, docs Documents) error {
 	sort.Sort(docs)
 	b, err := docsToBytes(docs)
@@ -119,13 +126,15 @@ func NewDiskvQueryCache(dv *diskv.Diskv) QueryCacher {
 	return DiskvQueryCache{dv}
 }
 
+// FileQueryCache caches results in a flat-file format in a single directory. This cacher will be faster than diskv as
+// it does not use gob encoding.
 type FileQueryCache struct {
 	path  string
 	cache *lru.Cache
 }
 
+// NewFileQueryCache creates a new disk-based file query cache.
 func NewFileQueryCache(path string) QueryCacher {
-	constructor()
 	err := os.MkdirAll(path, 0700)
 	if err != nil {
 		panic(err)
@@ -140,31 +149,34 @@ func NewFileQueryCache(path string) QueryCacher {
 	}
 }
 
+// Get looks up results from disk.
 func (f FileQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, error) {
 	h := HashCQR(query)
 	if v, ok := f.cache.Get(h); ok {
 		return v.(Documents), nil
-	} else {
-		fn := path.Join(f.path, fmt.Sprintf("%v", h))
-		if _, err := os.Stat(fn); err != nil && os.IsNotExist(err) {
-			return nil, CacheMissError
-		} else if err != nil {
-			return nil, err
-		}
-		b, err := ioutil.ReadFile(fn)
-		if err != nil {
-			return nil, err
-		}
-		d := make(Documents, len(b)/4)
-		for i, j := 0, 0; i < len(b); i += 4 {
-			d[j] = Document(binary.LittleEndian.Uint32(b[i : i+4]))
-			j++
-		}
-		f.cache.Add(h, d)
-		return d, nil
 	}
+
+	fn := path.Join(f.path, fmt.Sprintf("%v", h))
+	if _, err := os.Stat(fn); err != nil && os.IsNotExist(err) {
+		return nil, ErrCacheMiss
+	} else if err != nil {
+		return nil, err
+	}
+	b, err := ioutil.ReadFile(fn)
+	if err != nil {
+		return nil, err
+	}
+	d := make(Documents, len(b)/4)
+	for i, j := 0, 0; i < len(b); i += 4 {
+		d[j] = Document(binary.LittleEndian.Uint32(b[i : i+4]))
+		j++
+	}
+	f.cache.Add(h, d)
+	return d, nil
+
 }
 
+// Set caches results to disk.
 func (f FileQueryCache) Set(query cqr.CommonQueryRepresentation, docs Documents) error {
 	sort.Sort(docs)
 	h := HashCQR(query)

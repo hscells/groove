@@ -201,10 +201,6 @@ func (es *ElasticsearchStatisticsSource) RetrievalSize(query cqr.CommonQueryRepr
 // TermVector retrieves the term vector for a document.
 func (es *ElasticsearchStatisticsSource) TermVector(document string) (TermVector, error) {
 	tv := TermVector{}
-	analyseField := es.field
-	if len(es.AnalyseField) > 0 {
-		analyseField = es.field + "." + es.AnalyseField
-	}
 
 	req := es.client.TermVectors(es.index, es.documentType).
 		Id(document).
@@ -214,7 +210,7 @@ func (es *ElasticsearchStatisticsSource) TermVector(document string) (TermVector
 		Pretty(false).
 		Positions(false).
 		Payloads(false).
-		Fields(analyseField)
+		Fields("*")
 
 	if len(es.AnalyseField) > 0 {
 		req = req.PerFieldAnalyzer(map[string]string{es.field: "medline_analyser"})
@@ -225,13 +221,16 @@ func (es *ElasticsearchStatisticsSource) TermVector(document string) (TermVector
 		return tv, err
 	}
 
-	for term, vec := range resp.TermVectors[analyseField].Terms {
-		tv = append(tv, TermVectorTerm{
-			Term:               term,
-			DocumentFrequency:  float64(vec.DocFreq),
-			TermFrequency:      float64(vec.TermFreq),
-			TotalTermFrequency: float64(vec.Ttf),
-		})
+	for field, vector := range resp.TermVectors {
+		for term, vec := range vector.Terms {
+			tv = append(tv, TermVectorTerm{
+				Term:               term,
+				Field:              field,
+				DocumentFrequency:  float64(vec.DocFreq),
+				TermFrequency:      float64(vec.TermFreq),
+				TotalTermFrequency: float64(vec.Ttf),
+			})
+		}
 	}
 
 	return tv, nil

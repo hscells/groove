@@ -1,8 +1,8 @@
 package groove
 
 import (
-	"github.com/hscells/trecresults"
 	"github.com/hscells/cqr"
+	"github.com/hscells/trecresults"
 )
 
 // QueryResult is the result of a transformation.

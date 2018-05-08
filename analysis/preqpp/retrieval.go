@@ -5,6 +5,7 @@ import (
 	"github.com/hscells/groove"
 )
 
+// RetrievalSize is the total number of results retrieved for a query.
 var RetrievalSize = retrievalSize{}
 
 type retrievalSize struct{}

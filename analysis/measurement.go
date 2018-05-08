@@ -25,47 +25,56 @@ type Measurement interface {
 	Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error)
 }
 
+// MeasurementCacher is a cache that can store the measurements for queries.
 type MeasurementCacher interface {
 	Read(key string) ([]byte, error)
 	Write(key string, val []byte) error
 }
 
+// MemoryMeasurementCache caches measurement results in memory.
 type MemoryMeasurementCache map[string][]byte
 
+// Read reads a measurement result from memory.
 func (m MemoryMeasurementCache) Read(key string) ([]byte, error) {
 	if v, ok := m[key]; ok {
 		return v, nil
 	}
-	return nil, combinator.CacheMissError
+	return nil, combinator.ErrCacheMiss
 }
 
+// Write writes a measurement result to memory.
 func (m MemoryMeasurementCache) Write(key string, val []byte) error {
 	m[key] = val
 	return nil
 }
 
+// MeasurementExecutor executes measurements while caching the results to improve performance.
 type MeasurementExecutor struct {
 	cache MeasurementCacher
 }
 
+// NewDiskMeasurementExecutor creates a measurement executor that caches to disk.
 func NewDiskMeasurementExecutor(d *diskv.Diskv) MeasurementExecutor {
 	return MeasurementExecutor{
 		cache: d,
 	}
 }
 
+// NewMemoryMeasurementExecutor creates a measurement executor that caches to memory.
 func NewMemoryMeasurementExecutor() MeasurementExecutor {
 	return MeasurementExecutor{
 		cache: make(MemoryMeasurementCache),
 	}
 }
 
+// hash hashes a query and measurement pair ready to be cached.
 func hash(representation cqr.CommonQueryRepresentation, measurement Measurement) string {
 	h := fnv.New32()
 	h.Write([]byte(representation.String() + measurement.Name()))
 	return strconv.Itoa(int(h.Sum32()))
 }
 
+// Execute executes the specified measurements on the query using the statistics source.
 func (m MeasurementExecutor) Execute(query groove.PipelineQuery, ss stats.StatisticsSource, measurements ...Measurement) (results []float64, err error) {
 	results = make([]float64, len(measurements))
 	for i, measurement := range measurements {

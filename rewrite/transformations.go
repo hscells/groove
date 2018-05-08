@@ -29,6 +29,7 @@ type Transformer interface {
 	Name() string
 }
 
+// Transformation is the implementation of a transformer.
 type Transformation struct {
 	ID int
 	Transformer
@@ -50,18 +51,27 @@ type fieldRestrictions struct {
 }
 type adjacencyReplacement struct{}
 
+// NewLogicalOperatorTransformer creates a logical operator transformation.
 func NewLogicalOperatorTransformer() Transformation {
 	return Transformation{logicalOperatorTransformation, logicalOperatorReplacement{}}
 }
+
+// NewAdjacencyRangeTransformer creates an adjacency range transformation.
 func NewAdjacencyRangeTransformer() Transformation {
 	return Transformation{adjacencyRangeTransformation, &adjacencyRange{}}
 }
+
+// NewMeSHExplosionTransformer creates a mesh explosion transformer.
 func NewMeSHExplosionTransformer() Transformation {
 	return Transformation{meshExplosionTransformation, meshExplosion{}}
 }
+
+// NewFieldRestrictionsTransformer creates a field restrictions transformer.
 func NewFieldRestrictionsTransformer() Transformation {
 	return Transformation{fieldRestrictionsTransformation, fieldRestrictions{}}
 }
+
+// NewAdjacencyReplacementTransformer creates an adjacency replacement transformer.
 func NewAdjacencyReplacementTransformer() Transformation {
 	return Transformation{adjacencyReplacementTransformation, adjacencyReplacement{}}
 }
@@ -70,6 +80,8 @@ var (
 	d, _ = meshexp.Default()
 )
 
+// variations creates the variations of an input candidate query in the transformation chain using the specified
+// transformations.
 func variations(query CandidateQuery, context TransformationContext, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformation) ([]CandidateQuery, error) {
 	var candidates []CandidateQuery
 

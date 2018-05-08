@@ -12,14 +12,17 @@ type MeSHExplosionsRatio struct{}
 
 var meshExplosionRatio = NewProbabilisticMeasurement(MeSHExplosionsRatio{})
 
+// ComputeAdditionProbability NOT IMPLEMENTED.
 func (MeSHExplosionsRatio) ComputeAdditionProbability(m float64) PredictionPair {
 	return NewPredictionPair(-math.Log(m), 1 - -math.Log(m))
 }
 
+// ComputeReductionProbability NOT IMPLEMENTED.
 func (MeSHExplosionsRatio) ComputeReductionProbability(m float64) PredictionPair {
 	return NewPredictionPair(1 - -math.Log(m), -math.Log(m))
 }
 
+// Name NOT IMPLEMENTED.
 func (MeSHExplosionsRatio) Name() string {
 	return "MeSHExplosionsRatio"
 }

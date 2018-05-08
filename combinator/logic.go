@@ -283,7 +283,7 @@ func (a Atom) Query() cqr.CommonQueryRepresentation {
 // Documents returns the documents retrieved by the atom.
 func (a Atom) Documents(cache QueryCacher) Documents {
 	docs, err := cache.Get(a.Clause.Query)
-	if err == CacheMissError {
+	if err == ErrCacheMiss {
 		return Documents{}
 	}
 	if err != nil {
@@ -305,7 +305,7 @@ func (a AdjAtom) Query() cqr.CommonQueryRepresentation {
 // Documents returns the documents retrieved by the adjacency operator.
 func (a AdjAtom) Documents(cache QueryCacher) Documents {
 	docs, err := cache.Get(a.Clause.Query)
-	if err == CacheMissError {
+	if err == ErrCacheMiss {
 		return Documents{}
 	}
 	if err != nil {
@@ -381,7 +381,7 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen Q
 		if err == nil && docs != nil {
 			mu.Unlock()
 			return NewAtom(q), seen, nil
-		} else if err != nil && err != CacheMissError {
+		} else if err != nil && err != ErrCacheMiss {
 			mu.Unlock()
 			return nil, nil, err
 		}
@@ -424,7 +424,7 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen Q
 			docs, err := seen.Get(q)
 			if err == nil && docs != nil {
 				return NewAdjAtom(q), seen, nil
-			} else if err != nil && err != CacheMissError {
+			} else if err != nil && err != ErrCacheMiss {
 				return nil, nil, err
 			}
 

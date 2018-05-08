@@ -14,6 +14,7 @@ import (
 	"strconv"
 )
 
+// LTRQueryCandidateSelector uses learning to rank to select query chain candidates.
 type LTRQueryCandidateSelector struct {
 	depth     int32
 	modelFile string
@@ -60,6 +61,7 @@ func getRanking(filename string, candidates []CandidateQuery) (cqr.CommonQueryRe
 	return ranks[0].query, nil
 }
 
+// Select uses a Ranking SVM to select the next most likely candidate.
 func (sel LTRQueryCandidateSelector) Select(query TransformedQuery, transformations []CandidateQuery) (TransformedQuery, QueryChainCandidateSelector, error) {
 	f, err := os.OpenFile("tmp.features", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -95,10 +97,12 @@ func (sel LTRQueryCandidateSelector) Select(query TransformedQuery, transformati
 	return query.Append(groove.NewPipelineQuery(query.PipelineQuery.Name, query.PipelineQuery.Topic, candidate)), sel, nil
 }
 
+// StoppingCriteria stops when the depth approaches 500.
 func (sel LTRQueryCandidateSelector) StoppingCriteria() bool {
-	return sel.depth >= 1
+	return sel.depth >= 500
 }
 
+// NewLTRQueryCandidateSelector creates a new learning to rank candidate selector.
 func NewLTRQueryCandidateSelector(modelFile string) LTRQueryCandidateSelector {
 	return LTRQueryCandidateSelector{
 		modelFile: modelFile,

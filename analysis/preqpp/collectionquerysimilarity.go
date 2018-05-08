@@ -20,7 +20,8 @@ var (
 	SummedCollectionQuerySimilarity = summedCollectionQuerySimilarity{}
 	// MaxCollectionQuerySimilarity is similar to SummedCollectionQuerySimilarity except, as the name implies, it computes
 	// the maximum value rather than the sum.
-	MaxCollectionQuerySimilarity     = maxCollectionQuerySimilarity{}
+	MaxCollectionQuerySimilarity = maxCollectionQuerySimilarity{}
+	//AverageCollectionQuerySimilarity NOT IMPLEMENTED.
 	AverageCollectionQuerySimilarity = averageCollectionQuerySimilarity{}
 )
 

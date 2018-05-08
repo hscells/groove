@@ -132,7 +132,7 @@ func main() {
 		stats.ElasticsearchSearchOptions(stats.SearchOptions{Size: 10000, RunName: "test"}))
 
 	// Transformers and evaluators.
-	evaluators := []eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator}
+	evaluators := []eval.Evaluator{eval.F05Measure}
 
 	// TODO make this come from command line arguments.
 	// Cache for queries and the documents they retrieve.
@@ -186,15 +186,15 @@ func main() {
 				transformations := []rewrite.Transformation{rewrite.NewLogicalOperatorTransformer(), rewrite.NewAdjacencyReplacementTransformer(), rewrite.NewAdjacencyRangeTransformer(), rewrite.NewMeSHExplosionTransformer(), rewrite.NewFieldRestrictionsTransformer()}
 
 				// Generate variations.
-				fmt.Println("generating variations...")
-				fmt.Println(len(queryCandidates)-j, "to go")
+				log.Println("generating variations...")
+				log.Println(len(queryCandidates)-j, "to go")
 
 				candidates, err := rewrite.Variations(q, ss, me, transformations...)
 				if err != nil {
 					panic(err)
 				}
 
-				fmt.Println("generated", len(candidates), "candidates")
+				log.Println("generated", len(candidates), "candidates")
 				for i := 0; i < len(candidates); i++ {
 					hash := combinator.HashCQR(candidates[i].Query)
 					if _, ok := cache[hash]; !ok {
@@ -203,21 +203,21 @@ func main() {
 					}
 				}
 
-				fmt.Println("cut to", len(candidates), "candidates")
+				log.Println("cut to", len(candidates), "candidates")
 
 				// Sample 20% of the candidates that were generated.
-				candidates = sample(20, candidates)
-
-				fmt.Println("sampled", len(candidates), "candidates")
+				//candidates = sample(20, candidates)
+				//
+				//log.Println("sampled", len(candidates), "candidates")
 
 				// Set the limit to how many goroutines can be run.
 				// http://jmoiron.net/blog/limiting-concurrency-in-go/
-				maxConcurrency := 8
+				maxConcurrency := 16
 				concurrency := runtime.NumCPU()
 				if concurrency > maxConcurrency {
 					concurrency = maxConcurrency
 				}
-				fmt.Println("nthreads:", concurrency)
+				log.Println("nthreads:", concurrency)
 
 				sem := make(chan bool, concurrency)
 				for i, candidate := range candidates {
@@ -239,7 +239,7 @@ func main() {
 
 						evaluation := eval.Evaluate(evaluators, &r, qrels, gq.Topic)
 
-						lf := rewrite.NewLearntFeature(evaluation["Precision"], c.Features)
+						lf := rewrite.NewLearntFeature(evaluation[eval.F05Measure.Name()], c.Features)
 
 						var buff bytes.Buffer
 						_, err = lf.WriteLibSVMRank(&buff, gq.Topic, gq.Name)
@@ -247,7 +247,7 @@ func main() {
 							panic(err)
 						}
 
-						fmt.Printf("%v/%v [%v] %v\n", n, len(candidates), lf.Score, lf.Features)
+						log.Printf("<%v> %v/%v [%v]\n", gq.Topic, n, len(candidates), lf.Score)
 
 						mu.Lock()
 						f.Write(buff.Bytes())
@@ -258,7 +258,7 @@ func main() {
 				for i := 0; i < cap(sem); i++ {
 					sem <- true
 				}
-				fmt.Println("finished processing variations")
+				log.Println("finished processing variations")
 			}
 			queryCandidates = nextCandidates
 		}

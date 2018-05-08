@@ -6,6 +6,7 @@ import (
 
 type distributedness struct{}
 
+// Distributedness NOT IMPLEMENTED.
 var Distributedness = distributedness{}
 
 // generateWeights computes weights for each n retrieved item.
@@ -42,8 +43,8 @@ func (distributedness) Score(results *trecresults.ResultList, qrels trecresults.
 	weights := generateWeights(results.Len())
 	sumWeights := 0.0
 	for i, result := range *results {
-		docId := result.DocId
-		if score, ok := qrels[docId]; ok {
+		docID := result.DocId
+		if score, ok := qrels[docID]; ok {
 			if score.Score > 0 {
 				sumWeights += weights[i]
 			}

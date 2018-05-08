@@ -60,7 +60,7 @@ func (qc QueryChain) Execute(query groove.PipelineQuery) (TransformedQuery, erro
 		}
 
 		tq, qc.CandidateSelector, err = qc.CandidateSelector.Select(tq, candidates)
-		if err != nil && err != combinator.CacheMissError {
+		if err != nil && err != combinator.ErrCacheMiss {
 			return TransformedQuery{}, err
 		}
 		stop = qc.CandidateSelector.StoppingCriteria()

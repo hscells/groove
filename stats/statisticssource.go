@@ -21,6 +21,7 @@ type TermVectorTerm struct {
 	DocumentFrequency  float64
 	TotalTermFrequency float64
 	TermFrequency      float64
+	Field              string
 	Term               string
 }
 
@@ -46,6 +47,22 @@ type StatisticsSource interface {
 	Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error)
 }
 
+// ToPipelineQuery creates a pipeline query from a term vector. This can be used to perform analysis on documents (since
+// the term vector is a representation of a document).
+func (tv TermVector) ToPipelineQuery(topic, name string) groove.PipelineQuery {
+	var pq groove.PipelineQuery
+	pq.Topic = topic
+	pq.Name = name
+	query := make([]cqr.CommonQueryRepresentation, len(tv))
+	for i, term := range tv {
+		query[i] = cqr.NewKeyword(term.Term, term.Field)
+	}
+	pq.Query = cqr.NewBooleanQuery("or", query)
+	return pq
+}
+
+// GetDocumentIDs retrieves the document IDs for a query as fast as possible. Using Elasticsearch this will create a
+// very fast concurrent scroll service. This method does not guarantee order.
 func GetDocumentIDs(query groove.PipelineQuery, ss StatisticsSource) ([]uint32, error) {
 	var docs []uint32
 

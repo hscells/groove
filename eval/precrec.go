@@ -1,7 +1,9 @@
 package eval
 
 import (
+	"fmt"
 	"github.com/hscells/trecresults"
+	"math"
 )
 
 type recallEvaluator struct{}
@@ -9,6 +11,11 @@ type precisionEvaluator struct{}
 type numRel struct{}
 type numRet struct{}
 type numRelRet struct{}
+
+// FMeasure computes f-measure, with the beta parameter controlling the precision and recall trade-off.
+type FMeasure struct {
+	beta float64
+}
 
 var (
 	// RecallEvaluator calculates recall.
@@ -21,6 +28,13 @@ var (
 	NumRet = numRet{}
 	// NumRelRet is the number of relevant documents retrieved.
 	NumRelRet = numRelRet{}
+
+	// F1Measure is f-measure with beta=1.
+	F1Measure = FMeasure{beta: 1}
+	// F05Measure is f-measure with beta=0.5.
+	F05Measure = FMeasure{beta: 0.5}
+	// F3Measure is f-measure with beta=3.
+	F3Measure = FMeasure{beta: 3}
 )
 
 func (rec recallEvaluator) Name() string {
@@ -31,8 +45,8 @@ func (rec recallEvaluator) Score(results *trecresults.ResultList, qrels trecresu
 	numRel := 0.0
 	numRelRet := 0.0
 	for _, result := range *results {
-		docId := result.DocId
-		if qrel, ok := qrels[docId]; ok {
+		docID := result.DocId
+		if qrel, ok := qrels[docID]; ok {
 			if qrel.Score > 0 {
 				numRelRet++
 			}
@@ -60,8 +74,8 @@ func (rec precisionEvaluator) Score(results *trecresults.ResultList, qrels trecr
 	numRet := float64(len(*results))
 	numRelRet := 0.0
 	for _, result := range *results {
-		docId := result.DocId
-		if qrel, ok := qrels[docId]; ok {
+		docID := result.DocId
+		if qrel, ok := qrels[docID]; ok {
 			if qrel.Score > 0 {
 				numRelRet++
 			}
@@ -100,8 +114,8 @@ func (numRet) Name() string {
 func (numRelRet) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
 	n := 0.0
 	for _, result := range *results {
-		docId := result.DocId
-		if qrel, ok := qrels[docId]; ok {
+		docID := result.DocId
+		if qrel, ok := qrels[docID]; ok {
 			if qrel.Score > 0 {
 				n++
 			}
@@ -112,4 +126,20 @@ func (numRelRet) Score(results *trecresults.ResultList, qrels trecresults.Qrels)
 
 func (numRelRet) Name() string {
 	return "NumRelRet"
+}
+
+// Score uses the beta parameter to compute f-measure.
+func (f FMeasure) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
+	precision := PrecisionEvaluator.Score(results, qrels)
+	recall := RecallEvaluator.Score(results, qrels)
+	if precision == 0 || recall == 0 {
+		return 0
+	}
+	betaSquared := math.Pow(f.beta, 2)
+	return ((1 + betaSquared) * (precision * recall)) / ((betaSquared * precision) + recall)
+}
+
+// Name calculates the name of the f-measure with beta parameter.
+func (f FMeasure) Name() string {
+	return fmt.Sprintf("F%vMeasure", f.beta)
 }

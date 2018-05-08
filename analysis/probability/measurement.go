@@ -28,6 +28,7 @@ type PredictionPair struct {
 	RecallProbability    float64
 }
 
+// NewPredictionPair creates a new prediction pair.
 func NewPredictionPair(precision, recall float64) PredictionPair {
 	return PredictionPair{
 		PrecisionProbability: precision,

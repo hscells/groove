@@ -4,23 +4,21 @@ package pipeline
 import (
 	"bytes"
 	"errors"
-	"github.com/hscells/trecresults"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/output"
 	"github.com/hscells/groove/preprocess"
 	"github.com/hscells/groove/query"
 	"github.com/hscells/groove/rewrite"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/trecresults"
 	"io/ioutil"
 	"log"
 	"runtime"
 	"sort"
-	"github.com/hscells/groove/combinator"
 )
-
-type empty struct{}
 
 // GroovePipeline contains all the information for executing a pipeline for query analysis.
 type GroovePipeline struct {
@@ -34,8 +32,10 @@ type GroovePipeline struct {
 	EvaluationFormatters  EvaluationOutputFormat
 	OutputTrec            output.TrecResults
 	QueryChain            rewrite.QueryChain
+	QueryCache            combinator.QueryCacher
 }
 
+// EvaluationOutputFormat specifies out evaluation output should be formatted.
 type EvaluationOutputFormat struct {
 	EvaluationFormatters []output.EvaluationFormatter
 	EvaluationQrels      trecresults.QrelsFile
@@ -78,7 +78,7 @@ func TrecOutput(path string) func() interface{} {
 	}
 }
 
-// TrecOutput configures trec output.
+// EvaluationOutput configures trec output.
 func EvaluationOutput(qrels string, formatters ...output.EvaluationFormatter) func() interface{} {
 	b, err := ioutil.ReadFile(qrels)
 	if err != nil {
@@ -131,6 +131,10 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 			Type:  groove.Error,
 		}
 		return
+	}
+
+	if pipeline.QueryCache == nil {
+		pipeline.QueryCache = combinator.NewFileQueryCache("file_cache")
 	}
 
 	// This means preprocessing the query.
@@ -245,13 +249,20 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 				}
 
 				// Execute the query.
+				//var trecResults trecresults.ResultList
+				//tree, _, err := combinator.NewLogicalTree(query, pipeline.StatisticsSource, pipeline.QueryCache)
+				//if err != nil {
+				//	c <- groove.PipelineResult{
+				//		Topic: query.Topic,
+				//		Error: err,
+				//		Type:  groove.Error,
+				//	}
+				//	return
+				//}
+				//trecResults := tree.Documents(pipeline.QueryCache).Results(query, query.Topic)
+				//fmt.Println("cache hit")
+				//trecResults = d.Results(query, query.Topic)
 				docIds, err := stats.GetDocumentIDs(query, pipeline.StatisticsSource)
-				results := make(combinator.Documents, len(docIds))
-				for i, id := range docIds {
-					results[i] = combinator.Document(id)
-				}
-				trecResults := results.Results(query, query.Name)
-				//trecResults, err := pipeline.StatisticsSource.Execute(query, pipeline.StatisticsSource.SearchOptions())
 				if err != nil {
 					c <- groove.PipelineResult{
 						Topic: query.Topic,
@@ -260,6 +271,13 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 					}
 					return
 				}
+				results := make(combinator.Documents, len(docIds))
+				for i, id := range docIds {
+					results[i] = combinator.Document(id)
+				}
+				pipeline.QueryCache.Set(query.Query, results)
+				trecResults := results.Results(query, query.Name)
+				//trecResults, err := pipeline.StatisticsSource.Execute(query, pipeline.StatisticsSource.SearchOptions())
 
 				// Set the evaluation results.
 				if len(pipeline.Evaluations) > 0 {

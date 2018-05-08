@@ -9,6 +9,7 @@ import (
 
 type normalisedQueryCommitment struct{}
 
+// NormalisedQueryCommitment NOT IMPLEMENTED.
 var NormalisedQueryCommitment = normalisedQueryCommitment{}
 
 func (normalisedQueryCommitment) Name() string {

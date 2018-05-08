@@ -19,6 +19,7 @@ type Feature struct {
 	Score float64
 }
 
+// Set sets the `score` of the feature.
 func (f Feature) Set(score float64) Feature {
 	f.Score = score
 	return f
@@ -75,6 +76,7 @@ const (
 	chainFeatures
 )
 
+// NewFeature creates a new feature with the specified ID and `score`.
 func NewFeature(id int, score float64) Feature {
 	return Feature{id, score}
 }
@@ -310,6 +312,7 @@ func (ff Features) AverageScore() float64 {
 	return totalScore / float64(len(ff))
 }
 
+// NewLearntFeature creates a new learnt feature with a score and a set of features.
 func NewLearntFeature(score float64, features Features) LearntFeature {
 	return LearntFeature{
 		features,
@@ -341,6 +344,7 @@ func NewCandidateQuery(query cqr.CommonQueryRepresentation, ff Features) Candida
 	}
 }
 
+// SetTransformationID sets the transformation id to the candidate query.
 func (c CandidateQuery) SetTransformationID(id int) CandidateQuery {
 	c.TransformationID = id
 	return c

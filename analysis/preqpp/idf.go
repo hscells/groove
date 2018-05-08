@@ -15,9 +15,13 @@ type maxIDF struct{}
 type stdDevIDF struct{}
 
 var (
-	AvgIDF    = avgIDF{}
-	SumIDF    = sumIDF{}
-	MaxIDF    = maxIDF{}
+	// AvgIDF is the average IDF.
+	AvgIDF = avgIDF{}
+	// SumIDF is the sum IDF.
+	SumIDF = sumIDF{}
+	// MaxIDF is the maximum IDF.
+	MaxIDF = maxIDF{}
+	// StdDevIDF is the standard deviation of the IDF.
 	StdDevIDF = stdDevIDF{}
 )
 

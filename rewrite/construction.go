@@ -8,6 +8,7 @@ import (
 )
 
 var (
+	// StopwordsEn is a concatenation of several standard stop word lists.
 	StopwordsEn = []string{"a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "if", "in", "into", "is",
 		"it", "no", "not", "of", "on", "or", "such", "that", "the", "their", "then", "there", "these", "they", "this",
 		"to", "was", "will", "with",
@@ -26,6 +27,7 @@ var (
 		"should", "now"}
 )
 
+// MakeKeywords creates keyword queries from text.
 func MakeKeywords(text string, stopwords []string, punctuation sentences.PunctStrings) []cqr.Keyword {
 	// tokenise the sentence
 	tokeniser := tokenize.NewTreebankWordTokenizer()
