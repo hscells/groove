@@ -268,13 +268,13 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 				KeepAlive("10m").
 				Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
 				SearchSource(
-					elastic.NewSearchSource().
-						NoStoredFields().
-						FetchSource(false).
-						Size(options.Size).
-						Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
-						TrackScores(false).
-						Query(elastic.NewRawStringQuery(q)))
+				elastic.NewSearchSource().
+					NoStoredFields().
+					FetchSource(false).
+					Size(options.Size).
+					Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
+					TrackScores(false).
+					Query(elastic.NewRawStringQuery(q)))
 
 			for {
 				result, err := svc.Do(context.Background())
@@ -287,13 +287,15 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 					goto search
 				}
 				if err != nil {
-					panic(err)
+					fmt.Println(err)
+					return
 				}
 
 				for _, hit := range result.Hits.Hits {
 					id, err := strconv.Atoi(hit.Id)
 					if err != nil {
-						panic(err)
+						fmt.Println(err)
+						return
 					}
 					hits[n] = append(hits[n], uint32(id))
 				}
@@ -302,7 +304,9 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 
 			err = svc.Clear(context.Background())
 			if err != nil {
-				panic(err)
+				fmt.Println(err)
+				//panic(err)
+				return
 			}
 		}(i)
 
@@ -350,12 +354,12 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 			Type(es.documentType).
 			KeepAlive("30m").
 			SearchSource(
-				elastic.NewSearchSource().
-					NoStoredFields().
-					FetchSource(false).
-					Size(options.Size).
-					TrackScores(false).
-					Query(elastic.NewRawStringQuery(q)))
+			elastic.NewSearchSource().
+				NoStoredFields().
+				FetchSource(false).
+				Size(options.Size).
+				TrackScores(false).
+				Query(elastic.NewRawStringQuery(q)))
 
 		for {
 			result, err := svc.Do(context.Background())

@@ -99,7 +99,7 @@ func (sel LTRQueryCandidateSelector) Select(query TransformedQuery, transformati
 
 // StoppingCriteria stops when the depth approaches 500.
 func (sel LTRQueryCandidateSelector) StoppingCriteria() bool {
-	return sel.depth >= 500
+	return sel.depth >= 5
 }
 
 // NewLTRQueryCandidateSelector creates a new learning to rank candidate selector.

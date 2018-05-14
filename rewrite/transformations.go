@@ -7,32 +7,44 @@ import (
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/meshexp"
-	"gopkg.in/olivere/elastic.v5"
 	"strconv"
 	"strings"
 	"sync"
+	"github.com/hscells/cui2vec"
+	"github.com/hscells/metawrap"
+	"sort"
+	"time"
+	"log"
+	"gopkg.in/olivere/elastic.v5"
 )
 
 const (
-	logicalOperatorTransformation = iota
+	logicalOperatorTransformation      = iota
 	adjacencyRangeTransformation
 	meshExplosionTransformation
 	fieldRestrictionsTransformation
 	adjacencyReplacementTransformation
+	clauseRemovalTransformation
+	cui2vecExpansionTransformation
 )
 
 // Transformer is applied to a query to generate a set of query candidates.
 type Transformer interface {
 	Apply(query cqr.CommonQueryRepresentation) (queries []cqr.CommonQueryRepresentation, err error)
-	Applicable(query cqr.CommonQueryRepresentation) bool
+	BooleanApplicable() bool
 	Features(query cqr.CommonQueryRepresentation, context TransformationContext) Features
 	Name() string
+}
+
+type BooleanTransformer interface {
+	BooleanFeatures(query cqr.CommonQueryRepresentation, context TransformationContext) []Features
 }
 
 // Transformation is the implementation of a transformer.
 type Transformation struct {
 	ID int
 	Transformer
+	BooleanTransformer
 }
 
 type logicalOperatorReplacement struct {
@@ -51,29 +63,55 @@ type fieldRestrictions struct {
 }
 type adjacencyReplacement struct{}
 
+type clauseRemoval struct{}
+
+type cui2vecExpansion struct {
+	vector  cui2vec.Vector
+	mapping cui2vec.Mapping
+	metamap metawrap.MetaMap
+}
+
 // NewLogicalOperatorTransformer creates a logical operator transformation.
 func NewLogicalOperatorTransformer() Transformation {
-	return Transformation{logicalOperatorTransformation, logicalOperatorReplacement{}}
+	return Transformation{ID: logicalOperatorTransformation, Transformer: logicalOperatorReplacement{}, BooleanTransformer: logicalOperatorReplacement{}}
 }
 
 // NewAdjacencyRangeTransformer creates an adjacency range transformation.
 func NewAdjacencyRangeTransformer() Transformation {
-	return Transformation{adjacencyRangeTransformation, &adjacencyRange{}}
+	a := &adjacencyRange{}
+	return Transformation{ID: adjacencyRangeTransformation, Transformer: a, BooleanTransformer: a}
 }
 
 // NewMeSHExplosionTransformer creates a mesh explosion transformer.
 func NewMeSHExplosionTransformer() Transformation {
-	return Transformation{meshExplosionTransformation, meshExplosion{}}
+	return Transformation{ID: meshExplosionTransformation, Transformer: meshExplosion{}}
 }
 
 // NewFieldRestrictionsTransformer creates a field restrictions transformer.
 func NewFieldRestrictionsTransformer() Transformation {
-	return Transformation{fieldRestrictionsTransformation, fieldRestrictions{}}
+	return Transformation{ID: fieldRestrictionsTransformation, Transformer: fieldRestrictions{}}
 }
 
 // NewAdjacencyReplacementTransformer creates an adjacency replacement transformer.
 func NewAdjacencyReplacementTransformer() Transformation {
-	return Transformation{adjacencyReplacementTransformation, adjacencyReplacement{}}
+	return Transformation{ID: adjacencyReplacementTransformation, Transformer: adjacencyReplacement{}, BooleanTransformer: adjacencyReplacement{}}
+}
+
+// NewClauseRemovalTransformer creates a clause removal transformer.
+func NewClauseRemovalTransformer() Transformation {
+	return Transformation{ID: clauseRemovalTransformation, Transformer: clauseRemoval{}, BooleanTransformer: clauseRemoval{}}
+}
+
+// NewClauseRemovalTransformer creates a clause removal transformer.
+func Newcui2vecExpansionTransformer(vector cui2vec.Vector, mapping cui2vec.Mapping, metamap metawrap.MetaMap) Transformation {
+	return Transformation{
+		ID: cui2vecExpansionTransformation,
+		Transformer: cui2vecExpansion{
+			vector:  vector,
+			mapping: mapping,
+			metamap: metamap,
+		},
+	}
 }
 
 var (
@@ -170,18 +208,22 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 
 		// Apply the transformations to the current Boolean query.
 		for _, transformation := range transformations {
-			if transformation.Applicable(q) {
+			if transformation.BooleanApplicable() {
 				query.TransformationID = transformation.ID
 				c, err := transformation.Apply(q)
 				if err != nil {
 					return nil, err
 				}
 
-				for _, applied := range c {
+				boolFeatures := transformation.BooleanFeatures(q, context)
+
+				for i, applied := range c {
 					features := contextFeatures(context)
 					features = append(features, booleanFeatures(applied.(cqr.BooleanQuery))...)
-					features = append(features, transformation.Features(applied, context)...)
 					features = append(features, transformationFeature(transformation.Transformer))
+					if i < len(boolFeatures) {
+						features = append(features, boolFeatures[i]...)
+					}
 					// Features about the entire Boolean query.
 					foundTotal := false
 					for _, feature := range features {
@@ -237,7 +279,7 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 
 		// Next, apply the transformations to the current query.
 		for _, transformation := range transformations {
-			if transformation.Applicable(q) {
+			if !transformation.BooleanApplicable() {
 				query.TransformationID = transformation.ID
 				c, err := transformation.Apply(q)
 				if err != nil {
@@ -256,7 +298,12 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 					}
 
 					features = append(features, computeDeltas(preDeltas, deltas)...)
-					features = append(features, keywordFeatures(applied.(cqr.Keyword))...)
+					switch appliedQuery := applied.(type) {
+					case cqr.Keyword:
+						features = append(features, keywordFeatures(appliedQuery)...)
+					case cqr.BooleanQuery:
+						features = append(features, booleanFeatures(appliedQuery)...)
+					}
 					features = append(features, transformation.Features(applied, context)...)
 					features = append(features, transformationFeature(transformation.Transformer))
 					candidates = append(candidates, NewCandidateQuery(applied, features).SetTransformationID(transformation.ID).Append(query))
@@ -280,14 +327,16 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 		wg.Add(1)
 		go func(t Transformation) {
 			defer wg.Done()
-		vars:
+			n := 0
+		v:
 			c, err := variations(query, TransformationContext{}, ss, me, t)
-			if err != nil {
-				if elastic.IsConnErr(err) {
-					fmt.Println(err, "...retrying...")
-					goto vars
+			log.Println(n, err)
+			if elastic.IsConnErr(err) || elastic.IsTimeout(err) {
+				if n < 1000 {
+					n++
+					time.Sleep(5 * time.Second)
+					goto v
 				}
-				panic(err)
 			}
 			mu.Lock()
 			vars = append(vars, c...)
@@ -298,6 +347,10 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 	wg.Wait()
 
 	return vars, nil
+}
+
+func (r logicalOperatorReplacement) BooleanFeatures(query cqr.CommonQueryRepresentation, context TransformationContext) []Features {
+	return []Features{r.Features(query, context)}
 }
 
 func (r logicalOperatorReplacement) Features(query cqr.CommonQueryRepresentation, context TransformationContext) Features {
@@ -321,8 +374,8 @@ func (r logicalOperatorReplacement) Apply(query cqr.CommonQueryRepresentation) (
 	return
 }
 
-func (logicalOperatorReplacement) Applicable(query cqr.CommonQueryRepresentation) bool {
-	return cqr.IsBoolean(query)
+func (logicalOperatorReplacement) BooleanApplicable() bool {
+	return true
 }
 
 func (logicalOperatorReplacement) Name() string {
@@ -372,17 +425,27 @@ func (r *adjacencyRange) Apply(query cqr.CommonQueryRepresentation) (queries []c
 	return rangeQueries, nil
 }
 
-func (*adjacencyRange) Applicable(query cqr.CommonQueryRepresentation) bool {
-	return cqr.IsBoolean(query)
+func (*adjacencyRange) BooleanApplicable() bool {
+	return true
+}
+
+func (r *adjacencyRange) BooleanFeatures(query cqr.CommonQueryRepresentation, context TransformationContext) []Features {
+	if r.n == 0 {
+		return []Features{}
+	}
+	f := make([]Features, r.n)
+	for i := r.n - 1; i >= 0; i-- {
+		f[i] = Features{
+			NewFeature(adjacencyReplacementFeature, r.distanceChange[i]),
+			NewFeature(adjacencyDistanceFeature, r.distance[i]),
+		}
+	}
+	r.n = 0
+	return f
 }
 
 func (r *adjacencyRange) Features(query cqr.CommonQueryRepresentation, context TransformationContext) Features {
-	var f Features
-	if r.n > 0 {
-		f = append(f, NewFeature(adjacencyChangeFeature, r.distanceChange[r.n-1]), NewFeature(adjacencyDistanceFeature, r.distance[r.n-1]))
-	}
-	r.n--
-	return f
+	return nil
 }
 
 func (*adjacencyRange) Name() string {
@@ -416,8 +479,8 @@ func (r meshExplosion) Apply(query cqr.CommonQueryRepresentation) (queries []cqr
 	return candidates, nil
 }
 
-func (meshExplosion) Applicable(query cqr.CommonQueryRepresentation) bool {
-	return !cqr.IsBoolean(query)
+func (meshExplosion) BooleanApplicable() bool {
+	return false
 }
 
 func (r meshExplosion) Features(query cqr.CommonQueryRepresentation, context TransformationContext) Features {
@@ -480,8 +543,8 @@ func (r fieldRestrictions) Apply(query cqr.CommonQueryRepresentation) (queries [
 	return candidates, nil
 }
 
-func (fieldRestrictions) Applicable(query cqr.CommonQueryRepresentation) bool {
-	return !cqr.IsBoolean(query)
+func (fieldRestrictions) BooleanApplicable() bool {
+	return false
 }
 
 func (r fieldRestrictions) Features(query cqr.CommonQueryRepresentation, context TransformationContext) Features {
@@ -508,14 +571,161 @@ func (adjacencyReplacement) Apply(query cqr.CommonQueryRepresentation) (queries 
 	return
 }
 
-func (adjacencyReplacement) Applicable(query cqr.CommonQueryRepresentation) bool {
-	return cqr.IsBoolean(query)
+func (adjacencyReplacement) BooleanApplicable() bool {
+	return true
 }
 
 func (adjacencyReplacement) Features(query cqr.CommonQueryRepresentation, context TransformationContext) Features {
 	return Features{}
 }
 
+func (adjacencyReplacement) BooleanFeatures(query cqr.CommonQueryRepresentation, context TransformationContext) []Features {
+	return []Features{{NewFeature(adjacencyReplacementFeature, 1)}}
+}
+
 func (adjacencyReplacement) Name() string {
 	return "AdjacencyReplacement"
+}
+
+func (clauseRemoval) Apply(query cqr.CommonQueryRepresentation) (queries []cqr.CommonQueryRepresentation, err error) {
+	switch q := query.(type) {
+	case cqr.BooleanQuery:
+		removed := make([]cqr.CommonQueryRepresentation, len(q.Children))
+		for i := range q.Children {
+			copied := make([]cqr.CommonQueryRepresentation, len(q.Children))
+			copy(copied, q.Children)
+			copied = append(copied[:i], copied[i+1:]...)
+			removed[i] = cqr.NewBooleanQuery(q.Operator, copied)
+		}
+		return removed, nil
+	}
+	return []cqr.CommonQueryRepresentation{}, nil
+}
+
+func (clauseRemoval) BooleanApplicable() bool {
+	return true
+}
+
+func (clauseRemoval) Features(query cqr.CommonQueryRepresentation, context TransformationContext) Features {
+	return nil
+}
+
+func (clauseRemoval) BooleanFeatures(query cqr.CommonQueryRepresentation, context TransformationContext) []Features {
+	switch q := query.(type) {
+	case cqr.BooleanQuery:
+		features := make([]Features, len(q.Children))
+		for i, child := range q.Children {
+			switch c := child.(type) {
+			case cqr.BooleanQuery:
+				features[i] = booleanFeatures(c)
+			case cqr.Keyword:
+				features[i] = keywordFeatures(c)
+			}
+			features[i] = append(features[i], NewFeature(clauseRemovalFeature, 1))
+		}
+		return features
+	}
+	return []Features{{NewFeature(clauseRemovalFeature, 1)}}
+}
+
+func (clauseRemoval) Name() string {
+	return "KeywordRemoval"
+}
+
+func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []cqr.CommonQueryRepresentation, err error) {
+	switch q := query.(type) {
+	case cqr.Keyword:
+		// Use MetaMap to get the preferred cui.
+		candidates, err := c.metamap.PreferredCandidates(q.QueryString)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(candidates) == 0 {
+			return []cqr.CommonQueryRepresentation{}, nil
+		}
+
+		// Next, parse and sort the candidates from MetaMap.
+		type concept struct {
+			cui   string
+			score int64
+		}
+		cuis := make([]concept, len(candidates))
+		for i, candidate := range candidates {
+			// We need to parse the score from MetaMap.
+			score, err := strconv.ParseInt(candidate.CandidateScore, 10, 64)
+			if err != nil {
+				return nil, err
+			}
+
+			// Scores from MetaMap come out as negative and we want to negate that.
+			score = -score
+
+			cuis[i] = concept{cui: candidate.CandidateCUI, score: score}
+		}
+		sort.Slice(cuis, func(i, j int) bool {
+			return cuis[i].score < cuis[j].score
+		})
+
+		// Now we know the target cui that is most associated with the input term.
+		target := cuis[0].cui
+
+		// We can get cuis that are similar to each other from cui2vec.
+		similar, err := c.vector.Similar(target)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(similar) == 0 {
+			return []cqr.CommonQueryRepresentation{}, nil
+		}
+
+		// Only continue to expand keywords until the score is less than a tenth of a percent (0.001) similar.
+		// Or to a maximum of 5 expansions.
+		maxScore := similar[0].Value
+		var expansions []string
+		for _, cui := range similar {
+			if maxScore-cui.Value > 0.001 {
+				break
+			}
+
+			if term, ok := c.mapping[cui.CUI]; ok {
+				expansions = append(expansions, term)
+			}
+
+			if len(expansions) >= 5 {
+				break
+			}
+		}
+
+		// Now create keywords from the expanded terms.
+		children := make([]cqr.CommonQueryRepresentation, len(expansions)+1)
+		for i, expansion := range expansions {
+			children[i] = cqr.NewKeyword(expansion, q.Fields...)
+		}
+		children[len(children)-1] = q
+
+		return []cqr.CommonQueryRepresentation{cqr.NewBooleanQuery("or", children)}, nil
+	}
+	return nil, nil
+}
+
+func (cui2vecExpansion) BooleanApplicable() bool {
+	return false
+}
+
+func (cui2vecExpansion) Features(query cqr.CommonQueryRepresentation, context TransformationContext) Features {
+	var features Features
+	switch q := query.(type) {
+	case cqr.BooleanQuery:
+		features = booleanFeatures(q)
+	case cqr.Keyword:
+		features = keywordFeatures(q)
+	}
+	terms := analysis.QueryTerms(query)
+	return append(features, NewFeature(cui2vecExpansionFeature, 1), NewFeature(cui2vecNumExpansionsFeature, float64(len(terms))))
+}
+
+func (cui2vecExpansion) Name() string {
+	return "cui2vecExpansion"
 }

@@ -25,6 +25,11 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"github.com/hscells/transmute"
+	"github.com/hscells/cui2vec"
+	"github.com/hscells/metawrap"
+	"path"
+	"strconv"
 )
 
 type args struct {
@@ -32,6 +37,10 @@ type args struct {
 	Qrels    string `arg:"help:relevance Assessments file,required"`
 	Features string `arg:"help:features output file,required"`
 	Depth    int    `arg:"help:depth of queries to generate,required"`
+
+	CUIs    string `arg:"help:path to cui mapping."`
+	CUI2Vec string `arg:"help:path to pretrained cui2vec features."`
+	MetaMap string `arg:"help:path to MetaMap binary."`
 }
 
 func (args) Version() string {
@@ -95,7 +104,7 @@ func main() {
 	var args args
 	arg.MustParse(&args)
 
-	// TODO this should come from command line argument.
+	log.Println("loading and compiling queries...")
 	// Load the qrels from file.
 	b, err := ioutil.ReadFile(args.Qrels)
 	if err != nil {
@@ -106,7 +115,6 @@ func main() {
 		panic(err)
 	}
 
-	// TODO this should come from command line argument.
 	// Load the queries from directory.
 	cqrPipeline := pipeline.NewPipeline(
 		parser.NewMedlineParser(),
@@ -123,6 +131,7 @@ func main() {
 		panic(err)
 	}
 
+	log.Println("initiating connection to Elasticsearch...")
 	// Configure the Statistics Source.
 	ss := stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://sef-is-017660:8200/"),
 		stats.ElasticsearchIndex("med_stem_sim2"),
@@ -131,8 +140,20 @@ func main() {
 		stats.ElasticsearchScroll(true),
 		stats.ElasticsearchSearchOptions(stats.SearchOptions{Size: 10000, RunName: "test"}))
 
+	log.Println("configuring cache and evaluation metrics...")
+	var N float64 = 26758795
 	// Transformers and evaluators.
-	evaluators := []eval.Evaluator{eval.F05Measure}
+	evaluators := []eval.Evaluator{eval.F1Measure, eval.F3Measure, eval.NewWSSEvaluator(N), eval.F05Measure, eval.PrecisionEvaluator, eval.RecallEvaluator}
+
+	evaluationFiles := make([]*os.File, len(evaluators))
+	for i, e := range evaluators {
+		// Load the file that features will be written to.
+		f, err := os.OpenFile(fmt.Sprintf("%v_%v", e.Name(), args.Features), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			panic(err)
+		}
+		evaluationFiles[i] = f
+	}
 
 	// TODO make this come from command line arguments.
 	// Cache for queries and the documents they retrieve.
@@ -145,18 +166,30 @@ func main() {
 		Compression:  diskv.NewGzipCompression(),
 	})
 
-	// Load the file that features will be written to.
-	f, err := os.OpenFile(args.Features, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		panic(err)
-	}
-	defer f.Close()
-
 	// Measurement Executor
 	me := analysis.NewDiskMeasurementExecutor(statisticsCache)
 
-	// We would like to generate a large amount of training data for the learning to rank
+	log.Println("loading cui2vec...")
+	c2vf, err := os.OpenFile(args.CUI2Vec, os.O_RDONLY, 0644)
+	if err != nil {
+		panic(err)
+	}
+	defer c2vf.Close()
+	vector, err := cui2vec.Load(c2vf, true)
+	if err != nil {
+		panic(err)
+	}
 
+	log.Println("loading cui mapping...")
+	mapping, err := cui2vec.LoadCUIMapping(args.CUIs)
+	if err != nil {
+		panic(err)
+	}
+
+	log.Println("loading MetaMap client...")
+	mm := metawrap.NewMetaMapClient(args.MetaMap)
+
+	// We would like to generate a large amount of training data for the learning to rank
 	/*
 		1. Generate candidates.
 		2. Measure all candidates.
@@ -164,26 +197,28 @@ func main() {
 		4. Repeat process N time.
 	*/
 
+	log.Println("ready to begin!")
 	var mu sync.Mutex
-	//var wg sync.WaitGroup
-
 	nTimes := args.Depth
-
 	for _, cq := range queries {
 		var queryCandidates []rewrite.CandidateQuery
 		var nextCandidates []rewrite.CandidateQuery
 		queryCandidates = append(queryCandidates, rewrite.NewCandidateQuery(cq.Query, nil))
+		cache := make(map[uint64]struct{})
+		log.Println("this is topic", cq.Topic)
 		for i := 0; i < nTimes; i++ {
 			log.Printf("loop #%v with %v candidate(s)", i, len(queryCandidates))
 			for j, q := range queryCandidates {
-				cache := make(map[uint64]struct{})
 
-				//wg.Add(1)
-				//defer wg.Done()
-
-				//var innerWg sync.WaitGroup
-
-				transformations := []rewrite.Transformation{rewrite.NewLogicalOperatorTransformer(), rewrite.NewAdjacencyReplacementTransformer(), rewrite.NewAdjacencyRangeTransformer(), rewrite.NewMeSHExplosionTransformer(), rewrite.NewFieldRestrictionsTransformer()}
+				transformations := []rewrite.Transformation{
+					rewrite.NewLogicalOperatorTransformer(),
+					rewrite.NewAdjacencyReplacementTransformer(),
+					rewrite.NewAdjacencyRangeTransformer(),
+					rewrite.NewMeSHExplosionTransformer(),
+					rewrite.NewFieldRestrictionsTransformer(),
+					rewrite.NewClauseRemovalTransformer(),
+					rewrite.Newcui2vecExpansionTransformer(vector, mapping, mm),
+				}
 
 				// Generate variations.
 				log.Println("generating variations...")
@@ -195,6 +230,14 @@ func main() {
 				}
 
 				log.Println("generated", len(candidates), "candidates")
+
+				//Sample 20% of the candidates that were generated.
+				if len(candidates) > 50 {
+					candidates = sample(20, candidates)
+				}
+
+				log.Println("sampled", len(candidates), "candidates")
+
 				for i := 0; i < len(candidates); i++ {
 					hash := combinator.HashCQR(candidates[i].Query)
 					if _, ok := cache[hash]; !ok {
@@ -202,13 +245,7 @@ func main() {
 						cache[hash] = struct{}{}
 					}
 				}
-
 				log.Println("cut to", len(candidates), "candidates")
-
-				// Sample 20% of the candidates that were generated.
-				//candidates = sample(20, candidates)
-				//
-				//log.Println("sampled", len(candidates), "candidates")
 
 				// Set the limit to how many goroutines can be run.
 				// http://jmoiron.net/blog/limiting-concurrency-in-go/
@@ -239,18 +276,30 @@ func main() {
 
 						evaluation := eval.Evaluate(evaluators, &r, qrels, gq.Topic)
 
-						lf := rewrite.NewLearntFeature(evaluation[eval.F05Measure.Name()], c.Features)
+						log.Printf("<%v> %v/%v [f0.5: %.6f, p: %.6f, r: %.6f, wss: %.6f]\n", gq.Topic, n, len(candidates), evaluation[eval.F05Measure.Name()], evaluation[eval.PrecisionEvaluator.Name()], evaluation[eval.RecallEvaluator.Name()], evaluation[eval.NewWSSEvaluator(N).Name()])
 
-						var buff bytes.Buffer
-						_, err = lf.WriteLibSVMRank(&buff, gq.Topic, gq.Name)
-						if err != nil {
-							panic(err)
-						}
+						s, _ := backend.NewCQRQuery(c.Query).String()
+						x, _ := transmute.Cqr2Medline.Execute(s)
+						s, _ = x.String()
 
-						log.Printf("<%v> %v/%v [%v]\n", gq.Topic, n, len(candidates), lf.Score)
+						fn := strconv.Itoa(int(combinator.HashCQR(c.Query)))
+						// Write the query outside the lock.
+						ioutil.WriteFile(
+							path.Join("transformed_queries", fn),
+							bytes.NewBufferString(s).Bytes(),
+							0644)
 
+						// Lock and write the results for each evaluation metric to file.
 						mu.Lock()
-						f.Write(buff.Bytes())
+						for i, e := range evaluators {
+							lf := rewrite.NewLearntFeature(evaluation[e.Name()], c.Features)
+							var buff bytes.Buffer
+							_, err = lf.WriteLibSVMRank(&buff, gq.Topic, fn)
+							if err != nil {
+								panic(err)
+							}
+							evaluationFiles[i].Write(buff.Bytes())
+						}
 						mu.Unlock()
 					}(candidate, i)
 				}
@@ -260,9 +309,14 @@ func main() {
 				}
 				log.Println("finished processing variations")
 			}
-			queryCandidates = nextCandidates
+
+			log.Println("sampling the generated candidates...")
+			queryCandidates = sample(10, nextCandidates)
 		}
-		//wg.Wait()
+	}
+
+	for i := range evaluators {
+		evaluationFiles[i].Close()
 	}
 
 	return

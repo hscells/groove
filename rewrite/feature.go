@@ -29,18 +29,21 @@ type deltaFeatures map[int]float64
 
 const (
 	// Context features.
-	nilFeature = iota
+	nilFeature           = iota
 	depthFeature
-	clauseTypeFeature // This isn't the operator type, it's the type of the clause (keyword query/Boolean query).
+	clauseTypeFeature     // This isn't the operator type, it's the type of the clause (keyword query/Boolean query).
 	childrenCountFeature
 
 	// Transformation-based features.
 	transformationTypeFeature
 	logicalReplacementTypeFeature
-	adjacencyChangeFeature
+	adjacencyReplacementFeature
 	adjacencyDistanceFeature
 	meshDepthFeature
 	restrictionTypeFeature
+	clauseRemovalFeature
+	cui2vecExpansionFeature
+	cui2vecNumExpansionsFeature
 
 	// Pre-QPP-based features.
 	avgIDFFeature
@@ -182,18 +185,16 @@ func contextFeatures(context TransformationContext) Features {
 func deltas(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me analysis.MeasurementExecutor) (deltaFeatures, error) {
 	deltas := make(deltaFeatures)
 
-	switch q := query.(type) {
-	case cqr.Keyword:
-		gq := groove.NewPipelineQuery("qpp", "test", q)
-		features := []int{avgIDFFeature, sumIDFFeature, maxIDFFeature, stdDevIDFFeature, avgICTFFeature, retrievedFeature}
-		m, err := me.Execute(gq, ss, preqpp.AvgIDF, preqpp.SumIDF, preqpp.MaxIDF, preqpp.StdDevIDF, preqpp.AvgICTF, preqpp.RetrievalSize)
-		if err != nil {
-			return nil, err
-		}
+	gq := groove.NewPipelineQuery("qpp", "test", query)
+	features := []int{avgIDFFeature, sumIDFFeature, maxIDFFeature, stdDevIDFFeature, avgICTFFeature, retrievedFeature}
+	measurements := []analysis.Measurement{preqpp.AvgIDF, preqpp.SumIDF, preqpp.MaxIDF, preqpp.StdDevIDF, preqpp.AvgICTF, preqpp.RetrievalSize}
 
-		for i, feature := range features {
-			deltas[feature] = m[i]
-		}
+	m, err := me.Execute(gq, ss, measurements...)
+	if err != nil {
+		return nil, err
+	}
+	for i, feature := range features {
+		deltas[feature] = m[i]
 	}
 
 	return deltas, nil
