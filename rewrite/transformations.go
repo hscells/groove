@@ -19,13 +19,13 @@ import (
 )
 
 const (
-	logicalOperatorTransformation      = iota
-	adjacencyRangeTransformation
-	meshExplosionTransformation
-	fieldRestrictionsTransformation
-	adjacencyReplacementTransformation
-	clauseRemovalTransformation
-	cui2vecExpansionTransformation
+	LogicalOperatorTransformation      = iota
+	AdjacencyRangeTransformation
+	MeshExplosionTransformation
+	FieldRestrictionsTransformation
+	AdjacencyReplacementTransformation
+	ClauseRemovalTransformation
+	Cui2vecExpansionTransformation
 )
 
 // Transformer is applied to a query to generate a set of query candidates.
@@ -73,39 +73,39 @@ type cui2vecExpansion struct {
 
 // NewLogicalOperatorTransformer creates a logical operator transformation.
 func NewLogicalOperatorTransformer() Transformation {
-	return Transformation{ID: logicalOperatorTransformation, Transformer: logicalOperatorReplacement{}, BooleanTransformer: logicalOperatorReplacement{}}
+	return Transformation{ID: LogicalOperatorTransformation, Transformer: logicalOperatorReplacement{}, BooleanTransformer: logicalOperatorReplacement{}}
 }
 
 // NewAdjacencyRangeTransformer creates an adjacency range transformation.
 func NewAdjacencyRangeTransformer() Transformation {
 	a := &adjacencyRange{}
-	return Transformation{ID: adjacencyRangeTransformation, Transformer: a, BooleanTransformer: a}
+	return Transformation{ID: AdjacencyRangeTransformation, Transformer: a, BooleanTransformer: a}
 }
 
 // NewMeSHExplosionTransformer creates a mesh explosion transformer.
 func NewMeSHExplosionTransformer() Transformation {
-	return Transformation{ID: meshExplosionTransformation, Transformer: meshExplosion{}}
+	return Transformation{ID: MeshExplosionTransformation, Transformer: meshExplosion{}}
 }
 
 // NewFieldRestrictionsTransformer creates a field restrictions transformer.
 func NewFieldRestrictionsTransformer() Transformation {
-	return Transformation{ID: fieldRestrictionsTransformation, Transformer: fieldRestrictions{}}
+	return Transformation{ID: FieldRestrictionsTransformation, Transformer: fieldRestrictions{}}
 }
 
 // NewAdjacencyReplacementTransformer creates an adjacency replacement transformer.
 func NewAdjacencyReplacementTransformer() Transformation {
-	return Transformation{ID: adjacencyReplacementTransformation, Transformer: adjacencyReplacement{}, BooleanTransformer: adjacencyReplacement{}}
+	return Transformation{ID: AdjacencyReplacementTransformation, Transformer: adjacencyReplacement{}, BooleanTransformer: adjacencyReplacement{}}
 }
 
 // NewClauseRemovalTransformer creates a clause removal transformer.
 func NewClauseRemovalTransformer() Transformation {
-	return Transformation{ID: clauseRemovalTransformation, Transformer: clauseRemoval{}, BooleanTransformer: clauseRemoval{}}
+	return Transformation{ID: ClauseRemovalTransformation, Transformer: clauseRemoval{}, BooleanTransformer: clauseRemoval{}}
 }
 
 // NewClauseRemovalTransformer creates a clause removal transformer.
 func Newcui2vecExpansionTransformer(vector cui2vec.Vector, mapping cui2vec.Mapping, metamap metawrap.MetaMap) Transformation {
 	return Transformation{
-		ID: cui2vecExpansionTransformation,
+		ID: Cui2vecExpansionTransformation,
 		Transformer: cui2vecExpansion{
 			vector:  vector,
 			mapping: mapping,
@@ -176,19 +176,19 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 					// Features about the entire Boolean query.
 					foundTotal := false
 					for _, feature := range features {
-						if feature.ID == totalFieldsFeature {
+						if feature.ID == TotalFieldsFeature {
 							foundTotal = true
 							break
 						}
 					}
 					if !foundTotal {
 						features = append(features,
-							NewFeature(totalFieldsFeature, float64(len(analysis.QueryFields(tmp)))),
-							NewFeature(totalKeywordsFeature, float64(len(analysis.QueryKeywords(tmp)))),
-							NewFeature(totalTermsFeature, float64(len(analysis.QueryTerms(tmp)))),
-							NewFeature(totalExplodedFeature, float64(len(analysis.ExplodedKeywords(tmp)))),
-							NewFeature(totalTruncatedFeature, float64(len(analysis.TruncatedKeywords(tmp)))),
-							NewFeature(totalClausesFeature, float64(len(analysis.QueryBooleanQueries(tmp)))))
+							NewFeature(TotalFieldsFeature, float64(len(analysis.QueryFields(tmp)))),
+							NewFeature(TotalKeywordsFeature, float64(len(analysis.QueryKeywords(tmp)))),
+							NewFeature(TotalTermsFeature, float64(len(analysis.QueryTerms(tmp)))),
+							NewFeature(TotalExplodedFeature, float64(len(analysis.ExplodedKeywords(tmp)))),
+							NewFeature(TotalTruncatedFeature, float64(len(analysis.TruncatedKeywords(tmp)))),
+							NewFeature(TotalClausesFeature, float64(len(analysis.QueryBooleanQueries(tmp)))))
 					}
 
 					deltas, err := deltas(tmp, ss, me)
@@ -227,19 +227,19 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 					// Features about the entire Boolean query.
 					foundTotal := false
 					for _, feature := range features {
-						if feature.ID == totalFieldsFeature {
+						if feature.ID == TotalFieldsFeature {
 							foundTotal = true
 							break
 						}
 					}
 					if !foundTotal {
 						features = append(features,
-							NewFeature(totalFieldsFeature, float64(len(analysis.QueryFields(q)))),
-							NewFeature(totalKeywordsFeature, float64(len(analysis.QueryKeywords(q)))),
-							NewFeature(totalTermsFeature, float64(len(analysis.QueryTerms(q)))),
-							NewFeature(totalExplodedFeature, float64(len(analysis.ExplodedKeywords(q)))),
-							NewFeature(totalTruncatedFeature, float64(len(analysis.TruncatedKeywords(q)))),
-							NewFeature(totalClausesFeature, float64(len(analysis.QueryBooleanQueries(q)))))
+							NewFeature(TotalFieldsFeature, float64(len(analysis.QueryFields(q)))),
+							NewFeature(TotalKeywordsFeature, float64(len(analysis.QueryKeywords(q)))),
+							NewFeature(TotalTermsFeature, float64(len(analysis.QueryTerms(q)))),
+							NewFeature(TotalExplodedFeature, float64(len(analysis.ExplodedKeywords(q)))),
+							NewFeature(TotalTruncatedFeature, float64(len(analysis.TruncatedKeywords(q)))),
+							NewFeature(TotalClausesFeature, float64(len(analysis.QueryBooleanQueries(q)))))
 					}
 
 					deltas, err := deltas(applied, ss, me)
@@ -354,7 +354,7 @@ func (r logicalOperatorReplacement) BooleanFeatures(query cqr.CommonQueryReprese
 }
 
 func (r logicalOperatorReplacement) Features(query cqr.CommonQueryRepresentation, context TransformationContext) Features {
-	return Features{NewFeature(logicalReplacementTypeFeature, r.replacementType)}
+	return Features{NewFeature(LogicalReplacementTypeFeature, r.replacementType)}
 }
 
 func (r logicalOperatorReplacement) Apply(query cqr.CommonQueryRepresentation) (candidate []cqr.CommonQueryRepresentation, err error) {
@@ -436,8 +436,8 @@ func (r *adjacencyRange) BooleanFeatures(query cqr.CommonQueryRepresentation, co
 	f := make([]Features, r.n)
 	for i := r.n - 1; i >= 0; i-- {
 		f[i] = Features{
-			NewFeature(adjacencyReplacementFeature, r.distanceChange[i]),
-			NewFeature(adjacencyDistanceFeature, r.distance[i]),
+			NewFeature(AdjacencyReplacementFeature, r.distanceChange[i]),
+			NewFeature(AdjacencyDistanceFeature, r.distance[i]),
 		}
 	}
 	r.n = 0
@@ -484,7 +484,7 @@ func (meshExplosion) BooleanApplicable() bool {
 }
 
 func (r meshExplosion) Features(query cqr.CommonQueryRepresentation, context TransformationContext) Features {
-	return Features{NewFeature(meshDepthFeature, r.meshDepth)}
+	return Features{NewFeature(MeshDepthFeature, r.meshDepth)}
 }
 
 func (meshExplosion) Name() string {
@@ -548,7 +548,7 @@ func (fieldRestrictions) BooleanApplicable() bool {
 }
 
 func (r fieldRestrictions) Features(query cqr.CommonQueryRepresentation, context TransformationContext) Features {
-	return Features{NewFeature(restrictionTypeFeature, r.restrictionType)}
+	return Features{NewFeature(RestrictionTypeFeature, r.restrictionType)}
 }
 
 func (fieldRestrictions) Name() string {
@@ -580,7 +580,7 @@ func (adjacencyReplacement) Features(query cqr.CommonQueryRepresentation, contex
 }
 
 func (adjacencyReplacement) BooleanFeatures(query cqr.CommonQueryRepresentation, context TransformationContext) []Features {
-	return []Features{{NewFeature(adjacencyReplacementFeature, 1)}}
+	return []Features{{NewFeature(AdjacencyReplacementFeature, 1)}}
 }
 
 func (adjacencyReplacement) Name() string {
@@ -621,11 +621,11 @@ func (clauseRemoval) BooleanFeatures(query cqr.CommonQueryRepresentation, contex
 			case cqr.Keyword:
 				features[i] = keywordFeatures(c)
 			}
-			features[i] = append(features[i], NewFeature(clauseRemovalFeature, 1))
+			features[i] = append(features[i], NewFeature(ClauseRemovalFeature, 1))
 		}
 		return features
 	}
-	return []Features{{NewFeature(clauseRemovalFeature, 1)}}
+	return []Features{{NewFeature(ClauseRemovalFeature, 1)}}
 }
 
 func (clauseRemoval) Name() string {
@@ -723,7 +723,7 @@ func (cui2vecExpansion) Features(query cqr.CommonQueryRepresentation, context Tr
 		features = keywordFeatures(q)
 	}
 	terms := analysis.QueryTerms(query)
-	return append(features, NewFeature(cui2vecExpansionFeature, 1), NewFeature(cui2vecNumExpansionsFeature, float64(len(terms))))
+	return append(features, NewFeature(Cui2vecExpansionFeature, 1), NewFeature(Cui2vecNumExpansionsFeature, float64(len(terms))))
 }
 
 func (cui2vecExpansion) Name() string {

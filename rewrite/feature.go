@@ -30,53 +30,53 @@ type deltaFeatures map[int]float64
 const (
 	// Context features.
 	nilFeature           = iota
-	depthFeature
-	clauseTypeFeature     // This isn't the operator type, it's the type of the clause (keyword query/Boolean query).
-	childrenCountFeature
+	DepthFeature
+	ClauseTypeFeature     // This isn't the operator type, it's the type of the clause (keyword query/Boolean query).
+	ChildrenCountFeature
 
 	// Transformation-based features.
-	transformationTypeFeature
-	logicalReplacementTypeFeature
-	adjacencyReplacementFeature
-	adjacencyDistanceFeature
-	meshDepthFeature
-	restrictionTypeFeature
-	clauseRemovalFeature
-	cui2vecExpansionFeature
-	cui2vecNumExpansionsFeature
+	TransformationTypeFeature
+	LogicalReplacementTypeFeature
+	AdjacencyReplacementFeature
+	AdjacencyDistanceFeature
+	MeshDepthFeature
+	RestrictionTypeFeature
+	ClauseRemovalFeature
+	Cui2vecExpansionFeature
+	Cui2vecNumExpansionsFeature
 
 	// Pre-QPP-based features.
-	avgIDFFeature
-	sumIDFFeature
-	maxIDFFeature
-	stdDevIDFFeature
-	avgICTFFeature
+	AvgIDFFeature
+	SumIDFFeature
+	MaxIDFFeature
+	StdDevIDFFeature
+	AvgICTFFeature
 
 	// Keyword specific features.
-	isExplodedFeature
-	isTruncatedFeature
-	numFieldsFeature
+	IsExplodedFeature
+	IsTruncatedFeature
+	NumFieldsFeature
 
 	// Boolean specific features.
-	operatorTypeFeature
-	totalFieldsFeature
-	totalKeywordsFeature
-	totalTermsFeature
-	totalClausesFeature
-	totalExplodedFeature
-	totalTruncatedFeature
+	OperatorTypeFeature
+	TotalFieldsFeature
+	TotalKeywordsFeature
+	TotalTermsFeature
+	TotalClausesFeature
+	TotalExplodedFeature
+	TotalTruncatedFeature
 
 	// Delta features.
-	retrievedFeature
-	deltaRetrievedFeature
-	deltaAvgIDFFeature
-	deltaSumIDFFeature
-	deltaMaxIDFFeature
-	deltaStdDevIDFFeature
-	deltaAvgICTFFeature
+	RetrievedFeature
+	DeltaRetrievedFeature
+	DeltaAvgIDFFeature
+	DeltaSumIDFFeature
+	DeltaMaxIDFFeature
+	DeltaStdDevIDFFeature
+	DeltaAvgICTFFeature
 
 	// Chain of transformations !!THIS MUST BE THE LAST FEATURE IN THE LIST!!
-	chainFeatures
+	ChainFeatures
 )
 
 // NewFeature creates a new feature with the specified ID and `score`.
@@ -118,7 +118,7 @@ func keywordFeatures(q cqr.Keyword) Features {
 	// 0 - not applicable.
 	// 1 - not exploded.
 	// 2 - exploded.
-	explodedFeature := NewFeature(isExplodedFeature, 0)
+	explodedFeature := NewFeature(IsExplodedFeature, 0)
 	if _, ok := q.Options["exploded"]; ok {
 		if exploded, ok := q.Options["exploded"].(bool); ok && exploded {
 			explodedFeature.Score = 2
@@ -128,7 +128,7 @@ func keywordFeatures(q cqr.Keyword) Features {
 	}
 
 	// Truncation. Same feature values as exploded.
-	truncatedFeature := NewFeature(isTruncatedFeature, 0)
+	truncatedFeature := NewFeature(IsTruncatedFeature, 0)
 	if _, ok := q.Options["truncated"]; ok {
 		if truncated, ok := q.Options["truncated"].(bool); ok && truncated {
 			truncatedFeature.Score = 2
@@ -138,7 +138,7 @@ func keywordFeatures(q cqr.Keyword) Features {
 	}
 
 	// Number of fields the query has.
-	numFields := NewFeature(numFieldsFeature, float64(len(q.Fields)))
+	numFields := NewFeature(NumFieldsFeature, float64(len(q.Fields)))
 
 	features = append(features, explodedFeature, truncatedFeature, numFields)
 	return features
@@ -153,7 +153,7 @@ func booleanFeatures(q cqr.BooleanQuery) Features {
 	// 2 - and
 	// 3 - not
 	// 4 - adj
-	operatorType := NewFeature(operatorTypeFeature, 0)
+	operatorType := NewFeature(OperatorTypeFeature, 0)
 	switch q.Operator {
 	case "or", "OR":
 		operatorType.Score = 1
@@ -176,9 +176,9 @@ func contextFeatures(context TransformationContext) Features {
 	var features Features
 
 	return append(features,
-		NewFeature(depthFeature, context.Depth),
-		NewFeature(clauseTypeFeature, context.ClauseType),
-		NewFeature(childrenCountFeature, context.ChildrenCount))
+		NewFeature(DepthFeature, context.Depth),
+		NewFeature(ClauseTypeFeature, context.ClauseType),
+		NewFeature(ChildrenCountFeature, context.ChildrenCount))
 }
 
 // QPPFeatures computes query performance predictor features for a query.
@@ -186,7 +186,7 @@ func deltas(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me a
 	deltas := make(deltaFeatures)
 
 	gq := groove.NewPipelineQuery("qpp", "test", query)
-	features := []int{avgIDFFeature, sumIDFFeature, maxIDFFeature, stdDevIDFFeature, avgICTFFeature, retrievedFeature}
+	features := []int{AvgIDFFeature, SumIDFFeature, MaxIDFFeature, StdDevIDFFeature, AvgICTFFeature, RetrievedFeature}
 	measurements := []analysis.Measurement{preqpp.AvgIDF, preqpp.SumIDF, preqpp.MaxIDF, preqpp.StdDevIDF, preqpp.AvgICTF, preqpp.RetrievalSize}
 
 	m, err := me.Execute(gq, ss, measurements...)
@@ -212,18 +212,18 @@ func computeDeltas(preTransformation deltaFeatures, postTransformation deltaFeat
 	for feature, x := range preTransformation {
 		var deltaFeature int
 		switch feature {
-		case retrievedFeature:
-			deltaFeature = deltaRetrievedFeature
-		case avgIDFFeature:
-			deltaFeature = deltaAvgIDFFeature
-		case sumIDFFeature:
-			deltaFeature = deltaSumIDFFeature
-		case maxIDFFeature:
-			deltaFeature = deltaMaxIDFFeature
-		case stdDevIDFFeature:
-			deltaFeature = deltaStdDevIDFFeature
-		case avgICTFFeature:
-			deltaFeature = deltaAvgICTFFeature
+		case RetrievedFeature:
+			deltaFeature = DeltaRetrievedFeature
+		case AvgIDFFeature:
+			deltaFeature = DeltaAvgIDFFeature
+		case SumIDFFeature:
+			deltaFeature = DeltaSumIDFFeature
+		case MaxIDFFeature:
+			deltaFeature = DeltaMaxIDFFeature
+		case StdDevIDFFeature:
+			deltaFeature = DeltaStdDevIDFFeature
+		case AvgICTFFeature:
+			deltaFeature = DeltaAvgICTFFeature
 		default:
 			continue
 		}
@@ -234,7 +234,7 @@ func computeDeltas(preTransformation deltaFeatures, postTransformation deltaFeat
 
 // transformationFeature is a feature representing the previous feature that was applied to a query.
 func transformationFeature(transformer Transformer) Feature {
-	transformationType := NewFeature(transformationTypeFeature, 0)
+	transformationType := NewFeature(TransformationTypeFeature, 0)
 	switch transformer.(type) {
 	case logicalOperatorReplacement:
 		transformationType.Score = 1
@@ -355,9 +355,9 @@ func (c CandidateQuery) SetTransformationID(id int) CandidateQuery {
 // have been applied up until this point, and for features about the query.
 func (c CandidateQuery) Append(query CandidateQuery) CandidateQuery {
 	// Chain features is the minimum possible index for these features.
-	idx := chainFeatures
+	idx := ChainFeatures
 	if len(c.Chain) > 0 {
-		idx = chainFeatures + len(c.Chain)
+		idx = ChainFeatures + len(c.Chain)
 	}
 	c.Chain = append(c.Chain, query.Chain...)
 	c.Chain = append(c.Chain, query)
