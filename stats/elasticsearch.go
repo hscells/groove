@@ -367,7 +367,7 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 				break
 			}
 			if err != nil {
-				panic(err)
+				return nil, err
 			}
 
 			hits = append(hits, result.Hits.Hits...)
@@ -375,7 +375,7 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 
 		err = svc.Clear(context.Background())
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 
 		fmt.Println(len(hits))
@@ -564,7 +564,7 @@ func ElasticsearchScroll(scroll bool) func(*ElasticsearchStatisticsSource) {
 }
 
 // NewElasticsearchStatisticsSource creates a new ElasticsearchStatisticsSource using functional options.
-func NewElasticsearchStatisticsSource(options ...func(*ElasticsearchStatisticsSource)) *ElasticsearchStatisticsSource {
+func NewElasticsearchStatisticsSource(options ...func(*ElasticsearchStatisticsSource)) (*ElasticsearchStatisticsSource, error) {
 	es := &ElasticsearchStatisticsSource{}
 
 	if len(options) == 0 {
@@ -574,7 +574,7 @@ func NewElasticsearchStatisticsSource(options ...func(*ElasticsearchStatisticsSo
 			elastic.SetSniff(false),
 			elastic.SetHealthcheckTimeout(1*time.Hour))
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 	} else {
 		for _, option := range options {
@@ -582,5 +582,5 @@ func NewElasticsearchStatisticsSource(options ...func(*ElasticsearchStatisticsSo
 		}
 	}
 
-	return es
+	return es, nil
 }

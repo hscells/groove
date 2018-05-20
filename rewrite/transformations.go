@@ -14,8 +14,9 @@ import (
 	"github.com/hscells/metawrap"
 	"sort"
 	"time"
-	"log"
 	"gopkg.in/olivere/elastic.v5"
+	"log"
+	"github.com/go-errors/errors"
 )
 
 const (
@@ -148,7 +149,7 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 		// the parent query and update the child with the generated permutation.
 		for j, child := range q.Children {
 			// Apply this transformation.
-			perms, err := variations(NewCandidateQuery(child, nil), context, ss, me, transformations...)
+			perms, err := variations(NewCandidateQuery(child, nil).SetTransformationID(query.TransformationID), context, ss, me, transformations...)
 			if err != nil {
 				return nil, err
 			}
@@ -275,7 +276,7 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 			SetChildrenCount(0)
 
 		// Add the original query to the list of candidates.
-		candidates = append(candidates, NewCandidateQuery(q, preFeatures).Append(query))
+		candidates = append(candidates, NewCandidateQuery(q, preFeatures).SetTransformationID(query.TransformationID).Append(query))
 
 		// Next, apply the transformations to the current query.
 		for _, transformation := range transformations {
@@ -327,16 +328,22 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 		wg.Add(1)
 		go func(t Transformation) {
 			defer wg.Done()
-			n := 0
 		v:
 			c, err := variations(query, TransformationContext{}, ss, me, t)
-			log.Println(n, err)
 			if elastic.IsConnErr(err) || elastic.IsTimeout(err) {
-				if n < 1000 {
-					n++
+				log.Println("Elasticsearch error -- retrying...")
+				time.Sleep(5 * time.Second)
+				goto v
+			}
+			if err != nil {
+				if strings.Contains(err.Error(), "can't assign requested address") {
+					log.Println("can't connect -- retrying...")
+					//errors.Wrap(err, "error")
+					fmt.Println(err.(*errors.Error).ErrorStack())
 					time.Sleep(5 * time.Second)
 					goto v
 				}
+				log.Println(err)
 			}
 			mu.Lock()
 			vars = append(vars, c...)

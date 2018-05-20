@@ -30,6 +30,10 @@ import (
 	"github.com/hscells/metawrap"
 	"path"
 	"strconv"
+	"sort"
+	"gopkg.in/olivere/elastic.v5"
+	"net/http"
+	"io"
 )
 
 type args struct {
@@ -41,6 +45,8 @@ type args struct {
 	CUIs    string `arg:"help:path to cui mapping."`
 	CUI2Vec string `arg:"help:path to pretrained cui2vec features."`
 	MetaMap string `arg:"help:path to MetaMap binary."`
+
+	LogFile string `arg:"help:path to output logs to."`
 }
 
 func (args) Version() string {
@@ -104,6 +110,17 @@ func main() {
 	var args args
 	arg.MustParse(&args)
 
+	if len(args.LogFile) > 0 {
+		f, err := os.OpenFile(args.LogFile, os.O_CREATE|os.O_WRONLY, 0644)
+		defer f.Close()
+		f.Truncate(0)
+		if err != nil {
+			log.Fatal(err)
+		}
+		mw := io.MultiWriter(os.Stdout, f)
+		log.SetOutput(mw)
+	}
+
 	log.Println("loading and compiling queries...")
 	// Load the qrels from file.
 	b, err := ioutil.ReadFile(args.Qrels)
@@ -130,15 +147,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	log.Println("initiating connection to Elasticsearch...")
-	// Configure the Statistics Source.
-	ss := stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://sef-is-017660:8200/"),
-		stats.ElasticsearchIndex("med_stem_sim2"),
-		stats.ElasticsearchDocumentType("doc"),
-		stats.ElasticsearchAnalysedField("stemmed"),
-		stats.ElasticsearchScroll(true),
-		stats.ElasticsearchSearchOptions(stats.SearchOptions{Size: 10000, RunName: "test"}))
 
 	log.Println("configuring cache and evaluation metrics...")
 	var N float64 = 26758795
@@ -189,6 +197,20 @@ func main() {
 	log.Println("loading MetaMap client...")
 	mm := metawrap.NewMetaMapClient(args.MetaMap)
 
+	// Configure the Statistics Source.
+	log.Println("initiating connection to Elasticsearch...")
+
+	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = 100
+
+	ss, err := stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://sef-is-017660:8200/"),
+		stats.ElasticsearchIndex("med_stem_sim2"),
+		stats.ElasticsearchDocumentType("doc"),
+		stats.ElasticsearchAnalysedField("stemmed"),
+		stats.ElasticsearchScroll(true),
+		stats.ElasticsearchSearchOptions(stats.SearchOptions{Size: 10000, RunName: "test"}))
+	if err == elastic.ErrNoClient {
+		panic(err)
+	}
 	// We would like to generate a large amount of training data for the learning to rank
 	/*
 		1. Generate candidates.
@@ -221,8 +243,8 @@ func main() {
 				}
 
 				// Generate variations.
-				log.Println("generating variations...")
 				log.Println(len(queryCandidates)-j, "to go")
+				log.Println("generating variations...")
 
 				candidates, err := rewrite.Variations(q, ss, me, transformations...)
 				if err != nil {
@@ -231,10 +253,54 @@ func main() {
 
 				log.Println("generated", len(candidates), "candidates")
 
-				//Sample 20% of the candidates that were generated.
-				if len(candidates) > 50 {
-					candidates = sample(20, candidates)
+				log.Println("computing number of candidates to sample")
+				totalCandidates := len(candidates)
+				if totalCandidates > 20 {
+					totalCandidates = 20
+					totalCandidates += len(sample(10, candidates))
+					if totalCandidates > len(candidates) {
+						totalCandidates = len(candidates)
+					}
 				}
+
+				log.Println("computed", totalCandidates, "candidates to sample")
+
+				sort.Slice(candidates, func(i, j int) bool {
+					return candidates[i].TransformationID > candidates[j].TransformationID
+				})
+
+				log.Println("sorted candidates")
+
+				max := make(map[int]int)
+				sam := make(map[int]int)
+				can := make(map[int][]rewrite.CandidateQuery)
+				for _, candidate := range candidates {
+					max[candidate.TransformationID]++
+					can[candidate.TransformationID] = append(can[candidate.TransformationID], candidate)
+					sam[candidate.TransformationID] = 0
+				}
+
+				var c []rewrite.CandidateQuery
+				for len(c) < totalCandidates {
+					for t := range sam {
+						if sam[t] < max[t] {
+							c = append(c, can[t][sam[t]])
+							sam[t]++
+							fmt.Printf("%v/%v...", len(c), totalCandidates)
+							if len(c) >= totalCandidates {
+								break
+							}
+						}
+					}
+				}
+				fmt.Println()
+
+				//Sample 20% of the candidates that were generated.
+				//if len(candidates) > 50 {
+				//	candidates = sample(20, candidates)
+				//}
+				//log.Print(totalCandidates, len(c))
+				candidates = c
 
 				log.Println("sampled", len(candidates), "candidates")
 
@@ -266,6 +332,8 @@ func main() {
 						defer func() { <-sem }()
 						//defer innerWg.Done()
 						gq := groove.NewPipelineQuery(cq.Name, cq.Topic, c.Query)
+
+						// Configure the Statistics Source.
 
 						tree, _, err := combinator.NewLogicalTree(gq, ss, queryCache)
 						if err != nil {
