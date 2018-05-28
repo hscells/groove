@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/transmute/backend"
@@ -12,7 +11,6 @@ import (
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
 	"github.com/hscells/trecresults"
-	"github.com/satori/go.uuid"
 	"gopkg.in/olivere/elastic.v5"
 	"io"
 	"runtime"
@@ -20,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"log"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.
@@ -163,7 +162,7 @@ func (es *ElasticsearchStatisticsSource) InverseDocumentFrequency(term, field st
 // VocabularySize is the total number of terms in the vocabulary.
 func (es *ElasticsearchStatisticsSource) VocabularySize(field string) (float64, error) {
 	resp, err := es.client.TermVectors(es.index, es.documentType).
-		Doc(map[string]string{field: uuid.NewV4().String()}).
+		Doc(map[string]string{field: ""}).
 		Offsets(false).
 		Positions(false).
 		Realtime(false).
@@ -251,7 +250,7 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 	sem := make(chan bool, concurrency)
 	hits := make([][]uint32, concurrency)
 
-	fmt.Println("executing fast", query.Query)
+	log.Println("executing as fast as possible with Elasticsearch", query.Query)
 	for i := 0; i < concurrency; i++ {
 		sem <- true
 
@@ -282,29 +281,29 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 					break
 				}
 				if elastic.IsConnErr(err) {
-					fmt.Println(err)
-					fmt.Println("retrying...")
+					log.Println(err)
+					log.Println("retrying...")
 					goto search
 				}
 				if err != nil {
-					fmt.Println(err)
+					log.Println(err)
 					return
 				}
 
 				for _, hit := range result.Hits.Hits {
 					id, err := strconv.Atoi(hit.Id)
 					if err != nil {
-						fmt.Println(err)
+						log.Println(err)
 						return
 					}
 					hits[n] = append(hits[n], uint32(id))
 				}
-				fmt.Printf("%v: %v/%v\n", n, len(hits[n]), result.Hits.TotalHits)
+				log.Printf("%v: %v/%v\n", n, len(hits[n]), result.Hits.TotalHits)
 			}
 
 			err = svc.Clear(context.Background())
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 				//panic(err)
 				return
 			}
@@ -322,14 +321,7 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 		results = append(results, hit...)
 	}
 
-	fmt.Println("done")
-
-	//for i, h := range ids {
-	//	fmt.Println(i)
-	//	hits = append(hits, <-h...)
-	//}
-
-	fmt.Println(len(results))
+	log.Printf("done, %v results in total\n", len(results))
 
 	return results, nil
 }
@@ -378,7 +370,7 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 			return nil, err
 		}
 
-		fmt.Println(len(hits))
+		log.Println(len(hits))
 
 		// Block until all the channels have completed.
 		results := make(trecresults.ResultList, len(hits))
@@ -490,7 +482,11 @@ func ElasticsearchHosts(hosts ...string) func(*ElasticsearchStatisticsSource) {
 				panic(err)
 			}
 		} else {
-			es.client, err = elastic.NewClient(elastic.SetURL(hosts...))
+			es.client, err = elastic.NewClient(
+				elastic.SetURL(hosts...),
+				elastic.SetSniff(false),
+				elastic.SetHealthcheck(false),
+				elastic.SetHealthcheckTimeout(time.Hour))
 			if err != nil {
 				panic(err)
 			}
