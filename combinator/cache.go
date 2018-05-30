@@ -171,9 +171,7 @@ func (f FileQueryCache) Get(query cqr.CommonQueryRepresentation) (Documents, err
 		d[j] = Document(binary.LittleEndian.Uint32(b[i : i+4]))
 		j++
 	}
-	f.cache.Add(h, d)
 	return d, nil
-
 }
 
 // Set caches results to disk.
