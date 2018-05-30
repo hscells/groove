@@ -482,9 +482,17 @@ func ElasticsearchHosts(hosts ...string) func(*ElasticsearchStatisticsSource) {
 				panic(err)
 			}
 		} else {
+			sniff := true
+			for _, u := range hosts {
+				if strings.Contains(u, "localhost") {
+					sniff = false
+					break
+				}
+			}
+
 			es.client, err = elastic.NewClient(
 				elastic.SetURL(hosts...),
-				elastic.SetSniff(false),
+				elastic.SetSniff(sniff),
 				elastic.SetHealthcheck(false),
 				elastic.SetHealthcheckTimeout(time.Hour))
 			if err != nil {
