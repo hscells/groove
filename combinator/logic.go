@@ -321,7 +321,7 @@ func (a AdjAtom) String() string {
 
 // String returns the string representation of the documents.
 func (d Document) String() string {
-	return fmt.Sprintf("%v", d)
+	return fmt.Sprintf("%d", d)
 }
 
 // NewAtom creates a new atom.
