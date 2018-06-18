@@ -26,7 +26,6 @@ type ElasticsearchStatisticsSource struct {
 	client       *elastic.Client
 	documentType string
 	index        string
-	field        string
 
 	options    SearchOptions
 	parameters map[string]float64
@@ -38,7 +37,7 @@ type ElasticsearchStatisticsSource struct {
 	wg sync.WaitGroup
 }
 
-// SearchOptions gets the immutable search options for the statistics source.
+// SearchOptions gets the immutable execute options for the statistics source.
 func (es *ElasticsearchStatisticsSource) SearchOptions() SearchOptions {
 	return es.options
 }
@@ -49,13 +48,13 @@ func (es *ElasticsearchStatisticsSource) Parameters() map[string]float64 {
 }
 
 // TermFrequency is the term frequency in the field.
-func (es *ElasticsearchStatisticsSource) TermFrequency(term, document string) (float64, error) {
+func (es *ElasticsearchStatisticsSource) TermFrequency(term, field, document string) (float64, error) {
 	resp, err := es.client.TermVectors(es.index, es.documentType).Id(document).Do(context.Background())
 	if err != nil {
 		return 0, err
 	}
 
-	if tv, ok := resp.TermVectors[es.field]; ok {
+	if tv, ok := resp.TermVectors[field]; ok {
 		return float64(tv.Terms[term].TermFreq), nil
 	}
 
@@ -63,27 +62,22 @@ func (es *ElasticsearchStatisticsSource) TermFrequency(term, document string) (f
 }
 
 // DocumentFrequency is the document frequency (the number of documents containing the current term).
-func (es *ElasticsearchStatisticsSource) DocumentFrequency(term string) (float64, error) {
-	analyseField := es.field
-	if len(es.AnalyseField) > 0 {
-		analyseField = es.field + "." + es.AnalyseField
-	}
-
+func (es *ElasticsearchStatisticsSource) DocumentFrequency(term string, field string) (float64, error) {
 	resp, err := es.client.TermVectors(es.index, es.documentType).
-		Doc(map[string]string{es.field: term}).
+		Doc(map[string]string{field: term}).
 		FieldStatistics(false).
 		TermStatistics(true).
 		Offsets(false).
 		Positions(false).
 		Payloads(false).
-		Fields(analyseField).
-		PerFieldAnalyzer(map[string]string{analyseField: ""}).
+		Fields(field).
+		PerFieldAnalyzer(map[string]string{field: ""}).
 		Do(context.Background())
 	if err != nil {
 		return 0, err
 	}
 
-	if tv, ok := resp.TermVectors[es.field]; ok {
+	if tv, ok := resp.TermVectors[field]; ok {
 		return float64(tv.Terms[term].DocFreq), nil
 	}
 
@@ -211,10 +205,6 @@ func (es *ElasticsearchStatisticsSource) TermVector(document string) (TermVector
 		Payloads(false).
 		Fields("*")
 
-	if len(es.AnalyseField) > 0 {
-		req = req.PerFieldAnalyzer(map[string]string{es.field: "medline_analyser"})
-	}
-
 	resp, err := req.Do(context.Background())
 	if err != nil {
 		return tv, err
@@ -259,7 +249,7 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 		search:
 			hits[n] = []uint32{}
 
-			// Scroll search.
+			// Scroll execute.
 			svc := es.client.Scroll(es.index).
 				FetchSource(false).
 				Pretty(false).
@@ -339,7 +329,7 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 
 		var hits []*elastic.SearchHit
 
-		// Scroll search.
+		// Scroll execute.
 		svc := es.client.Scroll(es.index).
 			FetchSource(false).
 			Pretty(false).
@@ -388,7 +378,7 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 		return results, nil
 	}
 
-	// Regular search.
+	// Regular execute.
 	result, err := es.client.Search(es.index).
 		Index(es.index).
 		Type(es.documentType).
@@ -519,15 +509,7 @@ func ElasticsearchIndex(index string) func(*ElasticsearchStatisticsSource) {
 	}
 }
 
-// ElasticsearchField sets the field for the Elasticsearch client.
-func ElasticsearchField(field string) func(*ElasticsearchStatisticsSource) {
-	return func(es *ElasticsearchStatisticsSource) {
-		es.field = field
-		return
-	}
-}
-
-// ElasticsearchSearchOptions sets the search options for the statistic source.
+// ElasticsearchSearchOptions sets the execute options for the statistic source.
 func ElasticsearchSearchOptions(options SearchOptions) func(*ElasticsearchStatisticsSource) {
 	return func(es *ElasticsearchStatisticsSource) {
 		es.options = options

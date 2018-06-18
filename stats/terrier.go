@@ -34,7 +34,7 @@ type TerrierStatisticsSource struct {
 	parameters map[string]float64
 }
 
-// SearchOptions gets the search options for this source.
+// SearchOptions gets the execute options for this source.
 func (t TerrierStatisticsSource) SearchOptions() SearchOptions {
 	return t.options
 }
@@ -46,7 +46,7 @@ func (t TerrierStatisticsSource) Parameters() map[string]float64 {
 
 // TermFrequency does not work.
 // TODO implement this.
-func (t TerrierStatisticsSource) TermFrequency(term, document string) (float64, error) {
+func (t TerrierStatisticsSource) TermFrequency(term, field, document string) (float64, error) {
 	panic("implement me")
 	docID, err := strconv.Atoi(document)
 	if err != nil {
@@ -88,7 +88,7 @@ func (t TerrierStatisticsSource) TermVector(document string) (TermVector, error)
 }
 
 // DocumentFrequency is the document frequency (the number of documents containing the current term).
-func (t TerrierStatisticsSource) DocumentFrequency(term string) (float64, error) {
+func (t TerrierStatisticsSource) DocumentFrequency(term, field string) (float64, error) {
 	nt, err := lexiconEntryForTerm(t.env, t.idx, "term", "getDocumentFrequency")
 	if err != nil {
 		return 0.0, err
@@ -108,7 +108,7 @@ func (t TerrierStatisticsSource) TotalTermFrequency(term, field string) (float64
 // InverseDocumentFrequency is the ratio of of documents in the collection to the number of documents the term appears
 // in, logarithmically smoothed.
 func (t TerrierStatisticsSource) InverseDocumentFrequency(term, field string) (float64, error) {
-	N, err := t.DocumentFrequency(term)
+	N, err := t.DocumentFrequency(term, field)
 	if err != nil {
 		return 0.0, err
 	}
@@ -123,7 +123,7 @@ func (t TerrierStatisticsSource) InverseDocumentFrequency(term, field string) (f
 
 // RetrievalSize is the minimum number of documents that contains at least one of the query terms.
 func (t TerrierStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentation) (float64, error) {
-	resultSet, err := search(t.env, query, SearchOptions{}, t)
+	resultSet, err := execute(t.env, query, SearchOptions{}, t)
 	if err != nil {
 		return 0.0, err
 	}
@@ -160,7 +160,7 @@ func (t TerrierStatisticsSource) Execute(query groove.PipelineQuery, options Sea
 	trecResultSet := trecresults.ResultList{}
 
 	// Grab the result set from terrier.
-	resultSet, err := search(t.env, query.Query, options, t)
+	resultSet, err := execute(t.env, query.Query, options, t)
 	if err != nil {
 		return trecResultSet, err
 	}
@@ -209,8 +209,8 @@ func (t TerrierStatisticsSource) Execute(query groove.PipelineQuery, options Sea
 	return trecResultSet, nil
 }
 
-// search executes a query on terrier.
-func search(env *jnigi.Env, query cqr.CommonQueryRepresentation, options SearchOptions, t TerrierStatisticsSource) (*jnigi.ObjectRef, error) {
+// execute executes a query on terrier.
+func execute(env *jnigi.Env, query cqr.CommonQueryRepresentation, options SearchOptions, t TerrierStatisticsSource) (*jnigi.ObjectRef, error) {
 	cqrString, err := backend.NewCQRQuery(query).String()
 	if err != nil {
 		return nil, err
@@ -318,7 +318,7 @@ func TerrierField(field string) func(*TerrierStatisticsSource) {
 	}
 }
 
-// TerrierSearchOptions sets the search options for the statistic source.
+// TerrierSearchOptions sets the execute options for the statistic source.
 func TerrierSearchOptions(options SearchOptions) func(*TerrierStatisticsSource) {
 	return func(ts *TerrierStatisticsSource) {
 		ts.options = options
@@ -326,7 +326,7 @@ func TerrierSearchOptions(options SearchOptions) func(*TerrierStatisticsSource) 
 	}
 }
 
-// TerrierParameters sets the search options for the statistic source.
+// TerrierParameters sets the execute options for the statistic source.
 func TerrierParameters(params map[string]float64) func(*TerrierStatisticsSource) {
 	return func(ts *TerrierStatisticsSource) {
 		ts.parameters = params
