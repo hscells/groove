@@ -36,10 +36,10 @@ type StatisticsSource interface {
 	SearchOptions() SearchOptions
 	Parameters() map[string]float64
 
-	TermFrequency(term, document string) (float64, error)
+	TermFrequency(term, field, document string) (float64, error)
 	TermVector(document string) (TermVector, error)
 
-	DocumentFrequency(term string) (float64, error)
+	DocumentFrequency(term, field string) (float64, error)
 	TotalTermFrequency(term, field string) (float64, error)
 	InverseDocumentFrequency(term, field string) (float64, error)
 	RetrievalSize(query cqr.CommonQueryRepresentation) (float64, error)
@@ -77,7 +77,7 @@ func GetDocumentIDs(query groove.PipelineQuery, ss StatisticsSource) ([]uint32, 
 		for i, id := range ids {
 			docs[i] = id
 		}
-	default: // By default, we can just perform a regular search on the other systems.
+	default: // By default, we can just perform a regular execute on the other systems.
 		results, err := x.Execute(query, x.SearchOptions())
 		if err != nil {
 			return nil, err
