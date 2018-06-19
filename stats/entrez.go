@@ -5,19 +5,19 @@ import (
 	"encoding/xml"
 	"fmt"
 	"github.com/biogo/ncbi"
+	"github.com/biogo/ncbi/entrez"
 	"github.com/biogo/ncbi/entrez/search"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
-	"github.com/hscells/ncbi/entrez"
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/trecresults"
 	"gopkg.in/neurosnap/sentences.v1"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
-	"log"
 )
 
 type EntrezStatisticsSource struct {
@@ -100,6 +100,7 @@ func (e EntrezStatisticsSource) search(query string, options ...func(p *entrez.P
 		option(p)
 	}
 	p.RetMax = e.options.Size
+	p.APIKey = e.key
 
 	s, err := entrez.DoSearch("pubmed", query, p, nil, e.tool, e.email)
 	if err != nil {
@@ -114,7 +115,6 @@ func (e EntrezStatisticsSource) search(query string, options ...func(p *entrez.P
 		if err != nil {
 			return nil, err
 		}
-		log.Println("got", len(l))
 		pmids = append(pmids, l...)
 	}
 	return pmids, nil
@@ -133,7 +133,7 @@ func (e EntrezStatisticsSource) TermFrequency(term, field, document string) (flo
 	if err != nil {
 		return 0, err
 	}
-	r, err := entrez.Fetch("pubmed", &entrez.Parameters{RetMode: "xml"}, e.tool, e.email, nil, int(d))
+	r, err := entrez.Fetch("pubmed", &entrez.Parameters{RetMode: "xml", APIKey: e.key}, e.tool, e.email, nil, int(d))
 	if err != nil {
 		return 0, err
 	}
@@ -168,7 +168,7 @@ func (e EntrezStatisticsSource) TermVector(document string) (TermVector, error) 
 	}
 
 	// Fetch the document for computing the term statistics.
-	r, err := entrez.Fetch("pubmed", &entrez.Parameters{RetMode: "xml"}, e.tool, e.email, nil, int(d))
+	r, err := entrez.Fetch("pubmed", &entrez.Parameters{RetMode: "xml", APIKey: e.key}, e.tool, e.email, nil, int(d))
 	if err != nil {
 		return nil, err
 	}
@@ -227,11 +227,11 @@ func (e EntrezStatisticsSource) TermVector(document string) (TermVector, error) 
 	}
 
 	// Get the document frequencies for each term.
-	tf, err := entrez.DoSearch("pubmed", strings.Join(ts, " "), &entrez.Parameters{Field: "title"}, nil, e.tool, e.email)
+	tf, err := entrez.DoSearch("pubmed", strings.Join(ts, " "), &entrez.Parameters{Field: "title", APIKey: e.key}, nil, e.tool, e.email)
 	if err != nil {
 		return nil, err
 	}
-	af, err := entrez.DoSearch("pubmed", strings.Join(as, " "), &entrez.Parameters{Field: "text"}, nil, e.tool, e.email)
+	af, err := entrez.DoSearch("pubmed", strings.Join(as, " "), &entrez.Parameters{Field: "text", APIKey: e.key}, nil, e.tool, e.email)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +270,7 @@ func (e EntrezStatisticsSource) TermVector(document string) (TermVector, error) 
 }
 
 func (e EntrezStatisticsSource) DocumentFrequency(term, field string) (float64, error) {
-	s, err := entrez.DoSearch("pubmed", term, nil, nil, e.tool, e.email)
+	s, err := entrez.DoSearch("pubmed", term, &entrez.Parameters{APIKey: e.key}, nil, e.tool, e.email)
 	if err != nil {
 		return 0, err
 	}
@@ -283,7 +283,7 @@ func (e EntrezStatisticsSource) TotalTermFrequency(term, field string) (float64,
 		return 0, err
 	}
 
-	r, err := entrez.Fetch("pubmed", &entrez.Parameters{Field: field, RetType: "xml"}, e.tool, e.email, nil, pmids...)
+	r, err := entrez.Fetch("pubmed", &entrez.Parameters{Field: field, RetType: "xml", APIKey: e.key}, e.tool, e.email, nil, pmids...)
 	if err != nil {
 		return 0, err
 	}
@@ -315,7 +315,7 @@ func (e EntrezStatisticsSource) InverseDocumentFrequency(term, field string) (fl
 	}
 	N := float64(info.DbInfo.Count)
 
-	s, err := entrez.DoSearch("pubmed", term, &entrez.Parameters{Field: field}, nil, e.tool, e.email)
+	s, err := entrez.DoSearch("pubmed", term, &entrez.Parameters{Field: field, APIKey: e.key}, nil, e.tool, e.email)
 	if err != nil {
 		return 0, err
 	}
@@ -425,6 +425,8 @@ func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) 
 	if len(e.key) > 0 {
 		entrez.Limit = ncbi.NewLimiter(time.Second / 10)
 	}
+
+	ncbi.SetTimeout(time.Minute)
 
 	return *e
 }
