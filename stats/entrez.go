@@ -38,12 +38,37 @@ type pubmedArticle struct {
 }
 
 type medlineCitation struct {
-	Article article `xml:"Article"`
+	PMID            string          `xml:"PMID"`
+	Article         article         `xml:"Article"`
+	MeshHeadingList meshHeadingList `xml:"MeshHeadingList"`
+}
+
+type publicationType struct {
+	PublicationType string `xml:"PublicationType"`
+}
+
+type meshHeadingList struct {
+	MeshHeading []meshHeading `xml:"MeshHeading"`
+}
+
+type meshHeading struct {
+	DescriptorName string `xml:"DescriptorName"`
 }
 
 type article struct {
-	ArticleTitle string   `xml:"ArticleTitle"`
-	Abstract     abstract `xml:"Abstract"`
+	ArticleTitle        string            `xml:"ArticleTitle"`
+	Abstract            abstract          `xml:"Abstract"`
+	PublicationTypeList []publicationType `xml:"PublicationTypeList"`
+	AuthorList          authorList        `xml:"AuthorList"`
+}
+
+type authorList struct {
+	Author []author `xml:"Author"`
+}
+type author struct {
+	LastName string `xml:"LastName"`
+	ForeName string `xml:"ForeName"`
+	Initials string `xml:"Initials"`
 }
 
 type abstract struct {
@@ -53,6 +78,19 @@ type abstract struct {
 type term struct {
 	count int
 	token string
+}
+
+type EntrezDocument struct {
+	ID               string
+	Title            string
+	Text             string
+	Authors          []string
+	PublicationTypes []string
+	MeSHHeadings     []string
+}
+
+func (a author) String() string {
+	return fmt.Sprintf("%s %s.", a.LastName, a.Initials)
 }
 
 func formatTerm(term string) string {
@@ -87,19 +125,27 @@ func mapTerms(terms []term) map[string]float64 {
 	return m
 }
 
-func (e EntrezStatisticsSource) searchStart(pmid int) func(p *entrez.Parameters) {
+func (e EntrezStatisticsSource) SearchStart(n int) func(p *entrez.Parameters) {
 	return func(p *entrez.Parameters) {
-		p.RetStart = pmid
+		p.RetStart = n
 	}
 }
 
-func (e EntrezStatisticsSource) search(query string, options ...func(p *entrez.Parameters)) ([]int, error) {
+func (e EntrezStatisticsSource) SearchSize(n int) func(p *entrez.Parameters) {
+	return func(p *entrez.Parameters) {
+		p.RetMax = n
+	}
+}
+
+// Search uses the entrez eutils to get the pmids for a given query.
+func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.Parameters)) ([]int, error) {
+	log.Println(query)
 	var pmids []int
 	p := &entrez.Parameters{}
+	p.RetMax = e.options.Size
 	for _, option := range options {
 		option(p)
 	}
-	p.RetMax = e.options.Size
 	p.APIKey = e.key
 
 	s, err := entrez.DoSearch("pubmed", query, p, nil, e.tool, e.email)
@@ -107,17 +153,68 @@ func (e EntrezStatisticsSource) search(query string, options ...func(p *entrez.P
 		return nil, err
 	}
 	pmids = s.IdList
-	log.Println("start", p.RetStart, "got", len(pmids))
+	log.Printf("%d/%d\n", s.RetStart, s.Count)
 
 	// If the number of pmids equals the execute size, there might be more to come.
 	if len(pmids) == e.options.Size {
-		l, err := e.search(query, e.searchStart(p.RetStart+len(pmids)))
+		l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)))
 		if err != nil {
 			return nil, err
 		}
 		pmids = append(pmids, l...)
 	}
 	return pmids, nil
+}
+
+// Fetch uses the entrez eutils to fetch the pubmed article given a set of pubmed identifiers.
+func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Parameters)) ([]EntrezDocument, error) {
+	p := &entrez.Parameters{}
+	for _, option := range options {
+		option(p)
+	}
+	p.RetMax = e.options.Size
+	p.RetType = "xml"
+	p.APIKey = e.key
+
+	r, err := entrez.Fetch("pubmed", p, e.tool, e.email, nil, pmids...)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	buff := new(bytes.Buffer)
+	buff.ReadFrom(r)
+
+	var s pubmedArticleSet
+	err = xml.Unmarshal(buff.Bytes(), &s)
+	if err != nil {
+		return nil, err
+	}
+
+	docs := make([]EntrezDocument, len(s.PubmedArticle))
+	for i, article := range s.PubmedArticle {
+		authors := make([]string, len(article.MedlineCitation.Article.AuthorList.Author))
+		for j, a := range article.MedlineCitation.Article.AuthorList.Author {
+			authors[j] = a.String()
+		}
+		mesh := make([]string, len(article.MedlineCitation.MeshHeadingList.MeshHeading))
+		for j, m := range article.MedlineCitation.MeshHeadingList.MeshHeading {
+			mesh[j] = m.DescriptorName
+		}
+		pubtype := make([]string, len(article.MedlineCitation.Article.PublicationTypeList))
+		for j, p := range article.MedlineCitation.Article.PublicationTypeList {
+			pubtype[j] = p.PublicationType
+		}
+		docs[i] = EntrezDocument{
+			ID:               article.MedlineCitation.PMID,
+			Title:            article.MedlineCitation.Article.ArticleTitle,
+			Text:             article.MedlineCitation.Article.Abstract.AbstractText,
+			Authors:          authors,
+			MeSHHeadings:     mesh,
+			PublicationTypes: pubtype,
+		}
+	}
+	return docs, nil
 }
 
 func (e EntrezStatisticsSource) SearchOptions() SearchOptions {
@@ -278,7 +375,7 @@ func (e EntrezStatisticsSource) DocumentFrequency(term, field string) (float64, 
 }
 
 func (e EntrezStatisticsSource) TotalTermFrequency(term, field string) (float64, error) {
-	pmids, err := e.search(term)
+	pmids, err := e.Search(term)
 	if err != nil {
 		return 0, err
 	}
@@ -339,12 +436,11 @@ func (e EntrezStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentatio
 		return 0, err
 	}
 
-	pmids, err := e.search(q)
+	s, err := entrez.DoSearch("pubmed", q, &entrez.Parameters{RetType: "xml", APIKey: e.key}, nil, e.tool, e.email)
 	if err != nil {
 		return 0, err
 	}
-
-	return float64(len(pmids)), nil
+	return float64(s.Count), nil
 }
 
 func (e EntrezStatisticsSource) VocabularySize(field string) (float64, error) {
@@ -375,7 +471,7 @@ func (e EntrezStatisticsSource) Execute(query groove.PipelineQuery, options Sear
 		return nil, err
 	}
 
-	pmids, err := e.search(q)
+	pmids, err := e.Search(q)
 	if err != nil {
 		return nil, err
 	}
@@ -392,30 +488,36 @@ func (e EntrezStatisticsSource) Execute(query groove.PipelineQuery, options Sear
 	return r, nil
 }
 
+// EntrezTool sets the tool name for entrez.
 func EntrezTool(tool string) func(source *EntrezStatisticsSource) {
 	return func(source *EntrezStatisticsSource) {
 		source.tool = tool
 	}
 }
 
+// EntrezTool sets the email for entrez.
 func EntrezEmail(email string) func(source *EntrezStatisticsSource) {
 	return func(source *EntrezStatisticsSource) {
 		source.email = email
 	}
 }
 
+// EntrezTool sets the API key for entrez.
 func EntrezAPIKey(key string) func(source *EntrezStatisticsSource) {
 	return func(source *EntrezStatisticsSource) {
 		source.key = key
 	}
 }
 
+// EntrezOptions sets any additional options for the entrez statistics source.
 func EntrezOptions(options SearchOptions) func(source *EntrezStatisticsSource) {
 	return func(source *EntrezStatisticsSource) {
 		source.options = options
 	}
 }
 
+// NewEntrezStatisticsSource creates a new entrez statistics source for searching pubmed.
+// When an API key is specified, the entrez request limit is raised to 10 per second instead of the default 3.
 func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) EntrezStatisticsSource {
 	e := &EntrezStatisticsSource{}
 	for _, option := range options {
