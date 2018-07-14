@@ -30,14 +30,12 @@ func (avg avgIDF) Name() string {
 }
 
 func (avg avgIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Query)
+	keywords := analysis.QueryKeywords(q.Query)
 	sumIDF := 0.0
 
-	fields := analysis.QueryFields(q.Query)
-
-	for _, field := range fields {
-		for _, term := range terms {
-			idf, err := s.InverseDocumentFrequency(term, field)
+	for _, k := range keywords {
+		for _, field := range k.Fields {
+			idf, err := s.InverseDocumentFrequency(k.QueryString, field)
 			if err != nil {
 				return 0.0, err
 			}
@@ -45,7 +43,7 @@ func (avg avgIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (flo
 		}
 	}
 
-	return sumIDF / float64(len(terms)), nil
+	return sumIDF / float64(len(keywords)), nil
 }
 
 func (sum sumIDF) Name() string {
@@ -53,14 +51,12 @@ func (sum sumIDF) Name() string {
 }
 
 func (sum sumIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Query)
-
+	keywords := analysis.QueryKeywords(q.Query)
 	sumIDF := 0.0
-	fields := analysis.QueryFields(q.Query)
 
-	for _, field := range fields {
-		for _, term := range terms {
-			idf, err := s.InverseDocumentFrequency(term, field)
+	for _, k := range keywords {
+		for _, field := range k.Fields {
+			idf, err := s.InverseDocumentFrequency(k.QueryString, field)
 			if err != nil {
 				return 0.0, err
 			}
@@ -76,14 +72,12 @@ func (sum maxIDF) Name() string {
 }
 
 func (sum maxIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Query)
-
 	var scores []float64
-	fields := analysis.QueryFields(q.Query)
+	keywords := analysis.QueryKeywords(q.Query)
 
-	for _, field := range fields {
-		for _, term := range terms {
-			idf, err := s.InverseDocumentFrequency(term, field)
+	for _, k := range keywords {
+		for _, field := range k.Fields {
+			idf, err := s.InverseDocumentFrequency(k.QueryString, field)
 			if err != nil {
 				return 0.0, err
 			}
@@ -103,18 +97,16 @@ func (sum stdDevIDF) Name() string {
 }
 
 func (sum stdDevIDF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	terms := analysis.QueryTerms(q.Query)
-
 	var scores []float64
-	fields := analysis.QueryFields(q.Query)
+	keywords := analysis.QueryKeywords(q.Query)
 
-	if len(terms) == 1 && len(fields) == 1 {
+	if len(keywords) == 1 {
 		return 0, nil
 	}
 
-	for _, field := range fields {
-		for _, term := range terms {
-			idf, err := s.InverseDocumentFrequency(term, field)
+	for _, k := range keywords {
+		for _, field := range k.Fields {
+			idf, err := s.InverseDocumentFrequency(k.QueryString, field)
 			if err != nil {
 				return 0.0, err
 			}

@@ -6,16 +6,10 @@ import (
 )
 
 type termCount struct{}
-type keywordCount struct{}
-type booleanQueryCount struct{}
 
 var (
 	// TermCount is a measurement that counts the number of terms in the query.
 	TermCount = termCount{}
-	// KeywordCount is a measurement that counts the number of keywords in the query.
-	KeywordCount = keywordCount{}
-	// BooleanQueryCount is a measure that counts the number of Boolean queries in the query.
-	BooleanQueryCount = booleanQueryCount{}
 )
 
 // Name is TermCount.
@@ -27,24 +21,4 @@ func (tc termCount) Name() string {
 // count each individual term in that query string.
 func (tc termCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	return float64(len(QueryTerms(q.Query))), nil
-}
-
-// Name is KeywordCount.
-func (kc keywordCount) Name() string {
-	return "KeywordCount"
-}
-
-// TermCount counts the total number of keywords in a query.
-func (kc keywordCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	return float64(len(QueryKeywords(q.Query))), nil
-}
-
-// Name is BooleanQueryCount.
-func (bc booleanQueryCount) Name() string {
-	return "BooleanQueryCount"
-}
-
-// BooleanQueryCount counts the total number of Boolean queries in a query.
-func (bc booleanQueryCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	return float64(len(QueryBooleanQueries(q.Query))), nil
 }

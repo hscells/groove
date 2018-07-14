@@ -5,12 +5,13 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
-	"github.com/hscells/groove/analysis/preqpp"
 	"github.com/hscells/groove/stats"
 	"github.com/xtgo/set"
 	"io"
 	"sort"
 	"strings"
+	"github.com/go-errors/errors"
+	"github.com/hscells/groove/analysis/preqpp"
 )
 
 // Feature is some value that is applicable to a query transformation.
@@ -45,13 +46,6 @@ const (
 	Cui2vecExpansionFeature
 	Cui2vecNumExpansionsFeature
 
-	// Pre-QPP-based features.
-	AvgIDFFeature
-	SumIDFFeature
-	MaxIDFFeature
-	StdDevIDFFeature
-	AvgICTFFeature
-
 	// Keyword specific features.
 	IsExplodedFeature
 	IsTruncatedFeature
@@ -59,25 +53,26 @@ const (
 
 	// Boolean specific features.
 	OperatorTypeFeature
-	TotalFieldsFeature
-	TotalKeywordsFeature
-	TotalTermsFeature
-	TotalClausesFeature
-	TotalExplodedFeature
-	TotalTruncatedFeature
 
-	// Delta features.
-	RetrievedFeature
-	DeltaRetrievedFeature
-	DeltaAvgIDFFeature
-	DeltaSumIDFFeature
-	DeltaMaxIDFFeature
-	DeltaStdDevIDFFeature
-	DeltaAvgICTFFeature
+	// Measurement features.
+	measurementFeatures
 
 	// Chain of transformations !!THIS MUST BE THE LAST FEATURE IN THE LIST!!
-	ChainFeatures
+	chainFeatures
 )
+
+var MeasurementFeatureKeys = map[string]int{
+	analysis.BooleanFields.Name():    measurementFeatures,
+	analysis.BooleanClauses.Name():   measurementFeatures + 1,
+	analysis.BooleanKeywords.Name():  measurementFeatures + 2,
+	analysis.BooleanExploded.Name():  measurementFeatures + 3,
+	analysis.BooleanTruncated.Name(): measurementFeatures + 4,
+	preqpp.RetrievalSize.Name():      measurementFeatures + 5,
+	preqpp.QueryScope.Name():         measurementFeatures + 6,
+}
+
+// Chain of transformations !!THIS MUST BE THE LAST FEATURE IN THE LIST!!
+var ChainFeatures = chainFeatures + len(MeasurementFeatureKeys)
 
 // NewFeature creates a new feature with the specified ID and `score`.
 func NewFeature(id int, score float64) Feature {
@@ -182,19 +177,20 @@ func contextFeatures(context TransformationContext) Features {
 }
 
 // QPPFeatures computes query performance predictor features for a query.
-func deltas(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, me analysis.MeasurementExecutor) (deltaFeatures, error) {
+func deltas(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, measurements []analysis.Measurement, me analysis.MeasurementExecutor) (deltaFeatures, error) {
 	deltas := make(deltaFeatures)
 
 	gq := groove.NewPipelineQuery("qpp", "test", query)
-	features := []int{AvgIDFFeature, SumIDFFeature, MaxIDFFeature, StdDevIDFFeature, AvgICTFFeature, RetrievedFeature}
-	measurements := []analysis.Measurement{preqpp.AvgIDF, preqpp.SumIDF, preqpp.MaxIDF, preqpp.StdDevIDF, preqpp.AvgICTF, preqpp.RetrievalSize}
-
 	m, err := me.Execute(gq, ss, measurements...)
 	if err != nil {
 		return nil, err
 	}
-	for i, feature := range features {
-		deltas[feature] = m[i]
+	for i, measurement := range measurements {
+		if v, ok := MeasurementFeatureKeys[measurement.Name()]; ok {
+			deltas[v] = m[i]
+		} else {
+			return nil, errors.New(fmt.Sprintf("%s is not registed as a feature in MeasurementFeatureKeys", measurement.Name()))
+		}
 	}
 
 	return deltas, nil
@@ -210,23 +206,7 @@ func calcDelta(feature int, score float64, features deltaFeatures) float64 {
 func computeDeltas(preTransformation deltaFeatures, postTransformation deltaFeatures) Features {
 	var features Features
 	for feature, x := range preTransformation {
-		var deltaFeature int
-		switch feature {
-		case RetrievedFeature:
-			deltaFeature = DeltaRetrievedFeature
-		case AvgIDFFeature:
-			deltaFeature = DeltaAvgIDFFeature
-		case SumIDFFeature:
-			deltaFeature = DeltaSumIDFFeature
-		case MaxIDFFeature:
-			deltaFeature = DeltaMaxIDFFeature
-		case StdDevIDFFeature:
-			deltaFeature = DeltaStdDevIDFFeature
-		case AvgICTFFeature:
-			deltaFeature = DeltaAvgICTFFeature
-		default:
-			continue
-		}
+		deltaFeature := feature * (len(MeasurementFeatureKeys) / 2)
 		features = append(features, NewFeature(deltaFeature, calcDelta(feature, x, postTransformation)))
 	}
 	return features

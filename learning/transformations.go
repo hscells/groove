@@ -121,11 +121,11 @@ var (
 
 // variations creates the variations of an input candidate query in the transformation chain using the specified
 // transformations.
-func variations(query CandidateQuery, context TransformationContext, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformation) ([]CandidateQuery, error) {
+func variations(query CandidateQuery, context TransformationContext, ss stats.StatisticsSource, me analysis.MeasurementExecutor, measurements []analysis.Measurement, transformations ...Transformation) ([]CandidateQuery, error) {
 	var candidates []CandidateQuery
 
 	// Compute features (and pre-transformation features) for the original Boolean query.
-	preDeltas, err := deltas(query.Query, ss, me)
+	preDeltas, err := deltas(query.Query, ss, measurements, me)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 		// the parent query and update the child with the generated permutation.
 		for j, child := range q.Children {
 			// Apply this transformation.
-			perms, err := variations(NewCandidateQuery(child, nil).SetTransformationID(query.TransformationID), context, ss, me, transformations...)
+			perms, err := variations(NewCandidateQuery(child, nil).SetTransformationID(query.TransformationID), context, ss, me, measurements, transformations...)
 			if err != nil {
 				return nil, err
 			}
@@ -174,25 +174,7 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 					// Boolean features.
 					features = append(features, booleanFeatures(tmp)...)
 
-					// Features about the entire Boolean query.
-					foundTotal := false
-					for _, feature := range features {
-						if feature.ID == TotalFieldsFeature {
-							foundTotal = true
-							break
-						}
-					}
-					if !foundTotal {
-						features = append(features,
-							NewFeature(TotalFieldsFeature, float64(len(analysis.QueryFields(tmp)))),
-							NewFeature(TotalKeywordsFeature, float64(len(analysis.QueryKeywords(tmp)))),
-							NewFeature(TotalTermsFeature, float64(len(analysis.QueryTerms(tmp)))),
-							NewFeature(TotalExplodedFeature, float64(len(analysis.ExplodedKeywords(tmp)))),
-							NewFeature(TotalTruncatedFeature, float64(len(analysis.TruncatedKeywords(tmp)))),
-							NewFeature(TotalClausesFeature, float64(len(analysis.QueryBooleanQueries(tmp)))))
-					}
-
-					deltas, err := deltas(tmp, ss, me)
+					deltas, err := deltas(tmp, ss, measurements, me)
 					if err != nil {
 						return nil, err
 					}
@@ -225,25 +207,8 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 					if i < len(boolFeatures) {
 						features = append(features, boolFeatures[i]...)
 					}
-					// Features about the entire Boolean query.
-					foundTotal := false
-					for _, feature := range features {
-						if feature.ID == TotalFieldsFeature {
-							foundTotal = true
-							break
-						}
-					}
-					if !foundTotal {
-						features = append(features,
-							NewFeature(TotalFieldsFeature, float64(len(analysis.QueryFields(q)))),
-							NewFeature(TotalKeywordsFeature, float64(len(analysis.QueryKeywords(q)))),
-							NewFeature(TotalTermsFeature, float64(len(analysis.QueryTerms(q)))),
-							NewFeature(TotalExplodedFeature, float64(len(analysis.ExplodedKeywords(q)))),
-							NewFeature(TotalTruncatedFeature, float64(len(analysis.TruncatedKeywords(q)))),
-							NewFeature(TotalClausesFeature, float64(len(analysis.QueryBooleanQueries(q)))))
-					}
 
-					deltas, err := deltas(applied, ss, me)
+					deltas, err := deltas(applied, ss, measurements, me)
 					if err != nil {
 						return nil, err
 					}
@@ -289,7 +254,7 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 
 				for _, applied := range c {
 					features := contextFeatures(context)
-					deltas, err := deltas(applied, ss, me)
+					deltas, err := deltas(applied, ss, measurements, me)
 					if err != nil {
 						return nil, err
 					}
@@ -319,7 +284,7 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 // Variations creates query variations of the input query using the specified transformations. Permute will only generate
 // query variations that modify the query in one single place. This means that no transformation is applied twice to an
 // already modified query.
-func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformation) ([]CandidateQuery, error) {
+func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.MeasurementExecutor, measurements []analysis.Measurement, transformations ...Transformation) ([]CandidateQuery, error) {
 	var vars []CandidateQuery
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -329,7 +294,7 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 		go func(t Transformation) {
 			defer wg.Done()
 		v:
-			c, err := variations(query, TransformationContext{}, ss, me, t)
+			c, err := variations(query, TransformationContext{}, ss, me, measurements, t)
 			if elastic.IsConnErr(err) || elastic.IsTimeout(err) {
 				log.Println("Elasticsearch error -- retrying...")
 				time.Sleep(5 * time.Second)

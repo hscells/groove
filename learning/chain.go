@@ -11,6 +11,7 @@ import (
 // QueryChain contains implementations for transformations to apply to a query and the selector to pick a candidate.
 type QueryChain struct {
 	Transformations   []Transformation
+	Measurements      []analysis.Measurement
 	CandidateSelector QueryChainCandidateSelector
 	stats.StatisticsSource
 	analysis.MeasurementExecutor
@@ -31,10 +32,11 @@ type LearntCandidateQuery struct {
 }
 
 // NewQueryChain creates a new query chain with implementations for a selector and transformations.
-func NewQueryChain(selector QueryChainCandidateSelector, ss stats.StatisticsSource, me analysis.MeasurementExecutor, transformations ...Transformation) QueryChain {
+func NewQueryChain(selector QueryChainCandidateSelector, ss stats.StatisticsSource, me analysis.MeasurementExecutor, measurements []analysis.Measurement, transformations ...Transformation) QueryChain {
 	return QueryChain{
 		CandidateSelector:   selector,
 		Transformations:     transformations,
+		Measurements:        measurements,
 		MeasurementExecutor: me,
 		StatisticsSource:    ss,
 	}
@@ -50,7 +52,7 @@ func (qc QueryChain) Execute(query groove.PipelineQuery) (TransformedQuery, erro
 	stop = qc.CandidateSelector.StoppingCriteria()
 	tq := NewTransformedQuery(query)
 	for !stop {
-		candidates, err := Variations(NewCandidateQuery(tq.PipelineQuery.Query, nil), qc.StatisticsSource, qc.MeasurementExecutor, qc.Transformations...)
+		candidates, err := Variations(NewCandidateQuery(tq.PipelineQuery.Query, nil), qc.StatisticsSource, qc.MeasurementExecutor, qc.Measurements, qc.Transformations...)
 		if err != nil {
 			return TransformedQuery{}, err
 		}

@@ -2,9 +2,10 @@ package preqpp
 
 import (
 	"github.com/hscells/groove"
-	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/stats"
 	"math"
+	"github.com/xtgo/set"
+	"github.com/hscells/groove/analysis"
 )
 
 type queryScope struct{}
@@ -23,7 +24,7 @@ func (qs queryScope) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (
 	if err != nil {
 		return 0.0, err
 	}
-	fields := analysis.QueryFields(q.Query)
+	fields := set.Strings(analysis.QueryFields(q.Query))
 	var N float64
 	for _, field := range fields {
 		n, err := s.VocabularySize(field)
