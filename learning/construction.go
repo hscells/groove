@@ -1,4 +1,4 @@
-package rewrite
+package learning
 
 import (
 	"github.com/hscells/cqr"

@@ -1,4 +1,4 @@
-package rewrite
+package learning
 
 import (
 	"encoding/json"
@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"time"
+	"io"
 )
 
 // OracleQueryChainCandidateSelector finds the best possible combination of query rewrites.
@@ -27,6 +28,14 @@ type OracleQueryChainCandidateSelector struct {
 	ss    stats.StatisticsSource
 
 	seen combinator.QueryCacher
+}
+
+func (oc OracleQueryChainCandidateSelector) Train(lfs []LearntFeature) ([]byte, error) {
+	panic("implement me")
+}
+
+func (oc OracleQueryChainCandidateSelector) Output(lf LearntFeature, w io.Writer) error {
+	panic("implement me")
 }
 
 // Features creates features using a oracle query chain candidate selector.

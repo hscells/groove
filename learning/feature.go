@@ -1,4 +1,4 @@
-package rewrite
+package learning
 
 import (
 	"fmt"
@@ -89,7 +89,9 @@ func (ff Features) Less(i, j int) bool { return ff[i].ID < ff[j].ID }
 // LearntFeature contains the features that were used to produce a particular score.
 type LearntFeature struct {
 	Features
-	Score float64
+	Scores  []float64
+	Topic   string
+	Comment string
 }
 
 // TransformedQuery is the current most query in the query chain.
@@ -247,7 +249,7 @@ func (lf LearntFeature) WriteLibSVM(writer io.Writer, comment ...interface{}) (i
 	sort.Sort(lf.Features)
 	size := set.Uniq(lf.Features)
 	ff := lf.Features[:size]
-	line := fmt.Sprintf("%v", lf.Score)
+	line := fmt.Sprintf("%v", lf.Scores[0])
 	for _, f := range ff {
 		line += fmt.Sprintf(" %v:%v", f.ID, f.Score)
 	}
@@ -262,15 +264,15 @@ func (lf LearntFeature) WriteLibSVM(writer io.Writer, comment ...interface{}) (i
 }
 
 // WriteLibSVMRank writes a LIBSVM^rank compatible line to a writer.
-func (lf LearntFeature) WriteLibSVMRank(writer io.Writer, topic, comment string) (int, error) {
+func (lf LearntFeature) WriteLibSVMRank(writer io.Writer) (int, error) {
 	sort.Sort(lf.Features)
 	size := set.Uniq(lf.Features)
 	ff := lf.Features[:size]
-	line := fmt.Sprintf("%v qid:%v", lf.Score, topic)
+	line := fmt.Sprintf("%v qid:%v", lf.Scores[0], lf.Topic)
 	for _, f := range ff {
 		line += fmt.Sprintf(" %v:%v", f.ID, f.Score)
 	}
-	line += " # " + comment
+	line += " # " + lf.Comment
 
 	return writer.Write([]byte(line + "\n"))
 }
@@ -294,10 +296,9 @@ func (ff Features) AverageScore() float64 {
 }
 
 // NewLearntFeature creates a new learnt feature with a score and a set of features.
-func NewLearntFeature(score float64, features Features) LearntFeature {
+func NewLearntFeature(features Features) LearntFeature {
 	return LearntFeature{
-		features,
-		score,
+		Features: features,
 	}
 }
 

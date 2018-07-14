@@ -1,4 +1,4 @@
-package rewrite
+package learning
 
 // TransformationContext is the context under a transformation is applied.
 type TransformationContext struct {

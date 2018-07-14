@@ -1,4 +1,4 @@
-package rewrite_test
+package learning_test
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
-	"github.com/hscells/groove/rewrite"
+	"github.com/hscells/groove/learning"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
@@ -187,8 +187,8 @@ func TestLTR(t *testing.T) {
 		Compression:  diskv.NewGzipCompression(),
 	})
 
-	ltr := rewrite.NewLTRQueryCandidateSelector("/Users/harryscells/Papers/sysrev_queries/clef2018_tar/clef2018.model")
-	qc := rewrite.NewQueryChain(ltr, ss, analysis.NewDiskMeasurementExecutor(statisticsCache), rewrite.NewAdjacencyReplacementTransformer(), rewrite.NewAdjacencyRangeTransformer(), rewrite.NewMeSHExplosionTransformer(), rewrite.NewFieldRestrictionsTransformer(), rewrite.NewLogicalOperatorTransformer())
+	ltr := learning.NewLTRQueryCandidateSelector("/Users/harryscells/Papers/sysrev_queries/clef2018_tar/clef2018.model")
+	qc := learning.NewQueryChain(ltr, ss, analysis.NewDiskMeasurementExecutor(statisticsCache), learning.NewAdjacencyReplacementTransformer(), learning.NewAdjacencyRangeTransformer(), learning.NewMeSHExplosionTransformer(), learning.NewFieldRestrictionsTransformer(), learning.NewLogicalOperatorTransformer())
 	tq, err := qc.Execute(gq)
 	if err != nil {
 		t.Fatal(err)

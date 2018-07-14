@@ -1,4 +1,4 @@
-package rewrite_test
+package learning_test
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
-	"github.com/hscells/groove/rewrite"
+	"github.com/hscells/groove/learning"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
@@ -81,9 +81,9 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		Compression:  diskv.NewGzipCompression(),
 	})
 
-	selector := rewrite.NewOracleQueryChainCandidateSelector(ss, qrels, cache)
+	selector := learning.NewOracleQueryChainCandidateSelector(ss, qrels, cache)
 
-	chain := rewrite.NewQueryChain(selector, ss, analysis.NewDiskMeasurementExecutor(statisticsCache), rewrite.NewLogicalOperatorTransformer(), rewrite.NewAdjacencyReplacementTransformer(), rewrite.NewAdjacencyRangeTransformer(), rewrite.NewMeSHExplosionTransformer(), rewrite.NewFieldRestrictionsTransformer())
+	chain := learning.NewQueryChain(selector, ss, analysis.NewDiskMeasurementExecutor(statisticsCache), learning.NewLogicalOperatorTransformer(), learning.NewAdjacencyReplacementTransformer(), learning.NewAdjacencyRangeTransformer(), learning.NewMeSHExplosionTransformer(), learning.NewFieldRestrictionsTransformer())
 	//fmt.Printf("Rewriting query with %v possible transformations\n", len(chain.Transformations))
 	q, err := chain.Execute(groove.NewPipelineQuery("test", topic, repr.(cqr.CommonQueryRepresentation)))
 	if err != nil {
