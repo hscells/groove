@@ -11,7 +11,7 @@ import (
 	"github.com/hscells/groove/output"
 	"github.com/hscells/groove/preprocess"
 	"github.com/hscells/groove/query"
-	"github.com/hscells/groove/rewrite"
+	"github.com/hscells/groove/learning"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/trecresults"
 	"io/ioutil"
@@ -31,8 +31,16 @@ type GroovePipeline struct {
 	Evaluations           []eval.Evaluator
 	EvaluationFormatters  EvaluationOutputFormat
 	OutputTrec            output.TrecResults
-	QueryChain            rewrite.QueryChain
 	QueryCache            combinator.QueryCacher
+	Model                 learning.Model
+	ModelConfiguration    ModelConfiguration
+}
+
+// ModelConfiguration specifies what actions of a model should be taken by the pipeline.
+type ModelConfiguration struct {
+	Generate bool
+	Train    bool
+	Test     bool
 }
 
 // EvaluationOutputFormat specifies out evaluation output should be formatted.
@@ -233,35 +241,7 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 			go func(idx int, query groove.PipelineQuery) {
 				defer func() { <-sem }()
 
-				// Rewrite the query using a query chain, if one has been specified.
-				if pipeline.QueryChain.CandidateSelector != nil && len(pipeline.QueryChain.Transformations) > 0 {
-					nq, err := pipeline.QueryChain.Execute(query)
-					if err != nil {
-						c <- groove.PipelineResult{
-							Topic: query.Topic,
-							Error: err,
-							Type:  groove.Error,
-						}
-						return
-					}
-
-					query = groove.NewPipelineQuery(query.Name, query.Topic, nq.PipelineQuery.Query)
-				}
-
 				// Execute the query.
-				//var trecResults trecresults.ResultList
-				//tree, _, err := combinator.NewLogicalTree(query, pipeline.StatisticsSource, pipeline.QueryCache)
-				//if err != nil {
-				//	c <- groove.PipelineResult{
-				//		Topic: query.Topic,
-				//		Error: err,
-				//		Type:  groove.Error,
-				//	}
-				//	return
-				//}
-				//trecResults := tree.Documents(pipeline.QueryCache).Results(query, query.Topic)
-				//fmt.Println("cache hit")
-				//trecResults = d.Results(query, query.Topic)
 				docIds, err := stats.GetDocumentIDs(query, pipeline.StatisticsSource)
 				if err != nil {
 					c <- groove.PipelineResult{
