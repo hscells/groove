@@ -24,9 +24,10 @@ type EntrezStatisticsSource struct {
 	tool       string
 	key        string
 	email      string
-	api        string
 	parameters map[string]float64
 	options    SearchOptions
+	// The size of PubMed.
+	n float64
 }
 
 type pubmedArticleSet struct {
@@ -123,6 +124,16 @@ func mapTerms(terms []term) map[string]float64 {
 		m[term.token] = float64(term.count)
 	}
 	return m
+}
+
+type Search struct {
+	Count int `xml:"Count"`
+}
+
+func (e EntrezStatisticsSource) Count(term, field string) float64 {
+	var s Search
+	entrez.SearchURL.GetXML(map[string][]string{"field": {field}, "api_key": {e.key}, "term": {term}}, e.tool, e.email, entrez.Limit, &s)
+	return float64(s.Count)
 }
 
 func (e EntrezStatisticsSource) SearchStart(n int) func(p *entrez.Parameters) {
@@ -406,19 +417,14 @@ func (e EntrezStatisticsSource) TotalTermFrequency(term, field string) (float64,
 }
 
 func (e EntrezStatisticsSource) InverseDocumentFrequency(term, field string) (float64, error) {
-	info, err := entrez.DoInfo("pubmed", e.tool, e.email)
-	if err != nil {
-		return 0, err
-	}
-	N := float64(info.DbInfo.Count)
+	//s, err := entrez.DoSearch("pubmed", term, &entrez.Parameters{Field: field, APIKey: e.key}, nil, e.tool, e.email)
+	//if err != nil {
+	//	return 0, err
+	//}
+	//nt := float64(s.Count)
+	nt := e.Count(term, field)
 
-	s, err := entrez.DoSearch("pubmed", term, &entrez.Parameters{Field: field, APIKey: e.key}, nil, e.tool, e.email)
-	if err != nil {
-		return 0, err
-	}
-	nt := float64(s.Count)
-
-	return idf(N, nt), nil
+	return idf(e.n, nt), nil
 }
 
 func (e EntrezStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentation) (float64, error) {
@@ -518,11 +524,13 @@ func EntrezOptions(options SearchOptions) func(source *EntrezStatisticsSource) {
 
 // NewEntrezStatisticsSource creates a new entrez statistics source for searching pubmed.
 // When an API key is specified, the entrez request limit is raised to 10 per second instead of the default 3.
-func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) EntrezStatisticsSource {
+func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) (EntrezStatisticsSource, error) {
 	e := &EntrezStatisticsSource{}
 	for _, option := range options {
 		option(e)
 	}
+
+	fmt.Println(e.key, entrez.Limit)
 
 	if len(e.key) > 0 {
 		entrez.Limit = ncbi.NewLimiter(time.Second / 10)
@@ -530,5 +538,12 @@ func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) 
 
 	ncbi.SetTimeout(time.Minute)
 
-	return *e
+	// Set the document collection size.
+	info, err := entrez.DoInfo("pubmed", e.tool, e.email)
+	if err != nil {
+		return EntrezStatisticsSource{}, err
+	}
+	e.n = float64(info.DbInfo.Count)
+
+	return *e, nil
 }
