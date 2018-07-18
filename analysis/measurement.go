@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"github.com/hscells/transmute"
 )
 
 // Measurement is a representation for how a measurement fits into the pipeline.
@@ -152,6 +153,42 @@ func QueryBooleanQueries(r cqr.CommonQueryRepresentation) (children []cqr.Boolea
 	return
 }
 
+// MeshKeywords extracts all keywords which have a particular field.
+func KeywordsWithField(r cqr.CommonQueryRepresentation, f string) (mesh []cqr.Keyword) {
+	keywords := QueryKeywords(r)
+	for _, kw := range keywords {
+		for _, field := range kw.Fields {
+			if field == f {
+				mesh = append(mesh, kw)
+				break
+			}
+		}
+	}
+	return
+}
+
+// MeshExplodedKeywords extracts all mesh heading keywords that are exploded.
+func MeshExplodedKeywords(r cqr.CommonQueryRepresentation) (exploded []cqr.Keyword) {
+	keywords := KeywordsWithField(r, transmute.MeshHeadingsField)
+	for _, kw := range keywords {
+		if exp, ok := kw.Options[cqr.ExplodedString]; ok && exp.(bool) {
+			exploded = append(exploded, kw)
+		}
+	}
+	return
+}
+
+// MeshExplodedKeywords extracts all mesh heading keywords that are not exploded.
+func MeshNonExplodedKeywords(r cqr.CommonQueryRepresentation) (exploded []cqr.Keyword) {
+	keywords := KeywordsWithField(r, transmute.MeshHeadingsField)
+	for _, kw := range keywords {
+		if exp, ok := kw.Options[cqr.ExplodedString]; ok && !exp.(bool) {
+			exploded = append(exploded, kw)
+		}
+	}
+	return
+}
+
 // ExplodedKeywords gets the keywords in the query that are exploded.
 func ExplodedKeywords(r cqr.CommonQueryRepresentation) (exploded []cqr.Keyword) {
 	keywords := QueryKeywords(r)
@@ -176,4 +213,14 @@ func TruncatedKeywords(r cqr.CommonQueryRepresentation) (truncated []cqr.Keyword
 		}
 	}
 	return
+}
+
+// ContainsMeshField returns if a keyword query contains a mesh heading field.
+func ContainsMeshField(kw cqr.Keyword) bool {
+	for _, field := range kw.Fields {
+		if field == transmute.MeshHeadingsField {
+			return true
+		}
+	}
+	return false
 }
