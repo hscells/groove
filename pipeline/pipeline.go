@@ -18,6 +18,7 @@ import (
 	"log"
 	"runtime"
 	"sort"
+	"github.com/peterbourgon/diskv"
 )
 
 // GroovePipeline contains all the information for executing a pipeline for query analysis.
@@ -28,6 +29,7 @@ type GroovePipeline struct {
 	Transformations       preprocess.QueryTransformations
 	Measurements          []analysis.Measurement
 	MeasurementFormatters []output.MeasurementFormatter
+	MeasurementExecutor   analysis.MeasurementExecutor
 	Evaluations           []eval.Evaluator
 	EvaluationFormatters  EvaluationOutputFormat
 	OutputTrec            output.TrecResults
@@ -41,6 +43,7 @@ type ModelConfiguration struct {
 	Generate bool
 	Train    bool
 	Test     bool
+	Validate bool
 }
 
 // EvaluationOutputFormat specifies out evaluation output should be formatted.
@@ -145,6 +148,24 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 		pipeline.QueryCache = combinator.NewFileQueryCache("file_cache")
 	}
 
+	statisticsCache := diskv.New(diskv.Options{
+		BasePath:     "statistics_cache",
+		Transform:    combinator.BlockTransform(8),
+		CacheSizeMax: 4096 * 1024,
+		Compression:  diskv.NewGzipCompression(),
+	})
+	pipeline.MeasurementExecutor = analysis.NewDiskMeasurementExecutor(statisticsCache)
+
+	// Here we need to configure how the queries are loaded into each learning model.
+	if pipeline.Model != nil {
+		switch m := pipeline.Model.(type) {
+		case *learning.QueryChain:
+			m.Queries = queries
+			m.QueryCacher = pipeline.QueryCache
+			m.MeasurementExecutor = pipeline.MeasurementExecutor
+		}
+	}
+
 	// This means preprocessing the query.
 	measurementQueries := make([]groove.PipelineQuery, len(queries))
 	topics := make([]string, len(queries))
@@ -226,7 +247,7 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 	}
 
 	// This section is run concurrently, since the results can sometimes get quite large and we don't want to eat ram.
-	if len(pipeline.Evaluations) > 0 || len(pipeline.OutputTrec.Path) > 0 {
+	if len(pipeline.Evaluations) > 0 && (len(pipeline.OutputTrec.Path) > 0 || len(pipeline.EvaluationFormatters.EvaluationFormatters) > 0) {
 
 		// Store the measurements to be output later.
 		measurements := make(map[string]map[string]float64)
@@ -307,6 +328,20 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 		c <- groove.PipelineResult{
 			Evaluations: evaluations,
 			Type:        groove.Evaluation,
+		}
+	}
+
+	if pipeline.Model != nil {
+		if pipeline.ModelConfiguration.Generate {
+			log.Println("generating features for model")
+			err := pipeline.Model.Generate()
+			if err != nil {
+				c <- groove.PipelineResult{
+					Error: err,
+					Type:  groove.Error,
+				}
+				return
+			}
 		}
 	}
 

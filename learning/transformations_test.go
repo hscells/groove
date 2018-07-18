@@ -1,7 +1,6 @@
-package learning
+package learning_test
 
 import (
-	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
@@ -12,6 +11,8 @@ import (
 	"github.com/hscells/transmute/pipeline"
 	"github.com/peterbourgon/diskv"
 	"testing"
+	"github.com/hscells/groove/learning"
+	"log"
 )
 
 func TestLogicalOperatorReplacement_Apply(t *testing.T) {
@@ -25,10 +26,22 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 			RequiresLexing: true,
 		})
 
-	rawQuery := `1 Lymphoma/
-2 Hodgkin Disease/
-3 (cancer adj8 neoplasm).tw.
-4 or/1-3
+	rawQuery := `1. exp ORTHODONTICS/
+2. orthodontic$.mp.
+3. or/1-2
+4. (retention or retain$).mp.
+5. (stabilise$ or stabilize$).mp.
+6. (fraenectom$ or frenectom$).mp.
+7. (fiberotom$ or fibreotom$).mp.
+8. "interproximal stripping".mp.
+9. pericision.mp.
+10. reproximat$.mp.
+11. ((gingiv$ or periodont$).mp. adj4 surg$).mp.
+12. (retain or retention).mp.
+13. 11 and 12
+14. or/4-10
+15. 13 or 14
+16. 3 and 15
 `
 
 	cq, err := cqrPipeline.Execute(rawQuery)
@@ -40,13 +53,14 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ss := stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://sef-is-017660:8200/"),
-		stats.ElasticsearchIndex("med_stem_sim2"),
-		stats.ElasticsearchDocumentType("doc"),
-		stats.ElasticsearchAnalysedField("stemmed"),
-		//stats.ElasticsearchField("_all"),
-		stats.ElasticsearchScroll(true),
-		stats.ElasticsearchSearchOptions(stats.SearchOptions{Size: 10000, RunName: "test"}))
+	ss, err := stats.NewEntrezStatisticsSource(
+		stats.EntrezAPIKey("22a11de46af145ce59bb288e0ede66721f09"),
+		stats.EntrezEmail("harryscells@gmail.com"),
+		stats.EntrezTool("groove"),
+		stats.EntrezOptions(stats.SearchOptions{Size: 100000}))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Cache for the statistics of the query performance predictors.
 	statisticsCache := diskv.New(diskv.Options{
@@ -56,15 +70,15 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 		Compression:  diskv.NewGzipCompression(),
 	})
 
-	candidates, err := Variations(NewCandidateQuery(repr.(cqr.CommonQueryRepresentation), nil), ss, analysis.NewDiskMeasurementExecutor(statisticsCache), NewLogicalOperatorTransformer(), NewAdjacencyRangeTransformer(), NewMeSHExplosionTransformer(), NewFieldRestrictionsTransformer(), NewAdjacencyReplacementTransformer())
+	candidates, err := learning.Variations(learning.NewCandidateQuery(repr.(cqr.CommonQueryRepresentation), nil), ss, analysis.NewDiskMeasurementExecutor(statisticsCache), []analysis.Measurement{analysis.BooleanClauses}, learning.NewLogicalOperatorTransformer())
 
 	//queries, err := LogicalOperatorReplacement.Apply(repr.(cqr.CommonQueryRepresentation))
 	//if err != nil {
 	//	t.Fatal(err)
 	//}
-	fmt.Println("------------------")
+	log.Println("------------------")
 	for i, q := range candidates {
-		fmt.Println(i, q.Query, q.Features)
+		log.Println(i, q.Query, q.Features)
 	}
 
 }

@@ -72,7 +72,7 @@ var MeasurementFeatureKeys = map[string]int{
 }
 
 // Chain of transformations !!THIS MUST BE THE LAST FEATURE IN THE LIST!!
-var ChainFeatures = chainFeatures + len(MeasurementFeatureKeys)
+var ChainFeatures = chainFeatures + len(MeasurementFeatureKeys)*2
 
 // NewFeature creates a new feature with the specified ID and `score`.
 func NewFeature(id int, score float64) Feature {
@@ -208,7 +208,7 @@ func calcDelta(feature int, score float64, features deltaFeatures) float64 {
 func computeDeltas(preTransformation deltaFeatures, postTransformation deltaFeatures) Features {
 	var features Features
 	for feature, x := range preTransformation {
-		deltaFeature := feature * (len(MeasurementFeatureKeys) / 2)
+		deltaFeature := feature + len(MeasurementFeatureKeys)
 		features = append(features, NewFeature(deltaFeature, calcDelta(feature, x, postTransformation)))
 	}
 	return features
@@ -335,15 +335,15 @@ func (c CandidateQuery) SetTransformationID(id int) CandidateQuery {
 // Append adds the previous query to the chain of transformations so far so we can keep track of which transformations
 // have been applied up until this point, and for features about the query.
 func (c CandidateQuery) Append(query CandidateQuery) CandidateQuery {
+	c.Chain = query.Chain
+
 	// Chain features is the minimum possible index for these features.
 	idx := ChainFeatures
-	if len(c.Chain) > 0 {
-		idx = ChainFeatures + len(c.Chain)
-	}
-	c.Chain = append(c.Chain, query.Chain...)
-	c.Chain = append(c.Chain, query)
 	for i, candidate := range c.Chain {
 		c.Features = append(c.Features, NewFeature(idx+i, float64(candidate.TransformationID)))
 	}
+
+	c.Chain = append(c.Chain, query)
+
 	return c
 }

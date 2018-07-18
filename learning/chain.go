@@ -23,6 +23,7 @@ import (
 	"sort"
 	"github.com/hscells/trecresults"
 	"io/ioutil"
+	"os"
 )
 
 // QueryChain contains implementations for transformations to apply to a query and the selector to pick a candidate.
@@ -35,6 +36,7 @@ type QueryChain struct {
 	Queries             []groove.PipelineQuery
 	LearntFeatures      []LearntFeature
 	GenerationDepth     int
+	GeneartionFile      string
 	Evaluators          []eval.Evaluator
 	QueryCacher         combinator.QueryCacher
 	QrelsFile           trecresults.QrelsFile
@@ -55,7 +57,11 @@ func sample(n int, a []CandidateQuery) []CandidateQuery {
 }
 
 // Generate will create test data sampling using random stratified sampling.
-func (qc QueryChain) Generate() error {
+func (qc *QueryChain) Generate() error {
+	w, err := os.OpenFile(qc.GeneartionFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+	if err != nil {
+		return err
+	}
 	var mu sync.Mutex
 	nTimes := 5
 	for _, cq := range qc.Queries {
@@ -184,10 +190,16 @@ func (qc QueryChain) Generate() error {
 						// Lock and write the results for each evaluation metric to file.
 						mu.Lock()
 						lf := NewLearntFeature(c.Features)
+						lf.Topic = gq.Topic
+						lf.Comment = gq.Topic
+						lf.Scores = make([]float64, len(qc.Evaluators))
 						for i, e := range qc.Evaluators {
-							lf.Topic = gq.Topic
-							lf.Comment = gq.Topic
 							lf.Scores[i] = evaluation[e.Name()]
+						}
+						err = qc.CandidateSelector.Output(lf, w)
+						if err != nil {
+							fmt.Println(err)
+							return
 						}
 						mu.Unlock()
 					}(candidate, i)
@@ -206,7 +218,7 @@ func (qc QueryChain) Generate() error {
 	return nil
 }
 
-func (qc QueryChain) Test() (interface{}, error) {
+func (qc *QueryChain) Test() (interface{}, error) {
 	tqs := make([]TransformedQuery, len(qc.Queries))
 	for i, q := range qc.Queries {
 		tq, err := qc.Execute(q)
@@ -218,7 +230,7 @@ func (qc QueryChain) Test() (interface{}, error) {
 	return tqs, nil
 }
 
-func (qc QueryChain) Output(w io.Writer) error {
+func (qc *QueryChain) Output(w io.Writer) error {
 	for _, lf := range qc.LearntFeatures {
 		err := qc.CandidateSelector.Output(lf, w)
 		if err != nil {
@@ -228,16 +240,16 @@ func (qc QueryChain) Output(w io.Writer) error {
 	return nil
 }
 
-func (qc QueryChain) Type() reflect.Type {
+func (qc *QueryChain) Type() reflect.Type {
 	return reflect.TypeOf([]TransformedQuery{})
 }
 
-func (qc QueryChain) Train() error {
+func (qc *QueryChain) Train() error {
 	_, err := qc.CandidateSelector.Train(qc.LearntFeatures)
 	return err
 }
 
-func (qc QueryChain) Validate() error {
+func (qc *QueryChain) Validate() error {
 	return nil
 }
 
@@ -271,7 +283,7 @@ func NewQueryChain(selector QueryChainCandidateSelector, ss stats.StatisticsSour
 // Execute executes a query chain in full. At each "transition point" in the chain, the candidate selector is queried
 // in order to see if the chain should continue or not. At the end of the chain, the selector is cleaned using the
 // finalise method.
-func (qc QueryChain) Execute(q groove.PipelineQuery) (TransformedQuery, error) {
+func (qc *QueryChain) Execute(q groove.PipelineQuery) (TransformedQuery, error) {
 	var (
 		stop bool
 	)
@@ -296,15 +308,15 @@ func (qc QueryChain) Execute(q groove.PipelineQuery) (TransformedQuery, error) {
 	return tq, nil
 }
 
-func NewLearningToRankQueryChain(modelFile string) QueryChain {
-	return QueryChain{
+func NewLearningToRankQueryChain(modelFile string) *QueryChain {
+	return &QueryChain{
 		CandidateSelector: NewLTRQueryCandidateSelector(modelFile),
 		GenerationDepth:   5,
 	}
 }
 
-func NewReinforcementQueryChain() QueryChain {
-	return QueryChain{
+func NewReinforcementQueryChain() *QueryChain {
+	return &QueryChain{
 		CandidateSelector: ReinforcementQueryCandidateSelector{},
 		GenerationDepth:   5,
 	}

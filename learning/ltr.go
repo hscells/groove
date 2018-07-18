@@ -62,13 +62,12 @@ func getRanking(filename string, candidates []CandidateQuery) (cqr.CommonQueryRe
 	return ranks[0].query, nil
 }
 
-// TODO implement me
 func (sel LTRQueryCandidateSelector) Train(features []LearntFeature) ([]byte, error) {
 	return nil, nil
 }
 
 func (sel LTRQueryCandidateSelector) Output(lf LearntFeature, w io.Writer) error {
-	_, err :=  lf.WriteLibSVMRank(w)
+	_, err := lf.WriteLibSVMRank(w)
 	return err
 }
 
