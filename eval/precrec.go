@@ -11,7 +11,7 @@ type precisionEvaluator struct{}
 type numRel struct{}
 type numRet struct{}
 type numRelRet struct{}
-type workSavedOverSampling struct{ N float64 }
+type WorkSavedOverSampling struct{ N float64 }
 
 // FMeasure computes f-measure, with the beta parameter controlling the precision and recall trade-off.
 type FMeasure struct {
@@ -145,7 +145,7 @@ func (f FMeasure) Name() string {
 	return fmt.Sprintf("F%vMeasure", f.beta)
 }
 
-func (w workSavedOverSampling) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
+func (w WorkSavedOverSampling) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
 	// WSS computes work saved over sampling. This is converted from the Python function below:
 	//
 	// # TN: total_col - num_ret - (num_rel - rel_ret)
@@ -157,12 +157,12 @@ func (w workSavedOverSampling) Score(results *trecresults.ResultList, qrels trec
 	return ((w.N - ret) / w.N) - (1.0 - recall)
 }
 
-func (workSavedOverSampling) Name() string {
+func (WorkSavedOverSampling) Name() string {
 	return "WSS"
 }
 
 func NewWSSEvaluator(collectionSize float64) Evaluator {
-	return workSavedOverSampling{
+	return WorkSavedOverSampling{
 		N: collectionSize,
 	}
 }
