@@ -2,21 +2,22 @@ package learning
 
 import (
 	"fmt"
+	"github.com/go-errors/errors"
 	"github.com/hscells/cqr"
+	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/meshexp"
+	"github.com/hscells/metawrap"
+	"github.com/hscells/transmute"
+	"github.com/xtgo/set"
+	"gopkg.in/olivere/elastic.v5"
+	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"github.com/hscells/cui2vec"
-	"github.com/hscells/metawrap"
-	"sort"
 	"time"
-	"gopkg.in/olivere/elastic.v5"
-	"log"
-	"github.com/go-errors/errors"
 )
 
 const (
@@ -27,6 +28,7 @@ const (
 	AdjacencyReplacementTransformation
 	ClauseRemovalTransformation
 	Cui2vecExpansionTransformation
+	MeshParentTransformation
 )
 
 // Transformer is applied to a query to generate a set of query candidates.
@@ -72,6 +74,8 @@ type cui2vecExpansion struct {
 	metamap metawrap.MetaMap
 }
 
+type meshParent struct{}
+
 // NewLogicalOperatorTransformer creates a logical operator transformation.
 func NewLogicalOperatorTransformer() Transformation {
 	return Transformation{ID: LogicalOperatorTransformation, Transformer: logicalOperatorReplacement{}, BooleanTransformer: logicalOperatorReplacement{}}
@@ -115,9 +119,9 @@ func Newcui2vecExpansionTransformer(vector cui2vec.Vector, mapping cui2vec.Mappi
 	}
 }
 
-var (
-	d, _ = meshexp.Default()
-)
+func NewMeshParentTransformer() Transformation {
+	return Transformation{ID: MeshParentTransformation, Transformer: meshParent{}}
+}
 
 // variations creates the variations of an input candidate query in the transformation chain using the specified
 // transformations.
@@ -441,7 +445,7 @@ func (r meshExplosion) Apply(query cqr.CommonQueryRepresentation) (queries []cqr
 					} else {
 						nq.SetOption("exploded", true)
 					}
-					r.meshDepth = float64(d.Depth(q.QueryString))
+					r.meshDepth = float64(analysis.MeSHTree.Depth(q.QueryString))
 					return []cqr.CommonQueryRepresentation{nq}, nil
 				}
 				return candidates, nil
@@ -700,4 +704,34 @@ func (cui2vecExpansion) Features(query cqr.CommonQueryRepresentation, context Tr
 
 func (cui2vecExpansion) Name() string {
 	return "cui2vecExpansion"
+}
+
+func (meshParent) Apply(query cqr.CommonQueryRepresentation) (queries []cqr.CommonQueryRepresentation, err error) {
+	switch q := query.(type) {
+	case cqr.Keyword:
+		if analysis.ContainsMeshField(q) {
+			parents := set.Strings(analysis.MeSHTree.Parents(q.QueryString))
+			for _, parent := range parents {
+				queries = append(queries, cqr.NewKeyword(parent, transmute.MeshHeadingsField).SetOption(cqr.ExplodedString, false))
+			}
+		}
+	}
+	return
+}
+
+func (meshParent) BooleanApplicable() bool {
+	return false
+}
+
+func (meshParent) Features(query cqr.CommonQueryRepresentation, context TransformationContext) (features Features) {
+	switch q := query.(type) {
+	case cqr.Keyword:
+		features = append(features, NewFeature(MeshDepthFeature, float64(analysis.MeSHTree.Depth(q.QueryString))))
+	}
+	features = append(features, NewFeature(MeshParentFeature, 1))
+	return
+}
+
+func (meshParent) Name() string {
+	return "MeshParent"
 }
