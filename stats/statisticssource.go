@@ -45,6 +45,7 @@ type StatisticsSource interface {
 	RetrievalSize(query cqr.CommonQueryRepresentation) (float64, error)
 	VocabularySize(field string) (float64, error)
 	Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error)
+	CollectionSize() (float64, error)
 }
 
 // ToPipelineQuery creates a pipeline query from a term vector. This can be used to perform analysis on documents (since

@@ -209,6 +209,10 @@ func (t TerrierStatisticsSource) Execute(query groove.PipelineQuery, options Sea
 	return trecResultSet, nil
 }
 
+func (t TerrierStatisticsSource) CollectionSize() (float64, error) {
+	panic("implement me")
+}
+
 // execute executes a query on terrier.
 func execute(env *jnigi.Env, query cqr.CommonQueryRepresentation, options SearchOptions, t TerrierStatisticsSource) (*jnigi.ObjectRef, error) {
 	cqrString, err := backend.NewCQRQuery(query).String()

@@ -417,13 +417,7 @@ func (e EntrezStatisticsSource) TotalTermFrequency(term, field string) (float64,
 }
 
 func (e EntrezStatisticsSource) InverseDocumentFrequency(term, field string) (float64, error) {
-	//s, err := entrez.DoSearch("pubmed", term, &entrez.Parameters{Field: field, APIKey: e.key}, nil, e.tool, e.email)
-	//if err != nil {
-	//	return 0, err
-	//}
-	//nt := float64(s.Count)
 	nt := e.Count(term, field)
-
 	return idf(e.n, nt), nil
 }
 
@@ -494,6 +488,10 @@ func (e EntrezStatisticsSource) Execute(query groove.PipelineQuery, options Sear
 	return r, nil
 }
 
+func (e EntrezStatisticsSource) CollectionSize() (float64, error) {
+	panic("implement me")
+}
+
 // EntrezTool sets the tool name for entrez.
 func EntrezTool(tool string) func(source *EntrezStatisticsSource) {
 	return func(source *EntrezStatisticsSource) {
@@ -529,8 +527,6 @@ func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) 
 	for _, option := range options {
 		option(e)
 	}
-
-	fmt.Println(e.key, entrez.Limit)
 
 	if len(e.key) > 0 {
 		entrez.Limit = ncbi.NewLimiter(time.Second / 10)

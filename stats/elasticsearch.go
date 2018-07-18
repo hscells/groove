@@ -407,6 +407,10 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 	return results, nil
 }
 
+func (es *ElasticsearchStatisticsSource) CollectionSize() (float64, error) {
+	panic("implement me")
+}
+
 // Analyse is a specific Elasticsearch method used in the analyse transformation.
 func (es *ElasticsearchStatisticsSource) Analyse(text, analyser string) (tokens []string, err error) {
 	res, err := es.client.IndexAnalyze().Index(es.index).Analyzer(analyser).Text(text).Do(context.Background())
