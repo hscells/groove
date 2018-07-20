@@ -10,7 +10,6 @@ var (
 	BooleanFields    booleanFields
 	BooleanKeywords  booleanKeywords
 	BooleanClauses   booleanClauses
-	BooleanExploded  booleanExploded
 	BooleanTruncated booleanTruncated
 )
 
@@ -42,16 +41,6 @@ func (booleanClauses) Name() string {
 
 func (booleanClauses) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
 	return float64(len(QueryBooleanQueries(q.Query))), nil
-}
-
-type booleanExploded struct{}
-
-func (booleanExploded) Name() string {
-	return "BooleanExploded"
-}
-
-func (booleanExploded) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	return float64(len(ExplodedKeywords(q.Query))), nil
 }
 
 type booleanTruncated struct{}
