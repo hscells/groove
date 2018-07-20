@@ -164,7 +164,7 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 		return nil, err
 	}
 	pmids = s.IdList
-	log.Printf("%d/%d\n", s.RetStart, s.Count)
+	log.Printf("%d/%d\n", s.RetStart+len(pmids), s.Count)
 
 	// If the number of pmids equals the execute size, there might be more to come.
 	if len(pmids) == e.options.Size {
@@ -369,7 +369,7 @@ func (e EntrezStatisticsSource) TermVector(document string) (TermVector, error) 
 	for term, df := range at {
 		tv = append(tv, TermVectorTerm{
 			DocumentFrequency: df,
-			Field:             "abstract",
+			Field:             "text",
 			Term:              term,
 		})
 	}
@@ -489,7 +489,11 @@ func (e EntrezStatisticsSource) Execute(query groove.PipelineQuery, options Sear
 }
 
 func (e EntrezStatisticsSource) CollectionSize() (float64, error) {
-	panic("implement me")
+	info, err := entrez.DoInfo("pubmed", e.tool, e.email)
+	if err != nil {
+		return 0, err
+	}
+	return float64(info.DbInfo.Count), nil
 }
 
 // EntrezTool sets the tool name for entrez.
@@ -534,12 +538,11 @@ func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) 
 
 	ncbi.SetTimeout(time.Minute)
 
-	// Set the document collection size.
-	info, err := entrez.DoInfo("pubmed", e.tool, e.email)
+	var err error
+	e.n, err = e.CollectionSize()
 	if err != nil {
 		return EntrezStatisticsSource{}, err
 	}
-	e.n = float64(info.DbInfo.Count)
 
 	return *e, nil
 }
