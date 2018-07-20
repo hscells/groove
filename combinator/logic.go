@@ -228,6 +228,13 @@ func (orOperator) String() string {
 }
 
 func (notOperator) Combine(nodes []LogicalTreeNode, cache QueryCacher) Documents {
+	if len(nodes) == 0 {
+		return Documents{}
+	}
+	if len(nodes) == 1 {
+		return nodes[0].Documents(cache)
+	}
+
 	var a Documents
 	b := make([]map[Document]struct{}, len(nodes))
 
@@ -377,12 +384,11 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen Q
 		var docs Documents
 
 		mu.Lock()
+		defer mu.Unlock()
 		docs, err := seen.Get(q)
 		if err == nil && docs != nil {
-			mu.Unlock()
 			return NewAtom(q), seen, nil
 		} else if err != nil && err != ErrCacheMiss {
-			mu.Unlock()
 			return nil, nil, err
 		}
 
@@ -402,8 +408,6 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen Q
 		if err != nil {
 			return nil, nil, err
 		}
-		mu.Unlock()
-
 		return a, seen, nil
 	case cqr.BooleanQuery:
 		var operator Operator
