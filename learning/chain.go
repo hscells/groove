@@ -24,6 +24,7 @@ import (
 	"github.com/hscells/trecresults"
 	"io/ioutil"
 	"os"
+	"github.com/go-errors/errors"
 )
 
 // QueryChain contains implementations for transformations to apply to a query and the selector to pick a candidate.
@@ -69,10 +70,11 @@ func (qc *QueryChain) Generate() error {
 		var nextCandidates []CandidateQuery
 		queryCandidates = append(queryCandidates, NewCandidateQuery(cq.Query, nil))
 		cache := make(map[uint64]struct{})
-		log.Println("this is topic", cq.Topic)
 		for i := 0; i < nTimes; i++ {
 			log.Printf("loop #%v with %v candidate(s)", i, len(queryCandidates))
 			for j, q := range queryCandidates {
+
+				log.Println("this is topic", cq.Topic)
 
 				// Generate variations.
 				log.Println(len(queryCandidates)-j, "to go")
@@ -80,7 +82,7 @@ func (qc *QueryChain) Generate() error {
 
 				candidates, err := Variations(q, qc.StatisticsSource, qc.MeasurementExecutor, qc.Measurements, qc.Transformations...)
 				if err != nil {
-					panic(err)
+					return err
 				}
 
 				log.Println("generated", len(candidates), "candidates")
@@ -152,7 +154,6 @@ func (qc *QueryChain) Generate() error {
 				if concurrency > maxConcurrency {
 					concurrency = maxConcurrency
 				}
-				log.Println("nthreads:", concurrency)
 
 				sem := make(chan bool, concurrency)
 				for i, candidate := range candidates {
@@ -170,6 +171,7 @@ func (qc *QueryChain) Generate() error {
 						tree, _, err := combinator.NewLogicalTree(gq, qc.StatisticsSource, qc.QueryCacher)
 						if err != nil {
 							fmt.Println(err)
+							fmt.Println(errors.Wrap(err, 0).ErrorStack())
 							return
 						}
 						r := tree.Documents(qc.QueryCacher).Results(gq, "features")
@@ -182,26 +184,33 @@ func (qc *QueryChain) Generate() error {
 
 						fn := strconv.Itoa(int(combinator.HashCQR(c.Query)))
 						// Write the query outside the lock.
-						ioutil.WriteFile(
+						err = ioutil.WriteFile(
 							path.Join("transformed_queries", fn),
 							bytes.NewBufferString(s).Bytes(),
 							0644)
+						if err != nil {
+							fmt.Println(err)
+							fmt.Println(errors.Wrap(err, 0).ErrorStack())
+							return
+						}
 
 						// Lock and write the results for each evaluation metric to file.
-						mu.Lock()
 						lf := NewLearntFeature(c.Features)
 						lf.Topic = gq.Topic
-						lf.Comment = gq.Topic
+						lf.Comment = fn
 						lf.Scores = make([]float64, len(qc.Evaluators))
 						for i, e := range qc.Evaluators {
 							lf.Scores[i] = evaluation[e.Name()]
 						}
+						mu.Lock()
+						defer mu.Unlock()
 						err = qc.CandidateSelector.Output(lf, w)
 						if err != nil {
 							fmt.Println(err)
+							fmt.Println(errors.Wrap(err, 0).ErrorStack())
 							return
 						}
-						mu.Unlock()
+						return
 					}(candidate, i)
 				}
 				// Wait until the last goroutine has read from the semaphore.

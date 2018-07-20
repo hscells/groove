@@ -2,7 +2,6 @@ package learning
 
 import (
 	"fmt"
-	"github.com/go-errors/errors"
 	"github.com/hscells/cqr"
 	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/analysis"
@@ -11,13 +10,10 @@ import (
 	"github.com/hscells/metawrap"
 	"github.com/hscells/transmute"
 	"github.com/xtgo/set"
-	"gopkg.in/olivere/elastic.v5"
-	"log"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 const (
@@ -295,29 +291,21 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 
 	for _, transformation := range transformations {
 		wg.Add(1)
+		var e error
 		go func(t Transformation) {
 			defer wg.Done()
-		v:
 			c, err := variations(query, TransformationContext{}, ss, me, measurements, t)
-			if elastic.IsConnErr(err) || elastic.IsTimeout(err) {
-				log.Println("Elasticsearch error -- retrying...")
-				time.Sleep(5 * time.Second)
-				goto v
-			}
 			if err != nil {
-				if strings.Contains(err.Error(), "can't assign requested address") {
-					log.Println("can't connect -- retrying...")
-					//errors.Wrap(err, "error")
-					fmt.Println(err.(*errors.Error).ErrorStack())
-					time.Sleep(5 * time.Second)
-					goto v
-				}
-				log.Println(err)
+				e = err
+				return
 			}
 			mu.Lock()
 			vars = append(vars, c...)
 			mu.Unlock()
 		}(transformation)
+		if e != nil {
+			return nil, e
+		}
 	}
 
 	wg.Wait()

@@ -32,6 +32,8 @@ func (ReinforcementQueryCandidateSelector) Output(lf LearntFeature, w io.Writer)
 	for _, feature := range lf.Features {
 		b.WriteString(fmt.Sprintf(" %d:%f", feature.ID, feature.Score))
 	}
+	b.WriteString(" # ")
+	b.WriteString(lf.Comment)
 	b.WriteString("\n")
 	_, err := w.Write(b.Bytes())
 	return err

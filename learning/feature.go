@@ -67,15 +67,14 @@ var MeasurementFeatureKeys = map[string]int{
 	analysis.BooleanFields.Name():        measurementFeatures,
 	analysis.BooleanClauses.Name():       measurementFeatures + 1,
 	analysis.BooleanKeywords.Name():      measurementFeatures + 2,
-	analysis.BooleanExploded.Name():      measurementFeatures + 3,
-	analysis.BooleanTruncated.Name():     measurementFeatures + 4,
-	preqpp.RetrievalSize.Name():          measurementFeatures + 5,
-	preqpp.QueryScope.Name():             measurementFeatures + 6,
-	analysis.MeshKeywordCount.Name():     measurementFeatures + 7,
-	analysis.MeshExplodedCount.Name():    measurementFeatures + 8,
-	analysis.MeshNonExplodedCount.Name(): measurementFeatures + 9,
-	analysis.MeshAvgDepth.Name():         measurementFeatures + 10,
-	analysis.MeshMaxDepth.Name():         measurementFeatures + 11,
+	analysis.BooleanTruncated.Name():     measurementFeatures + 3,
+	preqpp.RetrievalSize.Name():          measurementFeatures + 4,
+	preqpp.QueryScope.Name():             measurementFeatures + 5,
+	analysis.MeshKeywordCount.Name():     measurementFeatures + 6,
+	analysis.MeshExplodedCount.Name():    measurementFeatures + 7,
+	analysis.MeshNonExplodedCount.Name(): measurementFeatures + 8,
+	analysis.MeshAvgDepth.Name():         measurementFeatures + 9,
+	analysis.MeshMaxDepth.Name():         measurementFeatures + 10,
 }
 
 // Chain of transformations !!THIS MUST BE THE LAST FEATURE IN THE LIST!!
