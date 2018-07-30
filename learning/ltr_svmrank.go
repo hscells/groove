@@ -15,8 +15,8 @@ import (
 	"io"
 )
 
-// LTRQueryCandidateSelector uses learning to rank to select query chain candidates.
-type LTRQueryCandidateSelector struct {
+// SVMRankQueryCandidateSelector uses learning to rank to select query chain candidates.
+type SVMRankQueryCandidateSelector struct {
 	depth     int32
 	modelFile string
 }
@@ -62,17 +62,17 @@ func getRanking(filename string, candidates []CandidateQuery) (cqr.CommonQueryRe
 	return ranks[0].query, nil
 }
 
-func (sel LTRQueryCandidateSelector) Train(features []LearntFeature) ([]byte, error) {
+func (sel SVMRankQueryCandidateSelector) Train(features []LearntFeature) ([]byte, error) {
 	return nil, nil
 }
 
-func (sel LTRQueryCandidateSelector) Output(lf LearntFeature, w io.Writer) error {
+func (sel SVMRankQueryCandidateSelector) Output(lf LearntFeature, w io.Writer) error {
 	_, err := lf.WriteLibSVMRank(w)
 	return err
 }
 
 // Select uses a Ranking SVM to select the next most likely candidate.
-func (sel LTRQueryCandidateSelector) Select(query TransformedQuery, transformations []CandidateQuery) (TransformedQuery, QueryChainCandidateSelector, error) {
+func (sel SVMRankQueryCandidateSelector) Select(query TransformedQuery, transformations []CandidateQuery) (TransformedQuery, QueryChainCandidateSelector, error) {
 	f, err := os.OpenFile("tmp.features", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		panic(err)
@@ -108,13 +108,13 @@ func (sel LTRQueryCandidateSelector) Select(query TransformedQuery, transformati
 }
 
 // StoppingCriteria stops when the depth approaches 500.
-func (sel LTRQueryCandidateSelector) StoppingCriteria() bool {
+func (sel SVMRankQueryCandidateSelector) StoppingCriteria() bool {
 	return sel.depth >= 5
 }
 
-// NewLTRQueryCandidateSelector creates a new learning to rank candidate selector.
-func NewLTRQueryCandidateSelector(modelFile string) LTRQueryCandidateSelector {
-	return LTRQueryCandidateSelector{
+// NewSVMRankQueryCandidateSelector creates a new learning to rank candidate selector.
+func NewSVMRankQueryCandidateSelector(modelFile string) SVMRankQueryCandidateSelector {
+	return SVMRankQueryCandidateSelector{
 		modelFile: modelFile,
 	}
 }

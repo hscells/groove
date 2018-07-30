@@ -37,7 +37,7 @@ type QueryChain struct {
 	Queries             []groove.PipelineQuery
 	LearntFeatures      []LearntFeature
 	GenerationDepth     int
-	GeneartionFile      string
+	GenerationFile      string
 	Evaluators          []eval.Evaluator
 	QueryCacher         combinator.QueryCacher
 	QrelsFile           trecresults.QrelsFile
@@ -59,7 +59,7 @@ func sample(n int, a []CandidateQuery) []CandidateQuery {
 
 // Generate will create test data sampling using random stratified sampling.
 func (qc *QueryChain) Generate() error {
-	w, err := os.OpenFile(qc.GeneartionFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+	w, err := os.OpenFile(qc.GenerationFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
 	if err != nil {
 		return err
 	}
@@ -249,10 +249,12 @@ func (qc *QueryChain) Output(w io.Writer) error {
 	return nil
 }
 
+// This model will output a number of TransformedQuery's from the test phase.
 func (qc *QueryChain) Type() reflect.Type {
 	return reflect.TypeOf([]TransformedQuery{})
 }
 
+// Train hands off the training to the candidate selector.
 func (qc *QueryChain) Train() error {
 	_, err := qc.CandidateSelector.Train(qc.LearntFeatures)
 	return err
@@ -279,8 +281,8 @@ type LearntCandidateQuery struct {
 }
 
 // NewQueryChain creates a new query chain with implementations for a selector and transformations.
-func NewQueryChain(selector QueryChainCandidateSelector, ss stats.StatisticsSource, me analysis.MeasurementExecutor, measurements []analysis.Measurement, transformations ...Transformation) QueryChain {
-	return QueryChain{
+func NewQueryChain(selector QueryChainCandidateSelector, ss stats.StatisticsSource, me analysis.MeasurementExecutor, measurements []analysis.Measurement, transformations ...Transformation) *QueryChain {
+	return &QueryChain{
 		CandidateSelector:   selector,
 		Transformations:     transformations,
 		Measurements:        measurements,
@@ -296,7 +298,8 @@ func (qc *QueryChain) Execute(q groove.PipelineQuery) (TransformedQuery, error) 
 	var (
 		stop bool
 	)
-	stop = qc.CandidateSelector.StoppingCriteria()
+	sel := qc.CandidateSelector
+	stop = sel.StoppingCriteria()
 	tq := NewTransformedQuery(q)
 	for !stop {
 		candidates, err := Variations(NewCandidateQuery(tq.PipelineQuery.Query, nil), qc.StatisticsSource, qc.MeasurementExecutor, qc.Measurements, qc.Transformations...)
@@ -308,18 +311,25 @@ func (qc *QueryChain) Execute(q groove.PipelineQuery) (TransformedQuery, error) 
 			break
 		}
 
-		tq, qc.CandidateSelector, err = qc.CandidateSelector.Select(tq, candidates)
+		tq, sel, err = sel.Select(tq, candidates)
 		if err != nil && err != combinator.ErrCacheMiss {
 			return TransformedQuery{}, err
 		}
-		stop = qc.CandidateSelector.StoppingCriteria()
+		stop = sel.StoppingCriteria()
 	}
 	return tq, nil
 }
 
-func NewLearningToRankQueryChain(modelFile string) *QueryChain {
+func NewSVMRankQueryChain(modelFile string) *QueryChain {
 	return &QueryChain{
-		CandidateSelector: NewLTRQueryCandidateSelector(modelFile),
+		CandidateSelector: NewSVMRankQueryCandidateSelector(modelFile),
+		GenerationDepth:   5,
+	}
+}
+
+func NewQuickRankQueryChain(binary string, arguments map[string]interface{}) *QueryChain {
+	return &QueryChain{
+		CandidateSelector: NewQuickRankQueryCandidateSelector(binary, arguments),
 		GenerationDepth:   5,
 	}
 }

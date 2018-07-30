@@ -23,6 +23,7 @@ import (
 
 // GroovePipeline contains all the information for executing a pipeline for query analysis.
 type GroovePipeline struct {
+	QueryPath             string
 	QueriesSource         query.QueriesSource
 	StatisticsSource      stats.StatisticsSource
 	Preprocess            []preprocess.QueryProcessor
@@ -43,7 +44,6 @@ type ModelConfiguration struct {
 	Generate bool
 	Train    bool
 	Test     bool
-	Validate bool
 }
 
 // EvaluationOutputFormat specifies out evaluation output should be formatted.
@@ -133,106 +133,27 @@ func NewGroovePipeline(qs query.QueriesSource, ss stats.StatisticsSource, compon
 }
 
 // Execute runs a groove pipeline for a particular directory of queries.
-func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineResult) {
-	// Load and process the queries.
-	queries, err := pipeline.QueriesSource.Load(directory)
-	if err != nil {
-		c <- groove.PipelineResult{
-			Error: err,
-			Type:  groove.Error,
-		}
-		return
-	}
+func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
+	defer close(c)
+	// TODO this method needs some serious refactoring done to it.
 
-	if pipeline.QueryCache == nil {
-		pipeline.QueryCache = combinator.NewFileQueryCache("file_cache")
-	}
-
+	// Configure caches.
 	statisticsCache := diskv.New(diskv.Options{
 		BasePath:     "statistics_cache",
 		Transform:    combinator.BlockTransform(8),
 		CacheSizeMax: 4096 * 1024,
 		Compression:  diskv.NewGzipCompression(),
 	})
+
+	if pipeline.QueryCache == nil {
+		pipeline.QueryCache = combinator.NewFileQueryCache("file_cache")
+	}
+
 	pipeline.MeasurementExecutor = analysis.NewDiskMeasurementExecutor(statisticsCache)
 
-	// Here we need to configure how the queries are loaded into each learning model.
-	if pipeline.Model != nil {
-		switch m := pipeline.Model.(type) {
-		case *learning.QueryChain:
-			m.Queries = queries
-			m.QueryCacher = pipeline.QueryCache
-			m.MeasurementExecutor = pipeline.MeasurementExecutor
-		}
-	}
-
-	// This means preprocessing the query.
-	measurementQueries := make([]groove.PipelineQuery, len(queries))
-	topics := make([]string, len(queries))
-	for i, q := range queries {
-		topics[i] = q.Name
-		// Ensure there is a processed query.
-
-		// And apply the processing if there is any.
-		for _, p := range pipeline.Preprocess {
-			q = groove.NewPipelineQuery(q.Name, q.Topic, preprocess.ProcessQuery(q.Query, p))
-		}
-
-		// Apply any transformations.
-		for _, t := range pipeline.Transformations.BooleanTransformations {
-			q = groove.NewPipelineQuery(q.Name, q.Topic, t(q.Query)())
-		}
-		for _, t := range pipeline.Transformations.ElasticsearchTransformations {
-			if s, ok := pipeline.StatisticsSource.(*stats.ElasticsearchStatisticsSource); ok {
-				q = groove.NewPipelineQuery(q.Name, q.Topic, t(q.Query, s)())
-			} else {
-				log.Fatal("Elasticsearch transformations only work with an Elasticsearch statistics source.")
-			}
-		}
-		measurementQueries[i] = q
-	}
-
-	// Sort the transformed queries by size.
-	sort.Slice(measurementQueries, func(i, j int) bool {
-		return len(analysis.QueryBooleanQueries(measurementQueries[i].Query)) < len(analysis.QueryBooleanQueries(measurementQueries[j].Query))
-	})
-
-	for _, mq := range measurementQueries {
-		log.Println(mq.Topic)
-	}
-
-	// Compute measurements for each of the queries.
-	// The measurements are computed in parallel.
-	N := len(pipeline.Measurements)
-	headers := make([]string, N)
-	data := make([][]float64, N)
-
-	// data[measurement][queryN]
-	for i, m := range pipeline.Measurements {
-		headers[i] = m.Name()
-		data[i] = make([]float64, len(queries))
-		for qi, measurementQuery := range measurementQueries {
-			data[i][qi], err = m.Execute(measurementQuery, pipeline.StatisticsSource)
-			if err != nil {
-				c <- groove.PipelineResult{
-					Error: err,
-					Type:  groove.Error,
-				}
-				return
-			}
-		}
-	}
-
-	// Format the measurement results into specified formats.
-	outputs := make([]string, len(pipeline.MeasurementFormatters))
-	for i, formatter := range pipeline.MeasurementFormatters {
-		if len(data) > 0 && len(topics) != len(data[0]) {
-			c <- groove.PipelineResult{
-				Error: errors.New("the length of topics and data must be the same"),
-				Type:  groove.Error,
-			}
-		}
-		outputs[i], err = formatter(topics, headers, data)
+	if len(pipeline.QueryPath) > 0 {
+		// Load and process the queries.
+		queries, err := pipeline.QueriesSource.Load(pipeline.QueryPath)
 		if err != nil {
 			c <- groove.PipelineResult{
 				Error: err,
@@ -240,94 +161,183 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 			}
 			return
 		}
-	}
-	c <- groove.PipelineResult{
-		Measurements: outputs,
-		Type:         groove.Measurement,
-	}
 
-	// This section is run concurrently, since the results can sometimes get quite large and we don't want to eat ram.
-	if len(pipeline.Evaluations) > 0 && (len(pipeline.OutputTrec.Path) > 0 || len(pipeline.EvaluationFormatters.EvaluationFormatters) > 0) {
+		// Here we need to configure how the queries are loaded into each learning model.
+		if pipeline.Model != nil {
+			switch m := pipeline.Model.(type) {
+			case *learning.QueryChain:
+				m.Queries = queries
+				m.QueryCacher = pipeline.QueryCache
+				m.MeasurementExecutor = pipeline.MeasurementExecutor
+			}
+		}
 
-		// Store the measurements to be output later.
-		measurements := make(map[string]map[string]float64)
+		// This means preprocessing the query.
+		measurementQueries := make([]groove.PipelineQuery, len(queries))
+		topics := make([]string, len(queries))
+		for i, q := range queries {
+			topics[i] = q.Name
+			// Ensure there is a processed query.
 
-		// Set the limit to how many goroutines can be run.
-		// http://jmoiron.net/blog/limiting-concurrency-in-go/
-		concurrency := runtime.NumCPU()
+			// And apply the processing if there is any.
+			for _, p := range pipeline.Preprocess {
+				q = groove.NewPipelineQuery(q.Name, q.Topic, preprocess.ProcessQuery(q.Query, p))
+			}
 
-		sem := make(chan bool, concurrency)
-		for i, q := range measurementQueries {
-			sem <- true
-			go func(idx int, query groove.PipelineQuery) {
-				defer func() { <-sem }()
+			// Apply any transformations.
+			for _, t := range pipeline.Transformations.BooleanTransformations {
+				q = groove.NewPipelineQuery(q.Name, q.Topic, t(q.Query)())
+			}
+			for _, t := range pipeline.Transformations.ElasticsearchTransformations {
+				if s, ok := pipeline.StatisticsSource.(*stats.ElasticsearchStatisticsSource); ok {
+					q = groove.NewPipelineQuery(q.Name, q.Topic, t(q.Query, s)())
+				} else {
+					log.Fatal("Elasticsearch transformations only work with an Elasticsearch statistics source.")
+				}
+			}
+			measurementQueries[i] = q
+		}
 
-				// Execute the query.
-				docIds, err := stats.GetDocumentIDs(query, pipeline.StatisticsSource)
+		// Sort the transformed queries by size.
+		sort.Slice(measurementQueries, func(i, j int) bool {
+			return len(analysis.QueryBooleanQueries(measurementQueries[i].Query)) < len(analysis.QueryBooleanQueries(measurementQueries[j].Query))
+		})
+
+		for _, mq := range measurementQueries {
+			log.Println(mq.Topic)
+		}
+
+		// Compute measurements for each of the queries.
+		// The measurements are computed in parallel.
+		N := len(pipeline.Measurements)
+		headers := make([]string, N)
+		data := make([][]float64, N)
+
+		// Only perform the measurements if there are some measurement formatters to output them to.
+		if len(pipeline.MeasurementFormatters) > 0 {
+			// data[measurement][queryN]
+			for i, m := range pipeline.Measurements {
+				headers[i] = m.Name()
+				data[i] = make([]float64, len(queries))
+				for qi, measurementQuery := range measurementQueries {
+					data[i][qi], err = m.Execute(measurementQuery, pipeline.StatisticsSource)
+					if err != nil {
+						c <- groove.PipelineResult{
+							Error: err,
+							Type:  groove.Error,
+						}
+						return
+					}
+				}
+			}
+
+			// Format the measurement results into specified formats.
+			outputs := make([]string, len(pipeline.MeasurementFormatters))
+			for i, formatter := range pipeline.MeasurementFormatters {
+				if len(data) > 0 && len(topics) != len(data[0]) {
+					c <- groove.PipelineResult{
+						Error: errors.New("the length of topics and data must be the same"),
+						Type:  groove.Error,
+					}
+				}
+				outputs[i], err = formatter(topics, headers, data)
 				if err != nil {
 					c <- groove.PipelineResult{
-						Topic: query.Topic,
 						Error: err,
 						Type:  groove.Error,
 					}
 					return
 				}
-				results := make(combinator.Documents, len(docIds))
-				for i, id := range docIds {
-					results[i] = combinator.Document(id)
-				}
-				pipeline.QueryCache.Set(query.Query, results)
-				trecResults := results.Results(query, query.Name)
-				//trecResults, err := pipeline.StatisticsSource.Execute(query, pipeline.StatisticsSource.SearchOptions())
-
-				// Set the evaluation results.
-				if len(pipeline.Evaluations) > 0 {
-					measurements[query.Topic] = eval.Evaluate(pipeline.Evaluations, &trecResults, pipeline.EvaluationFormatters.EvaluationQrels, query.Topic)
-				}
-
-				// MeasurementOutput the trec results.
-				if len(pipeline.OutputTrec.Path) > 0 {
-					c <- groove.PipelineResult{
-						Topic:       query.Topic,
-						TrecResults: &trecResults,
-						Type:        groove.TrecResult,
-					}
-				}
-
-				// Send the transformation through the channel.
-				c <- groove.PipelineResult{
-					Transformation: groove.QueryResult{Name: query.Name, Topic: query.Topic, Transformation: query.Query},
-					Type:           groove.Transformation,
-				}
-
-				log.Printf("completed topic %v\n", query.Topic)
-			}(i, q)
-		}
-
-		// Wait until the last goroutine has read from the semaphore.
-		for i := 0; i < cap(sem); i++ {
-			sem <- true
-		}
-
-		// MeasurementOutput the evaluation results.
-		evaluations := make([]string, len(pipeline.EvaluationFormatters.EvaluationFormatters))
-		// Now we can finally get to formatting the evaluation results.
-		for i, f := range pipeline.EvaluationFormatters.EvaluationFormatters {
-			r, err := f(measurements)
-			if err != nil {
-				c <- groove.PipelineResult{
-					Error: err,
-					Type:  groove.Error,
-				}
-				return
 			}
-			evaluations[i] = r
+			c <- groove.PipelineResult{
+				Measurements: outputs,
+				Type:         groove.Measurement,
+			}
 		}
 
-		// And send the through the channel.
-		c <- groove.PipelineResult{
-			Evaluations: evaluations,
-			Type:        groove.Evaluation,
+		// This section is run concurrently, since the results can sometimes get quite large and we don't want to eat ram.
+		if len(pipeline.Evaluations) > 0 && (len(pipeline.OutputTrec.Path) > 0 || len(pipeline.EvaluationFormatters.EvaluationFormatters) > 0) {
+
+			// Store the measurements to be output later.
+			measurements := make(map[string]map[string]float64)
+
+			// Set the limit to how many goroutines can be run.
+			// http://jmoiron.net/blog/limiting-concurrency-in-go/
+			concurrency := runtime.NumCPU()
+
+			sem := make(chan bool, concurrency)
+			for i, q := range measurementQueries {
+				sem <- true
+				go func(idx int, query groove.PipelineQuery) {
+					defer func() { <-sem }()
+
+					// Execute the query.
+					docIds, err := stats.GetDocumentIDs(query, pipeline.StatisticsSource)
+					if err != nil {
+						c <- groove.PipelineResult{
+							Topic: query.Topic,
+							Error: err,
+							Type:  groove.Error,
+						}
+						return
+					}
+					results := make(combinator.Documents, len(docIds))
+					for i, id := range docIds {
+						results[i] = combinator.Document(id)
+					}
+					pipeline.QueryCache.Set(query.Query, results)
+					trecResults := results.Results(query, query.Name)
+					//trecResults, err := pipeline.StatisticsSource.Execute(query, pipeline.StatisticsSource.SearchOptions())
+
+					// Set the evaluation results.
+					if len(pipeline.Evaluations) > 0 {
+						measurements[query.Topic] = eval.Evaluate(pipeline.Evaluations, &trecResults, pipeline.EvaluationFormatters.EvaluationQrels, query.Topic)
+					}
+
+					// MeasurementOutput the trec results.
+					if len(pipeline.OutputTrec.Path) > 0 {
+						c <- groove.PipelineResult{
+							Topic:       query.Topic,
+							TrecResults: &trecResults,
+							Type:        groove.TrecResult,
+						}
+					}
+
+					// Send the transformation through the channel.
+					c <- groove.PipelineResult{
+						Transformation: groove.QueryResult{Name: query.Name, Topic: query.Topic, Transformation: query.Query},
+						Type:           groove.Transformation,
+					}
+
+					log.Printf("completed topic %v\n", query.Topic)
+				}(i, q)
+			}
+
+			// Wait until the last goroutine has read from the semaphore.
+			for i := 0; i < cap(sem); i++ {
+				sem <- true
+			}
+
+			// MeasurementOutput the evaluation results.
+			evaluations := make([]string, len(pipeline.EvaluationFormatters.EvaluationFormatters))
+			// Now we can finally get to formatting the evaluation results.
+			for i, f := range pipeline.EvaluationFormatters.EvaluationFormatters {
+				r, err := f(measurements)
+				if err != nil {
+					c <- groove.PipelineResult{
+						Error: err,
+						Type:  groove.Error,
+					}
+					return
+				}
+				evaluations[i] = r
+			}
+
+			// And send the through the channel.
+			c <- groove.PipelineResult{
+				Evaluations: evaluations,
+				Type:        groove.Evaluation,
+			}
 		}
 	}
 
@@ -343,10 +353,22 @@ func (pipeline GroovePipeline) Execute(directory string, c chan groove.PipelineR
 				return
 			}
 		}
+		if pipeline.ModelConfiguration.Train {
+			log.Println("training model")
+			err := pipeline.Model.Train()
+			if err != nil {
+				c <- groove.PipelineResult{
+					Error: err,
+					Type:  groove.Error,
+				}
+				return
+			}
+		}
 	}
 
 	// Return the formatted results.
 	c <- groove.PipelineResult{
 		Type: groove.Done,
 	}
+	return
 }
