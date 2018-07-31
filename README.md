@@ -67,6 +67,20 @@ for {
 }
 ```
 
+## Citing
+
+If you use this work for scientific publication, please reference
+
+```
+@inproceedings{scells2018framework,
+ author = {Scells, Harrisen and Locke, Daniel and Zuccon, Guido},
+ title = {An Information Retrieval Experiment Framework for Domain Specific Applications},
+ booktitle = {The 41st International ACM SIGIR Conference on Research \&\#38; Development in Information Retrieval},
+ series = {SIGIR '18},
+ year = {2018},
+} 
+```
+
 ## Logo
 
 The Go gopher was created by [Renee French](https://reneefrench.blogspot.com/), licensed under
