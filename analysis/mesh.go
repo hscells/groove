@@ -3,9 +3,9 @@ package analysis
 import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/groove"
-	"github.com/hscells/transmute"
 	"github.com/hscells/meshexp"
 	"strings"
+	"github.com/hscells/transmute/fields"
 )
 
 var MeSHTree, _ = meshexp.Default()
@@ -31,7 +31,7 @@ func (meshKeywordCount) Name() string {
 }
 
 func (meshKeywordCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	return float64(len(KeywordsWithField(q.Query, transmute.MeshHeadingsField))), nil
+	return float64(len(KeywordsWithField(q.Query, fields.MeshHeadings))), nil
 }
 
 type meshExplodedCount struct{}
@@ -61,7 +61,7 @@ func (meshAvgDepth) Name() string {
 }
 
 func (meshAvgDepth) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	keywords := KeywordsWithField(q.Query, transmute.MeshHeadingsField)
+	keywords := KeywordsWithField(q.Query, fields.MeshHeadings)
 	if len(keywords) == 0 {
 		return 0, nil
 	}
@@ -79,7 +79,7 @@ func (meshMaxDepth) Name() string {
 }
 
 func (meshMaxDepth) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
-	keywords := KeywordsWithField(q.Query, transmute.MeshHeadingsField)
+	keywords := KeywordsWithField(q.Query, fields.MeshHeadings)
 	var max int64
 	for _, kw := range keywords {
 		d := MeSHTree.Depth(normalise(kw.QueryString))

@@ -15,7 +15,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"github.com/hscells/transmute"
+	"github.com/hscells/transmute/fields"
 )
 
 // Measurement is a representation for how a measurement fits into the pipeline.
@@ -169,7 +169,7 @@ func KeywordsWithField(r cqr.CommonQueryRepresentation, f string) (mesh []cqr.Ke
 
 // MeshExplodedKeywords extracts all mesh heading keywords that are exploded.
 func MeshExplodedKeywords(r cqr.CommonQueryRepresentation) (exploded []cqr.Keyword) {
-	keywords := KeywordsWithField(r, transmute.MeshHeadingsField)
+	keywords := KeywordsWithField(r, fields.MeshHeadings)
 	for _, kw := range keywords {
 		if exp, ok := kw.Options[cqr.ExplodedString]; ok && exp.(bool) {
 			exploded = append(exploded, kw)
@@ -180,7 +180,7 @@ func MeshExplodedKeywords(r cqr.CommonQueryRepresentation) (exploded []cqr.Keywo
 
 // MeshExplodedKeywords extracts all mesh heading keywords that are not exploded.
 func MeshNonExplodedKeywords(r cqr.CommonQueryRepresentation) (exploded []cqr.Keyword) {
-	keywords := KeywordsWithField(r, transmute.MeshHeadingsField)
+	keywords := KeywordsWithField(r, fields.MeshHeadings)
 	for _, kw := range keywords {
 		if exp, ok := kw.Options[cqr.ExplodedString]; ok && !exp.(bool) {
 			exploded = append(exploded, kw)
@@ -218,7 +218,7 @@ func TruncatedKeywords(r cqr.CommonQueryRepresentation) (truncated []cqr.Keyword
 // ContainsMeshField returns if a keyword query contains a mesh heading field.
 func ContainsMeshField(kw cqr.Keyword) bool {
 	for _, field := range kw.Fields {
-		if field == transmute.MeshHeadingsField {
+		if field == fields.MeshHeadings {
 			return true
 		}
 	}
