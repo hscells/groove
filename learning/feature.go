@@ -100,18 +100,13 @@ type LearntFeature struct {
 	Comment string
 }
 
-// TransformedQuery is the current most query in the query chain.
-type TransformedQuery struct {
-	QueryChain    []cqr.CommonQueryRepresentation
-	PipelineQuery groove.PipelineQuery
-}
-
 // CandidateQuery is a possible transformation a query can take.
 type CandidateQuery struct {
-	Features
-	Query            cqr.CommonQueryRepresentation
 	TransformationID int
+	Topic            string
+	Query            cqr.CommonQueryRepresentation
 	Chain            []CandidateQuery
+	Features
 }
 
 func keywordFeatures(q cqr.Keyword) Features {
@@ -197,7 +192,7 @@ func deltas(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, meas
 		if v, ok := MeasurementFeatureKeys[measurement.Name()]; ok {
 			deltas[v] = m[i]
 		} else {
-			return nil, errors.New(fmt.Sprintf("%s is not registed as a feature in MeasurementFeatureKeys", measurement.Name()))
+			return nil, errors.New(fmt.Sprintf("%s is not registered as a feature in MeasurementFeatureKeys", measurement.Name()))
 		}
 	}
 
@@ -222,18 +217,24 @@ func computeDeltas(preTransformation deltaFeatures, postTransformation deltaFeat
 
 // transformationFeature is a feature representing the previous feature that was applied to a query.
 func transformationFeature(transformer Transformer) Feature {
-	transformationType := NewFeature(TransformationTypeFeature, 0)
+	transformationType := NewFeature(TransformationTypeFeature, -1)
 	switch transformer.(type) {
 	case logicalOperatorReplacement:
-		transformationType.Score = 1
+		transformationType.Score = LogicalOperatorTransformation
 	case *adjacencyRange:
-		transformationType.Score = 2
+		transformationType.Score = AdjacencyRangeTransformation
 	case meshExplosion:
-		transformationType.Score = 3
+		transformationType.Score = MeshExplosionTransformation
 	case fieldRestrictions:
-		transformationType.Score = 4
+		transformationType.Score = FieldRestrictionsTransformation
 	case adjacencyReplacement:
-		transformationType.Score = 5
+		transformationType.Score = AdjacencyReplacementTransformation
+	case clauseRemoval:
+		transformationType.Score = ClauseRemovalTransformation
+	case cui2vecExpansion:
+		transformationType.Score = Cui2vecExpansionTransformation
+	case meshParent:
+		transformationType.Score = MeshParentTransformation
 	}
 	return transformationType
 }
@@ -243,11 +244,11 @@ func (ff Features) String() string {
 	sort.Sort(ff)
 	size := set.Uniq(ff)
 	tmp := ff[:size]
-	s := "0 "
-	for _, f := range tmp {
-		s += fmt.Sprintf("%v:%v ", f.ID, f.Score)
+	s := make([]string, len(ff))
+	for i, f := range tmp {
+		s[i] = fmt.Sprintf("%v:%v", f.ID, f.Score)
 	}
-	return s
+	return strings.Join(s, " ")
 }
 
 // WriteLibSVM writes a LIBSVM compatible line to a writer.
@@ -308,24 +309,10 @@ func NewLearntFeature(features Features) LearntFeature {
 	}
 }
 
-// Append adds the most recent query transformation to the chain and updates the current query.
-func (t TransformedQuery) Append(query groove.PipelineQuery) TransformedQuery {
-	t.QueryChain = append(t.QueryChain, t.PipelineQuery.Query)
-	t.PipelineQuery = query
-	return t
-}
-
-// NewTransformedQuery creates a new transformed query.
-func NewTransformedQuery(query groove.PipelineQuery, chain ...cqr.CommonQueryRepresentation) TransformedQuery {
-	return TransformedQuery{
-		QueryChain:    chain,
-		PipelineQuery: query,
-	}
-}
-
 // NewCandidateQuery creates a new candidate query.
-func NewCandidateQuery(query cqr.CommonQueryRepresentation, ff Features) CandidateQuery {
+func NewCandidateQuery(query cqr.CommonQueryRepresentation, topic string, ff Features) CandidateQuery {
 	return CandidateQuery{
+		Topic:            topic,
 		Features:         ff,
 		Query:            query,
 		TransformationID: -1,
@@ -341,15 +328,33 @@ func (c CandidateQuery) SetTransformationID(id int) CandidateQuery {
 // Append adds the previous query to the chain of transformations so far so we can keep track of which transformations
 // have been applied up until this point, and for features about the query.
 func (c CandidateQuery) Append(query CandidateQuery) CandidateQuery {
-	c.Chain = query.Chain
+
+	query.Chain = append(query.Chain, query)
+	c.Chain = append(c.Chain, query.Chain...)
+
+	prevID := ChainFeatures
+	var features Features
+	for _, feature := range c.Features {
+		if feature.ID < ChainFeatures {
+			features = append(features, feature)
+			continue
+		}
+
+		if prevID <= feature.ID {
+			continue
+		}
+
+		features = append(features, feature)
+		prevID = feature.ID
+	}
+
+	c.Features = features
 
 	// Chain features is the minimum possible index for these features.
 	idx := ChainFeatures
 	for i, candidate := range c.Chain {
 		c.Features = append(c.Features, NewFeature(idx+i, float64(candidate.TransformationID)))
 	}
-
-	c.Chain = append(c.Chain, query)
 
 	return c
 }

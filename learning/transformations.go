@@ -7,13 +7,13 @@ import (
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/metawrap"
-	"github.com/hscells/transmute"
 	"github.com/xtgo/set"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"github.com/hscells/transmute/fields"
+	"github.com/hscells/quickumlsrest"
 )
 
 const (
@@ -65,9 +65,9 @@ type adjacencyReplacement struct{}
 type clauseRemoval struct{}
 
 type cui2vecExpansion struct {
-	vector  cui2vec.Vector
-	mapping cui2vec.Mapping
-	metamap metawrap.MetaMap
+	vector    cui2vec.Embeddings
+	mapping   cui2vec.Mapping
+	quickumls quickumlsrest.Client
 }
 
 type meshParent struct{}
@@ -104,13 +104,13 @@ func NewClauseRemovalTransformer() Transformation {
 }
 
 // NewClauseRemovalTransformer creates a clause removal transformer.
-func Newcui2vecExpansionTransformer(vector cui2vec.Vector, mapping cui2vec.Mapping, metamap metawrap.MetaMap) Transformation {
+func Newcui2vecExpansionTransformer(vector cui2vec.Embeddings, mapping cui2vec.Mapping, quickumls quickumlsrest.Client) Transformation {
 	return Transformation{
 		ID: Cui2vecExpansionTransformation,
 		Transformer: cui2vecExpansion{
-			vector:  vector,
-			mapping: mapping,
-			metamap: metamap,
+			vector:    vector,
+			mapping:   mapping,
+			quickumls: quickumls,
 		},
 	}
 }
@@ -149,7 +149,7 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 		// the parent query and update the child with the generated permutation.
 		for j, child := range q.Children {
 			// Apply this transformation.
-			perms, err := variations(NewCandidateQuery(child, nil).SetTransformationID(query.TransformationID), context, ss, me, measurements, transformations...)
+			perms, err := variations(NewCandidateQuery(child, query.Topic, nil).SetTransformationID(query.TransformationID).Append(query), context, ss, me, measurements, transformations...)
 			if err != nil {
 				return nil, err
 			}
@@ -185,14 +185,14 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 					features = append(features, computeDeltas(preDeltas, deltas)...)
 				}
 
-				queries = append(queries, NewCandidateQuery(tmp, features).SetTransformationID(applied.TransformationID).Append(query))
+				queries = append(queries, NewCandidateQuery(tmp, query.Topic, features).SetTransformationID(applied.TransformationID).Append(query))
 			}
 		}
 
 		// Apply the transformations to the current Boolean query.
 		for _, transformation := range transformations {
 			if transformation.BooleanApplicable() {
-				query.TransformationID = transformation.ID
+				//query.TransformationID = transformation.ID
 				c, err := transformation.Apply(q)
 				if err != nil {
 					return nil, err
@@ -218,7 +218,7 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 					}
 					features = append(features, computeDeltas(preDeltas, deltas)...)
 
-					queries = append(queries, NewCandidateQuery(applied, features).SetTransformationID(transformation.ID).Append(query))
+					queries = append(queries, NewCandidateQuery(applied, query.Topic, features).SetTransformationID(transformation.ID).Append(query))
 				}
 			}
 		}
@@ -241,12 +241,12 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 			SetChildrenCount(0)
 
 		// Add the original query to the list of candidates.
-		candidates = append(candidates, NewCandidateQuery(q, preFeatures).SetTransformationID(query.TransformationID).Append(query))
+		//candidates = append(candidates, NewCandidateQuery(q, query.Topic, preFeatures).SetTransformationID(query.TransformationID).Append(query))
 
 		// Next, apply the transformations to the current query.
 		for _, transformation := range transformations {
 			if !transformation.BooleanApplicable() {
-				query.TransformationID = transformation.ID
+				//query.TransformationID = transformation.ID
 				c, err := transformation.Apply(q)
 				if err != nil {
 					return nil, err
@@ -272,7 +272,7 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 					}
 					features = append(features, transformation.Features(applied, context)...)
 					features = append(features, transformationFeature(transformation.Transformer))
-					candidates = append(candidates, NewCandidateQuery(applied, features).SetTransformationID(transformation.ID).Append(query))
+					candidates = append(candidates, NewCandidateQuery(applied, query.Topic, features).SetTransformationID(transformation.ID).Append(query))
 				}
 			}
 		}
@@ -289,9 +289,9 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
+	var e error
 	for _, transformation := range transformations {
 		wg.Add(1)
-		var e error
 		go func(t Transformation) {
 			defer wg.Done()
 			c, err := variations(query, TransformationContext{}, ss, me, measurements, t)
@@ -303,9 +303,11 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 			vars = append(vars, c...)
 			mu.Unlock()
 		}(transformation)
-		if e != nil {
-			return nil, e
-		}
+
+	}
+
+	if e != nil {
+		return nil, e
 	}
 
 	wg.Wait()
@@ -600,7 +602,7 @@ func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []
 	switch q := query.(type) {
 	case cqr.Keyword:
 		// Use MetaMap to get the preferred cui.
-		candidates, err := c.metamap.PreferredCandidates(q.QueryString)
+		candidates, err := c.quickumls.Match(q.QueryString)
 		if err != nil {
 			return nil, err
 		}
@@ -612,20 +614,11 @@ func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []
 		// Next, parse and sort the candidates from MetaMap.
 		type concept struct {
 			cui   string
-			score int64
+			score float64
 		}
 		cuis := make([]concept, len(candidates))
 		for i, candidate := range candidates {
-			// We need to parse the score from MetaMap.
-			score, err := strconv.ParseInt(candidate.CandidateScore, 10, 64)
-			if err != nil {
-				return nil, err
-			}
-
-			// Scores from MetaMap come out as negative and we want to negate that.
-			score = -score
-
-			cuis[i] = concept{cui: candidate.CandidateCUI, score: score}
+			cuis[i] = concept{cui: candidate.CUI, score: candidate.Similarity}
 		}
 		sort.Slice(cuis, func(i, j int) bool {
 			return cuis[i].score < cuis[j].score
@@ -700,7 +693,7 @@ func (meshParent) Apply(query cqr.CommonQueryRepresentation) (queries []cqr.Comm
 		if analysis.ContainsMeshField(q) {
 			parents := set.Strings(analysis.MeSHTree.Parents(q.QueryString))
 			for _, parent := range parents {
-				queries = append(queries, cqr.NewKeyword(parent, transmute.MeshHeadingsField).SetOption(cqr.ExplodedString, false))
+				queries = append(queries, cqr.NewKeyword(parent, fields.MeshHeadings).SetOption(cqr.ExplodedString, false))
 			}
 		}
 	}

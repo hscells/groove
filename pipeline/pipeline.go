@@ -151,6 +151,7 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 
 	pipeline.MeasurementExecutor = analysis.NewDiskMeasurementExecutor(statisticsCache)
 
+	// Only perform this section if there are some queries.
 	if len(pipeline.QueryPath) > 0 {
 		// Load and process the queries.
 		queries, err := pipeline.QueriesSource.Load(pipeline.QueryPath)
@@ -271,8 +272,7 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 				go func(idx int, query groove.PipelineQuery) {
 					defer func() { <-sem }()
 
-					// Execute the query.
-					docIds, err := stats.GetDocumentIDs(query, pipeline.StatisticsSource)
+					tree, cache, err := combinator.NewLogicalTree(query, pipeline.StatisticsSource, pipeline.QueryCache)
 					if err != nil {
 						c <- groove.PipelineResult{
 							Topic: query.Topic,
@@ -281,12 +281,33 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 						}
 						return
 					}
-					results := make(combinator.Documents, len(docIds))
-					for i, id := range docIds {
-						results[i] = combinator.Document(id)
+					docIds := tree.Documents(cache)
+					if err != nil {
+						c <- groove.PipelineResult{
+							Topic: query.Topic,
+							Error: err,
+							Type:  groove.Error,
+						}
+						return
 					}
-					pipeline.QueryCache.Set(query.Query, results)
-					trecResults := results.Results(query, query.Name)
+					trecResults := docIds.Results(query, query.Name)
+
+					// Execute the query.
+					//docIds, err := stats.GetDocumentIDs(query, pipeline.StatisticsSource)
+					//if err != nil {
+					//	c <- groove.PipelineResult{
+					//		Topic: query.Topic,
+					//		Error: err,
+					//		Type:  groove.Error,
+					//	}
+					//	return
+					//}
+					//results := make(combinator.Documents, len(docIds))
+					//for i, id := range docIds {
+					//	results[i] = combinator.Document(id)
+					//}
+					//pipeline.QueryCache.Set(query.Query, results)
+					//trecResults := results.Results(query, query.Name)
 					//trecResults, err := pipeline.StatisticsSource.Execute(query, pipeline.StatisticsSource.SearchOptions())
 
 					// Set the evaluation results.
@@ -363,6 +384,18 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 				}
 				return
 			}
+		}
+		if pipeline.ModelConfiguration.Test {
+			log.Println("testing model")
+			err := pipeline.Model.Test()
+			if err != nil {
+				c <- groove.PipelineResult{
+					Error: err,
+					Type:  groove.Error,
+				}
+				return
+			}
+
 		}
 	}
 

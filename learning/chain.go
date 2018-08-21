@@ -6,7 +6,6 @@ import (
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
 	"io"
-	"reflect"
 	"github.com/hscells/groove"
 	"github.com/hscells/groove/eval"
 	"log"
@@ -25,6 +24,7 @@ import (
 	"io/ioutil"
 	"os"
 	"github.com/go-errors/errors"
+	"github.com/hscells/cqr"
 )
 
 // QueryChain contains implementations for transformations to apply to a query and the selector to pick a candidate.
@@ -35,8 +35,8 @@ type QueryChain struct {
 	StatisticsSource    stats.StatisticsSource
 	MeasurementExecutor analysis.MeasurementExecutor
 	Queries             []groove.PipelineQuery
+	TransformedOutput   string
 	LearntFeatures      []LearntFeature
-	GenerationDepth     int
 	GenerationFile      string
 	Evaluators          []eval.Evaluator
 	QueryCacher         combinator.QueryCacher
@@ -63,12 +63,13 @@ func (qc *QueryChain) Generate() error {
 	if err != nil {
 		return err
 	}
+	defer w.Close()
 	var mu sync.Mutex
 	nTimes := 5
 	for _, cq := range qc.Queries {
 		var queryCandidates []CandidateQuery
 		var nextCandidates []CandidateQuery
-		queryCandidates = append(queryCandidates, NewCandidateQuery(cq.Query, nil))
+		queryCandidates = append(queryCandidates, NewCandidateQuery(cq.Query, cq.Topic, nil))
 		cache := make(map[uint64]struct{})
 		for i := 0; i < nTimes; i++ {
 			log.Printf("loop #%v with %v candidate(s)", i, len(queryCandidates))
@@ -78,6 +79,7 @@ func (qc *QueryChain) Generate() error {
 
 				// Generate variations.
 				log.Println(len(queryCandidates)-j, "to go")
+				log.Println(len(q.Chain), "long chain")
 				log.Println("generating variations...")
 
 				candidates, err := Variations(q, qc.StatisticsSource, qc.MeasurementExecutor, qc.Measurements, qc.Transformations...)
@@ -129,11 +131,6 @@ func (qc *QueryChain) Generate() error {
 				}
 				fmt.Println()
 
-				//Sample 20% of the candidates that were generated.
-				//if len(candidates) > 50 {
-				//	candidates = sample(20, candidates)
-				//}
-				//log.Print(totalCandidates, len(c))
 				candidates = c
 
 				log.Println("sampled", len(candidates), "candidates")
@@ -164,7 +161,28 @@ func (qc *QueryChain) Generate() error {
 					go func(c CandidateQuery, n int) {
 						defer func() { <-sem }()
 						//defer innerWg.Done()
-						gq := groove.NewPipelineQuery(cq.Name, cq.Topic, c.Query)
+						s1, err := transmute.CompileCqr2PubMed(c.Query)
+						if err != nil {
+							fmt.Println(err)
+							fmt.Println(errors.Wrap(err, 0).ErrorStack())
+							return
+						}
+
+						s2, err := transmute.Pubmed2Cqr.Execute(s1)
+						if err != nil {
+							fmt.Println(err)
+							fmt.Println(errors.Wrap(err, 0).ErrorStack())
+							return
+						}
+
+						s3, err := s2.Representation()
+						if err != nil {
+							fmt.Println(err)
+							fmt.Println(errors.Wrap(err, 0).ErrorStack())
+							return
+						}
+
+						gq := groove.NewPipelineQuery(cq.Name, cq.Topic, s3.(cqr.CommonQueryRepresentation))
 
 						// Configure the Statistics Source.
 
@@ -227,31 +245,40 @@ func (qc *QueryChain) Generate() error {
 	return nil
 }
 
-func (qc *QueryChain) Test() (interface{}, error) {
-	tqs := make([]TransformedQuery, len(qc.Queries))
-	for i, q := range qc.Queries {
+func (qc *QueryChain) Test() error {
+	// Check and create directory if not exists.
+	if _, err := os.Stat(qc.TransformedOutput); os.IsNotExist(err) {
+		os.Mkdir(qc.TransformedOutput, 0777)
+	}
+
+	for _, q := range qc.Queries {
+		// Perform the query chain process on the query.
 		tq, err := qc.Execute(q)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		tqs[i] = tq
-	}
-	return tqs, nil
-}
 
-func (qc *QueryChain) Output(w io.Writer) error {
-	for _, lf := range qc.LearntFeatures {
-		err := qc.CandidateSelector.Output(lf, w)
+		// Transform query to medline.
+		cq, err := backend.NewCQRQuery(tq.Query).String()
+		if err != nil {
+			return err
+		}
+		bq, err := transmute.Cqr2Medline.Execute(cq)
+		if err != nil {
+			return err
+		}
+		ml, err := bq.String()
+		if err != nil {
+			return err
+		}
+
+		// Write query to file.
+		err = ioutil.WriteFile(path.Join(qc.TransformedOutput, q.Topic), bytes.NewBufferString(ml).Bytes(), 0644)
 		if err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// This model will output a number of TransformedQuery's from the test phase.
-func (qc *QueryChain) Type() reflect.Type {
-	return reflect.TypeOf([]TransformedQuery{})
 }
 
 // Train hands off the training to the candidate selector.
@@ -261,12 +288,13 @@ func (qc *QueryChain) Train() error {
 }
 
 func (qc *QueryChain) Validate() error {
+	log.Println("WARN: validation of query chain happens inside candidate selector")
 	return nil
 }
 
 // QueryChainCandidateSelector describes how transformed queries are chosen from the set of transformations.
 type QueryChainCandidateSelector interface {
-	Select(query TransformedQuery, transformations []CandidateQuery) (TransformedQuery, QueryChainCandidateSelector, error)
+	Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error)
 	Train(lfs []LearntFeature) ([]byte, error)
 	Output(lf LearntFeature, w io.Writer) error
 	StoppingCriteria() bool
@@ -294,49 +322,56 @@ func NewQueryChain(selector QueryChainCandidateSelector, ss stats.StatisticsSour
 // Execute executes a query chain in full. At each "transition point" in the chain, the candidate selector is queried
 // in order to see if the chain should continue or not. At the end of the chain, the selector is cleaned using the
 // finalise method.
-func (qc *QueryChain) Execute(q groove.PipelineQuery) (TransformedQuery, error) {
+func (qc *QueryChain) Execute(q groove.PipelineQuery) (CandidateQuery, error) {
 	var (
 		stop bool
 	)
+	cq := NewCandidateQuery(q.Query, q.Topic, nil)
 	sel := qc.CandidateSelector
 	stop = sel.StoppingCriteria()
-	tq := NewTransformedQuery(q)
+	d := 0
 	for !stop {
-		candidates, err := Variations(NewCandidateQuery(tq.PipelineQuery.Query, nil), qc.StatisticsSource, qc.MeasurementExecutor, qc.Measurements, qc.Transformations...)
+		candidates, err := Variations(cq, qc.StatisticsSource, qc.MeasurementExecutor, qc.Measurements, qc.Transformations...)
 		if err != nil {
-			return TransformedQuery{}, err
+			return CandidateQuery{}, err
 		}
 		if len(candidates) == 0 {
 			stop = true
 			break
 		}
 
-		tq, sel, err = sel.Select(tq, candidates)
+		log.Printf("topic: %s, depth: %d, stoping: %t", q.Topic, d, sel.StoppingCriteria())
+
+		log.Println("candidates:", len(candidates))
+
+		d++
+
+		cq, sel, err = sel.Select(cq, candidates)
 		if err != nil && err != combinator.ErrCacheMiss {
-			return TransformedQuery{}, err
+			return CandidateQuery{}, err
 		}
+		log.Println("chain length", len(cq.Chain))
+		log.Println("applied", cq.TransformationID)
+		log.Println(cq.Query)
 		stop = sel.StoppingCriteria()
 	}
-	return tq, nil
+	return cq, nil
 }
 
 func NewSVMRankQueryChain(modelFile string) *QueryChain {
 	return &QueryChain{
 		CandidateSelector: NewSVMRankQueryCandidateSelector(modelFile),
-		GenerationDepth:   5,
 	}
 }
 
 func NewQuickRankQueryChain(binary string, arguments map[string]interface{}) *QueryChain {
 	return &QueryChain{
 		CandidateSelector: NewQuickRankQueryCandidateSelector(binary, arguments),
-		GenerationDepth:   5,
 	}
 }
 
 func NewReinforcementQueryChain() *QueryChain {
 	return &QueryChain{
 		CandidateSelector: ReinforcementQueryCandidateSelector{},
-		GenerationDepth:   5,
 	}
 }

@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/hscells/cqr"
-	"github.com/hscells/groove"
 	"github.com/hscells/svmrank"
 	"io/ioutil"
 	"math"
@@ -23,17 +21,17 @@ type SVMRankQueryCandidateSelector struct {
 
 type ranking struct {
 	rank  float64
-	query cqr.CommonQueryRepresentation
+	query CandidateQuery
 }
 
-func getRanking(filename string, candidates []CandidateQuery) (cqr.CommonQueryRepresentation, error) {
+func getRanking(filename string, candidates []CandidateQuery) (CandidateQuery, error) {
 	if candidates == nil || len(candidates) == 0 {
-		return nil, nil
+		return CandidateQuery{}, nil
 	}
 
 	b, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return nil, err
+		return CandidateQuery{}, err
 	}
 
 	scanner := bufio.NewScanner(bytes.NewBuffer(b))
@@ -42,11 +40,11 @@ func getRanking(filename string, candidates []CandidateQuery) (cqr.CommonQueryRe
 	for scanner.Scan() {
 		r, err := strconv.ParseFloat(scanner.Text(), 64)
 		if err != nil {
-			return nil, err
+			return CandidateQuery{}, err
 		}
 		ranks[i] = ranking{
 			r,
-			candidates[i].Query,
+			candidates[i],
 		}
 		i++
 	}
@@ -56,7 +54,7 @@ func getRanking(filename string, candidates []CandidateQuery) (cqr.CommonQueryRe
 	})
 
 	if len(ranks) == 0 {
-		return nil, nil
+		return CandidateQuery{}, nil
 	}
 
 	return ranks[0].query, nil
@@ -72,7 +70,7 @@ func (sel SVMRankQueryCandidateSelector) Output(lf LearntFeature, w io.Writer) e
 }
 
 // Select uses a Ranking SVM to select the next most likely candidate.
-func (sel SVMRankQueryCandidateSelector) Select(query TransformedQuery, transformations []CandidateQuery) (TransformedQuery, QueryChainCandidateSelector, error) {
+func (sel SVMRankQueryCandidateSelector) Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error) {
 	f, err := os.OpenFile("tmp.features", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		panic(err)
@@ -90,21 +88,17 @@ func (sel SVMRankQueryCandidateSelector) Select(query TransformedQuery, transfor
 	f.Seek(0, 0)
 	err2 := os.Remove("tmp.features")
 	if err2 != nil {
-		return TransformedQuery{}, nil, err2
+		return CandidateQuery{}, nil, err2
 	}
 
 	if err != nil {
-		return TransformedQuery{}, nil, err
+		return CandidateQuery{}, nil, err
 	}
-	if candidate == nil {
-		sel.depth = math.MaxInt32
-		return query, sel, nil
-	}
-	if query.PipelineQuery.Query.String() == candidate.String() {
+	if query.Query.String() == candidate.String() {
 		sel.depth = math.MaxInt32
 	}
 
-	return query.Append(groove.NewPipelineQuery(query.PipelineQuery.Name, query.PipelineQuery.Topic, candidate)), sel, nil
+	return query.Append(candidate), sel, nil
 }
 
 // StoppingCriteria stops when the depth approaches 500.

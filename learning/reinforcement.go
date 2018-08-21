@@ -12,7 +12,7 @@ type ReinforcementQueryCandidateSelector struct {
 	features []LearntFeature
 }
 
-func (ReinforcementQueryCandidateSelector) Select(query TransformedQuery, transformations []CandidateQuery) (TransformedQuery, QueryChainCandidateSelector, error) {
+func (ReinforcementQueryCandidateSelector) Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error) {
 	panic("implement me")
 }
 
@@ -40,5 +40,5 @@ func (ReinforcementQueryCandidateSelector) Output(lf LearntFeature, w io.Writer)
 }
 
 func (sel ReinforcementQueryCandidateSelector) StoppingCriteria() bool {
-	return sel.Depth > 5
+	return sel.Depth >= 5
 }
