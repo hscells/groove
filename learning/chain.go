@@ -25,6 +25,7 @@ import (
 	"os"
 	"github.com/go-errors/errors"
 	"github.com/hscells/cqr"
+	"bufio"
 )
 
 // QueryChain contains implementations for transformations to apply to a query and the selector to pick a candidate.
@@ -358,10 +359,45 @@ func (qc *QueryChain) Execute(q groove.PipelineQuery) (CandidateQuery, error) {
 	return cq, nil
 }
 
-func NewSVMRankQueryChain(modelFile string) *QueryChain {
-	return &QueryChain{
-		CandidateSelector: NewSVMRankQueryCandidateSelector(modelFile),
+type ranking struct {
+	rank  float64
+	query CandidateQuery
+}
+
+func getRanking(filename string, candidates []CandidateQuery) (CandidateQuery, error) {
+	if candidates == nil || len(candidates) == 0 {
+		return CandidateQuery{}, nil
 	}
+
+	b, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return CandidateQuery{}, err
+	}
+
+	scanner := bufio.NewScanner(bytes.NewBuffer(b))
+	i := 0
+	ranks := make([]ranking, len(candidates))
+	for scanner.Scan() {
+		r, err := strconv.ParseFloat(scanner.Text(), 64)
+		if err != nil {
+			return CandidateQuery{}, err
+		}
+		ranks[i] = ranking{
+			r,
+			candidates[i],
+		}
+		i++
+	}
+
+	sort.Slice(ranks, func(i, j int) bool {
+		return ranks[i].rank > ranks[j].rank
+	})
+
+	if len(ranks) == 0 {
+		return CandidateQuery{}, nil
+	}
+
+	return ranks[0].query, nil
 }
 
 func NewQuickRankQueryChain(binary string, arguments map[string]interface{}) *QueryChain {

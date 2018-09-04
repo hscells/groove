@@ -14,7 +14,8 @@ type QuickRankQueryCandidateSelector struct {
 	// The path to the binary file for execution.
 	binary string
 	// Maximum depth allowed to generate queries.
-	depth int
+	depth        int
+	currentDepth int
 	// Command-line arguments for configuration.
 	arguments map[string]interface{}
 }
@@ -34,6 +35,7 @@ func makeArguments(a map[string]interface{}) []string {
 func (qr QuickRankQueryCandidateSelector) Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error) {
 	args := makeArguments(qr.arguments)
 	args = append(args, "--test", "tmp.features")
+	defer os.Remove("tmp.features")
 
 	// Create a temporary file to contain the features for testing.
 	f, err := os.OpenFile("tmp.features", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -101,19 +103,14 @@ func (qr QuickRankQueryCandidateSelector) Select(query CandidateQuery, transform
 	// Totally remove the file.
 	f.Truncate(0)
 	f.Seek(0, 0)
-	err2 := os.Remove("tmp.features")
-	if err2 != nil {
-		return CandidateQuery{}, nil, err2
-	}
 
-	qr.depth++
+	qr.currentDepth++
 
 	if query.Query.String() == candidate.String() {
-		qr.depth = math.MaxInt32
+		qr.currentDepth = math.MaxInt32
 	}
 
-	q := candidate.Append(query)
-	return q, qr, nil
+	return candidate, qr, nil
 }
 
 func (qr QuickRankQueryCandidateSelector) Train(lfs []LearntFeature) ([]byte, error) {
@@ -170,13 +167,26 @@ func (QuickRankQueryCandidateSelector) Output(lf LearntFeature, w io.Writer) err
 }
 
 func (qr QuickRankQueryCandidateSelector) StoppingCriteria() bool {
-	return qr.depth >= 5
+	return qr.currentDepth >= qr.depth
 }
 
-func NewQuickRankQueryCandidateSelector(binary string, arguments map[string]interface{}) QuickRankQueryCandidateSelector {
-	return QuickRankQueryCandidateSelector{
-		binary:    binary,
-		arguments: arguments,
-		depth:     0,
+func QuickRankCandidateSelectorMaxDepth(d int) func(c *QuickRankQueryCandidateSelector) {
+	return func(c *QuickRankQueryCandidateSelector) {
+		c.depth = d
 	}
+}
+
+func NewQuickRankQueryCandidateSelector(binary string, arguments map[string]interface{}, args ...func(c *QuickRankQueryCandidateSelector)) QuickRankQueryCandidateSelector {
+	q := &QuickRankQueryCandidateSelector{
+		binary:       binary,
+		arguments:    arguments,
+		depth:        5,
+		currentDepth: 0,
+	}
+
+	for _, arg := range args {
+		arg(q)
+	}
+
+	return *q
 }

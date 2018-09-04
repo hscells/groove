@@ -626,6 +626,9 @@ func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []
 
 		// Now we know the target cui that is most associated with the input term.
 		target := cuis[0].cui
+		if err != nil {
+			return nil, err
+		}
 
 		// We can get cuis that are similar to each other from cui2vec.
 		similar, err := c.vector.Similar(target)

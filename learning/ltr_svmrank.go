@@ -1,15 +1,12 @@
+//+build svmrank
+
 package learning
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
 	"github.com/hscells/svmrank"
-	"io/ioutil"
 	"math"
 	"os"
-	"sort"
-	"strconv"
 	"io"
 )
 
@@ -17,47 +14,6 @@ import (
 type SVMRankQueryCandidateSelector struct {
 	depth     int32
 	modelFile string
-}
-
-type ranking struct {
-	rank  float64
-	query CandidateQuery
-}
-
-func getRanking(filename string, candidates []CandidateQuery) (CandidateQuery, error) {
-	if candidates == nil || len(candidates) == 0 {
-		return CandidateQuery{}, nil
-	}
-
-	b, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return CandidateQuery{}, err
-	}
-
-	scanner := bufio.NewScanner(bytes.NewBuffer(b))
-	i := 0
-	ranks := make([]ranking, len(candidates))
-	for scanner.Scan() {
-		r, err := strconv.ParseFloat(scanner.Text(), 64)
-		if err != nil {
-			return CandidateQuery{}, err
-		}
-		ranks[i] = ranking{
-			r,
-			candidates[i],
-		}
-		i++
-	}
-
-	sort.Slice(ranks, func(i, j int) bool {
-		return ranks[i].rank > ranks[j].rank
-	})
-
-	if len(ranks) == 0 {
-		return CandidateQuery{}, nil
-	}
-
-	return ranks[0].query, nil
 }
 
 func (sel SVMRankQueryCandidateSelector) Train(features []LearntFeature) ([]byte, error) {
@@ -110,5 +66,11 @@ func (sel SVMRankQueryCandidateSelector) StoppingCriteria() bool {
 func NewSVMRankQueryCandidateSelector(modelFile string) SVMRankQueryCandidateSelector {
 	return SVMRankQueryCandidateSelector{
 		modelFile: modelFile,
+	}
+}
+
+func NewSVMRankQueryChain(modelFile string) *QueryChain {
+	return &QueryChain{
+		CandidateSelector: NewSVMRankQueryCandidateSelector(modelFile),
 	}
 }

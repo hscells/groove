@@ -8,6 +8,7 @@ import (
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
 	"io/ioutil"
+	"log"
 )
 
 var (
@@ -50,6 +51,14 @@ func (ts TransmuteQuerySource) Load(directory string) ([]groove.PipelineQuery, e
 	// Next, use the transmute pipeline to parse them.
 	queries := make([]groove.PipelineQuery, len(files))
 	for i, f := range files {
+		if f.IsDir() {
+			continue
+		}
+
+		if len(f.Name()) == 0 {
+			continue
+		}
+
 		source, err := ioutil.ReadFile(directory + "/" + f.Name())
 		if err != nil {
 			return nil, err
@@ -57,6 +66,7 @@ func (ts TransmuteQuerySource) Load(directory string) ([]groove.PipelineQuery, e
 
 		bq, err := ts.pipeline.Execute(string(source))
 		if err != nil {
+			log.Printf("transmute error in topic %s\n", f.Name())
 			return nil, err
 		}
 
