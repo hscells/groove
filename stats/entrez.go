@@ -157,6 +157,10 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	for _, option := range options {
 		option(p)
 	}
+	if e.options.Size == 0 {
+		e.options.Size = 100000
+		p.RetMax = e.options.Size
+	}
 	p.APIKey = e.key
 
 	s, err := entrez.DoSearch("pubmed", query, p, nil, e.tool, e.email)
@@ -165,10 +169,10 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	}
 	pmids = s.IdList
 	log.Printf("%d/%d\n", s.RetStart+len(pmids), s.Count)
-
+	log.Println(len(pmids) == e.options.Size, len(pmids), e.options.Size)
 	// If the number of pmids equals the execute size, there might be more to come.
 	if len(pmids) == e.options.Size {
-		l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)))
+		l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)), e.SearchSize(e.SearchOptions().Size))
 		if err != nil {
 			return nil, err
 		}
