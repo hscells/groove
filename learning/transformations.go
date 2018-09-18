@@ -7,18 +7,18 @@ import (
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/quickumlsrest"
+	"github.com/hscells/transmute/fields"
 	"github.com/xtgo/set"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"github.com/hscells/transmute/fields"
-	"github.com/hscells/quickumlsrest"
-	"log"
 )
 
 const (
-	LogicalOperatorTransformation      = iota
+	LogicalOperatorTransformation = iota
 	AdjacencyRangeTransformation
 	MeshExplosionTransformation
 	FieldRestrictionsTransformation
@@ -125,7 +125,6 @@ func NewMeshParentTransformer() Transformation {
 func variations(query CandidateQuery, context TransformationContext, ss stats.StatisticsSource, me analysis.MeasurementExecutor, measurements []analysis.Measurement, transformations ...Transformation) ([]CandidateQuery, error) {
 	var (
 		candidates []CandidateQuery
-		wg         sync.WaitGroup
 	)
 
 	// Compute features (and pre-transformation features) for the original Boolean query.
@@ -158,43 +157,39 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 			if err != nil {
 				return nil, err
 			}
-			for _, a := range perms {
-				wg.Add(1)
-				go func(applied CandidateQuery) {
-					defer wg.Done()
-					children := make([]cqr.CommonQueryRepresentation, len(q.Children))
-					copy(children, q.Children)
-					tmp := q
-					tmp.Children = children
-					tmp.Children[j] = applied.Query
+			for _, applied := range perms {
+				children := make([]cqr.CommonQueryRepresentation, len(q.Children))
+				copy(children, q.Children)
+				tmp := q
+				tmp.Children = children
+				tmp.Children[j] = applied.Query
 
-					features := applied.Features
-					if len(applied.Features) == 0 {
-						// Context features.
-						features = contextFeatures(context)
+				features := applied.Features
+				if len(applied.Features) == 0 {
+					// Context features.
+					features = contextFeatures(context)
 
-						// Optional keyword features.
-						switch applied.Query.(type) {
-						case cqr.Keyword:
-							features = append(features, keywordFeatures(applied.Query.(cqr.Keyword))...)
-						}
-
-						// Boolean features.
-						features = append(features, booleanFeatures(tmp)...)
-
-						deltas, err := deltas(tmp, ss, measurements, me)
-						if err != nil {
-							panic(err)
-						}
-
-						for feature, score := range deltas {
-							features = append(features, NewFeature(feature, score))
-						}
-						features = append(features, computeDeltas(preDeltas, deltas)...)
+					// Optional keyword features.
+					switch applied.Query.(type) {
+					case cqr.Keyword:
+						features = append(features, keywordFeatures(applied.Query.(cqr.Keyword))...)
 					}
 
-					queries = append(queries, NewCandidateQuery(tmp, query.Topic, features).SetTransformationID(applied.TransformationID).Append(query))
-				}(a)
+					// Boolean features.
+					features = append(features, booleanFeatures(tmp)...)
+
+					deltas, err := deltas(tmp, ss, measurements, me)
+					if err != nil {
+						panic(err)
+					}
+
+					for feature, score := range deltas {
+						features = append(features, NewFeature(feature, score))
+					}
+					features = append(features, computeDeltas(preDeltas, deltas)...)
+				}
+
+				queries = append(queries, NewCandidateQuery(tmp, query.Topic, features).SetTransformationID(applied.TransformationID).Append(query))
 			}
 		}
 
@@ -209,29 +204,25 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 
 				boolFeatures := transformation.BooleanFeatures(q, context)
 
-				for i, a := range c {
-					wg.Add(1)
-					go func(applied cqr.CommonQueryRepresentation) {
-						defer wg.Done()
-						features := contextFeatures(context)
-						features = append(features, booleanFeatures(applied.(cqr.BooleanQuery))...)
-						features = append(features, transformationFeature(transformation.Transformer))
-						if i < len(boolFeatures) {
-							features = append(features, boolFeatures[i]...)
-						}
+				for i, applied := range c {
+					features := contextFeatures(context)
+					features = append(features, booleanFeatures(applied.(cqr.BooleanQuery))...)
+					features = append(features, transformationFeature(transformation.Transformer))
+					if i < len(boolFeatures) {
+						features = append(features, boolFeatures[i]...)
+					}
 
-						deltas, err := deltas(applied, ss, measurements, me)
-						if err != nil {
-							panic(err)
-						}
+					deltas, err := deltas(applied, ss, measurements, me)
+					if err != nil {
+						panic(err)
+					}
 
-						for feature, score := range deltas {
-							features = append(features, NewFeature(feature, score))
-						}
-						features = append(features, computeDeltas(preDeltas, deltas)...)
+					for feature, score := range deltas {
+						features = append(features, NewFeature(feature, score))
+					}
+					features = append(features, computeDeltas(preDeltas, deltas)...)
 
-						queries = append(queries, NewCandidateQuery(applied, query.Topic, features).SetTransformationID(transformation.ID).Append(query))
-					}(a)
+					queries = append(queries, NewCandidateQuery(applied, query.Topic, features).SetTransformationID(transformation.ID).Append(query))
 				}
 			}
 		}
@@ -265,37 +256,31 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 					return nil, err
 				}
 
-				for _, a := range c {
-					wg.Add(1)
-					go func(applied cqr.CommonQueryRepresentation) {
-						defer wg.Done()
-						deltas, err := deltas(applied, ss, measurements, me)
-						if err != nil {
-							log.Fatalln(err)
-						}
+				for _, applied := range c {
+					deltas, err := deltas(applied, ss, measurements, me)
+					if err != nil {
+						log.Fatalln(err)
+					}
 
-						features := contextFeatures(context)
-						for feature, score := range deltas {
-							features = append(features, NewFeature(feature, score))
-						}
+					features := contextFeatures(context)
+					for feature, score := range deltas {
+						features = append(features, NewFeature(feature, score))
+					}
 
-						features = append(features, computeDeltas(preDeltas, deltas)...)
-						switch appliedQuery := applied.(type) {
-						case cqr.Keyword:
-							features = append(features, keywordFeatures(appliedQuery)...)
-						case cqr.BooleanQuery:
-							features = append(features, booleanFeatures(appliedQuery)...)
-						}
-						features = append(features, transformation.Features(applied, context)...)
-						features = append(features, transformationFeature(transformation.Transformer))
-						candidates = append(candidates, NewCandidateQuery(applied, query.Topic, features).SetTransformationID(transformation.ID).Append(query))
-					}(a)
+					features = append(features, computeDeltas(preDeltas, deltas)...)
+					switch appliedQuery := applied.(type) {
+					case cqr.Keyword:
+						features = append(features, keywordFeatures(appliedQuery)...)
+					case cqr.BooleanQuery:
+						features = append(features, booleanFeatures(appliedQuery)...)
+					}
+					features = append(features, transformation.Features(applied, context)...)
+					features = append(features, transformationFeature(transformation.Transformer))
+					candidates = append(candidates, NewCandidateQuery(applied, query.Topic, features).SetTransformationID(transformation.ID).Append(query))
 				}
 			}
 		}
 	}
-
-	wg.Wait()
 
 	return candidates, nil
 }
