@@ -5,11 +5,11 @@ package stats
 import (
 	"fmt"
 	"github.com/hscells/cqr"
-	"github.com/hscells/groove"
+	gpipeline "github.com/hscells/groove/pipeline"
 	"github.com/hscells/jnigi"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/parser"
-	"github.com/hscells/transmute/pipeline"
+	tpipeline "github.com/hscells/transmute/pipeline"
 	"github.com/hscells/trecresults"
 	"github.com/magiconair/properties"
 	"log"
@@ -152,7 +152,7 @@ func (t TerrierStatisticsSource) VocabularySize(field string) (float64, error) {
 }
 
 // Execute issues a query to terrier.
-func (t TerrierStatisticsSource) Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error) {
+func (t TerrierStatisticsSource) Execute(query gpipeline.Query, options SearchOptions) (trecresults.ResultList, error) {
 	var (
 		scores, docIDs []int64
 		N              int
@@ -219,7 +219,7 @@ func execute(env *jnigi.Env, query cqr.CommonQueryRepresentation, options Search
 	if err != nil {
 		return nil, err
 	}
-	p := pipeline.NewPipeline(parser.NewCQRParser(), backend.NewTerrierBackend(), pipeline.TransmutePipelineOptions{RequiresLexing: false, FieldMapping: map[string][]string{"default": {t.field}}})
+	p := tpipeline.NewPipeline(parser.NewCQRParser(), backend.NewTerrierBackend(), tpipeline.TransmutePipelineOptions{RequiresLexing: false, FieldMapping: map[string][]string{"default": {t.field}}})
 	terrierQuery, err := p.Execute(cqrString)
 	if err != nil {
 		return nil, err

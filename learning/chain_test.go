@@ -45,7 +45,7 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ss := stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://sef-is-017660:8200/"),
+	ss, err := stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://sef-is-017660:8200/"),
 		stats.ElasticsearchIndex("med_stem_sim2"),
 		stats.ElasticsearchDocumentType("doc"),
 		stats.ElasticsearchAnalysedField("stemmed"),
@@ -83,9 +83,9 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 
 	selector := learning.NewOracleQueryChainCandidateSelector(ss, qrels, cache)
 
-	chain := learning.NewQueryChain(selector, ss, analysis.NewDiskMeasurementExecutor(statisticsCache), learning.NewLogicalOperatorTransformer(), learning.NewAdjacencyReplacementTransformer(), learning.NewAdjacencyRangeTransformer(), learning.NewMeSHExplosionTransformer(), learning.NewFieldRestrictionsTransformer())
+	chain := learning.NewQueryChain(selector, ss, analysis.NewDiskMeasurementExecutor(statisticsCache), []analysis.Measurement{analysis.BooleanClauses}, learning.NewLogicalOperatorTransformer(), learning.NewAdjacencyReplacementTransformer(), learning.NewAdjacencyRangeTransformer(), learning.NewMeSHExplosionTransformer(), learning.NewFieldRestrictionsTransformer())
 	//fmt.Printf("Rewriting query with %v possible transformations\n", len(chain.Transformations))
-	q, err := chain.Execute(groove.NewPipelineQuery("test", topic, repr.(cqr.CommonQueryRepresentation)))
+	_, err = chain.Execute(groove.NewPipelineQuery("test", topic, repr.(cqr.CommonQueryRepresentation)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,13 +94,7 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	results2, err := ss.Execute(q.PipelineQuery, ss.SearchOptions())
-	if err != nil {
-		t.Fatal(err)
-	}
 	fmt.Println(repr.(cqr.CommonQueryRepresentation))
 	fmt.Println(eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results1, qrels, topic))
-	fmt.Println(q.PipelineQuery.Query)
-	fmt.Println(eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results2, qrels, topic))
 
 }

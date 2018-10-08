@@ -1,11 +1,11 @@
 package analysis
 
 import (
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/groove"
 	"github.com/hscells/meshexp"
-	"strings"
 	"github.com/hscells/transmute/fields"
+	"strings"
 )
 
 var MeSHTree, _ = meshexp.Default()
@@ -30,7 +30,7 @@ func (meshKeywordCount) Name() string {
 	return "MeshKeywordCount"
 }
 
-func (meshKeywordCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (meshKeywordCount) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	return float64(len(KeywordsWithField(q.Query, fields.MeshHeadings))), nil
 }
 
@@ -40,7 +40,7 @@ func (meshExplodedCount) Name() string {
 	return "MeshExplodedKeywordCount"
 }
 
-func (meshExplodedCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (meshExplodedCount) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	return float64(len(MeshExplodedKeywords(q.Query))), nil
 }
 
@@ -50,7 +50,7 @@ func (meshNonExplodedCount) Name() string {
 	return "MeshNonExplodedKeywordCount"
 }
 
-func (meshNonExplodedCount) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (meshNonExplodedCount) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	return float64(len(MeshNonExplodedKeywords(q.Query))), nil
 }
 
@@ -60,7 +60,7 @@ func (meshAvgDepth) Name() string {
 	return "MeshAvgDepth"
 }
 
-func (meshAvgDepth) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (meshAvgDepth) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	keywords := KeywordsWithField(q.Query, fields.MeshHeadings)
 	if len(keywords) == 0 {
 		return 0, nil
@@ -78,7 +78,7 @@ func (meshMaxDepth) Name() string {
 	return "MeshMaxDepth"
 }
 
-func (meshMaxDepth) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (meshMaxDepth) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	keywords := KeywordsWithField(q.Query, fields.MeshHeadings)
 	var max int64
 	for _, kw := range keywords {

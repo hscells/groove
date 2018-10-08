@@ -9,6 +9,7 @@ import (
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/learning"
 	"github.com/hscells/groove/output"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/preprocess"
 	"github.com/hscells/groove/query"
 	"github.com/hscells/groove/stats"
@@ -132,9 +133,9 @@ func NewGroovePipeline(qs query.QueriesSource, ss stats.StatisticsSource, compon
 }
 
 // Execute runs a groove pipeline for a particular directory of queries.
-func (pipeline Pipeline) Execute(c chan PipelineResult) {
+func (p Pipeline) Execute(c chan pipeline.Result) {
 	defer close(c)
-	log.Println("starting groove pipeline...")
+	log.Println("starting groove p...")
 
 	// TODO this method needs some serious refactoring done to it.
 
@@ -146,54 +147,54 @@ func (pipeline Pipeline) Execute(c chan PipelineResult) {
 		Compression:  diskv.NewGzipCompression(),
 	})
 
-	if pipeline.QueryCache == nil {
-		pipeline.QueryCache = combinator.NewFileQueryCache("file_cache")
+	if p.QueryCache == nil {
+		p.QueryCache = combinator.NewFileQueryCache("file_cache")
 	}
 
-	pipeline.MeasurementExecutor = analysis.NewDiskMeasurementExecutor(statisticsCache)
+	p.MeasurementExecutor = analysis.NewDiskMeasurementExecutor(statisticsCache)
 
 	// Only perform this section if there are some queries.
-	if len(pipeline.QueryPath) > 0 {
+	if len(p.QueryPath) > 0 {
 		log.Println("loading queries...")
 		// Load and process the queries.
-		queries, err := pipeline.QueriesSource.Load(pipeline.QueryPath)
+		queries, err := p.QueriesSource.Load(p.QueryPath)
 		if err != nil {
-			c <- PipelineResult{
+			c <- pipeline.Result{
 				Error: err,
-				Type:  Error,
+				Type:  pipeline.Error,
 			}
 			return
 		}
 
 		// Here we need to configure how the queries are loaded into each learning model.
-		if pipeline.Model != nil {
-			switch m := pipeline.Model.(type) {
+		if p.Model != nil {
+			switch m := p.Model.(type) {
 			case *learning.QueryChain:
 				m.Queries = queries
-				m.QueryCacher = pipeline.QueryCache
-				m.MeasurementExecutor = pipeline.MeasurementExecutor
+				m.QueryCacher = p.QueryCache
+				m.MeasurementExecutor = p.MeasurementExecutor
 			}
 		}
 
 		// This means preprocessing the query.
-		measurementQueries := make([]PipelineQuery, len(queries))
+		measurementQueries := make([]pipeline.Query, len(queries))
 		topics := make([]string, len(queries))
 		for i, q := range queries {
 			topics[i] = q.Name
 			// Ensure there is a processed query.
 
 			// And apply the processing if there is any.
-			for _, p := range pipeline.Preprocess {
-				q = NewPipelineQuery(q.Name, q.Topic, preprocess.ProcessQuery(q.Query, p))
+			for _, p := range p.Preprocess {
+				q = pipeline.NewQuery(q.Name, q.Topic, preprocess.ProcessQuery(q.Query, p))
 			}
 
 			// Apply any transformations.
-			for _, t := range pipeline.Transformations.BooleanTransformations {
-				q = NewPipelineQuery(q.Name, q.Topic, t(q.Query)())
+			for _, t := range p.Transformations.BooleanTransformations {
+				q = pipeline.NewQuery(q.Name, q.Topic, t(q.Query)())
 			}
-			for _, t := range pipeline.Transformations.ElasticsearchTransformations {
-				if s, ok := pipeline.StatisticsSource.(*stats.ElasticsearchStatisticsSource); ok {
-					q = NewPipelineQuery(q.Name, q.Topic, t(q.Query, s)())
+			for _, t := range p.Transformations.ElasticsearchTransformations {
+				if s, ok := p.StatisticsSource.(*stats.ElasticsearchStatisticsSource); ok {
+					q = pipeline.NewQuery(q.Name, q.Topic, t(q.Query, s)())
 				} else {
 					log.Fatal("Elasticsearch transformations only work with an Elasticsearch statistics source.")
 				}
@@ -214,22 +215,22 @@ func (pipeline Pipeline) Execute(c chan PipelineResult) {
 
 		// Compute measurements for each of the queries.
 		// The measurements are computed in parallel.
-		N := len(pipeline.Measurements)
+		N := len(p.Measurements)
 		headers := make([]string, N)
 		data := make([][]float64, N)
 
 		// Only perform the measurements if there are some measurement formatters to output them to.
-		if len(pipeline.MeasurementFormatters) > 0 {
+		if len(p.MeasurementFormatters) > 0 {
 			// data[measurement][queryN]
-			for i, m := range pipeline.Measurements {
+			for i, m := range p.Measurements {
 				headers[i] = m.Name()
 				data[i] = make([]float64, len(queries))
 				for qi, measurementQuery := range measurementQueries {
-					data[i][qi], err = m.Execute(measurementQuery, pipeline.StatisticsSource)
+					data[i][qi], err = m.Execute(measurementQuery, p.StatisticsSource)
 					if err != nil {
-						c <- PipelineResult{
+						c <- pipeline.Result{
 							Error: err,
-							Type:  Error,
+							Type:  pipeline.Error,
 						}
 						return
 					}
@@ -237,31 +238,31 @@ func (pipeline Pipeline) Execute(c chan PipelineResult) {
 			}
 
 			// Format the measurement results into specified formats.
-			outputs := make([]string, len(pipeline.MeasurementFormatters))
-			for i, formatter := range pipeline.MeasurementFormatters {
+			outputs := make([]string, len(p.MeasurementFormatters))
+			for i, formatter := range p.MeasurementFormatters {
 				if len(data) > 0 && len(topics) != len(data[0]) {
-					c <- PipelineResult{
+					c <- pipeline.Result{
 						Error: errors.New("the length of topics and data must be the same"),
-						Type:  Error,
+						Type:  pipeline.Error,
 					}
 				}
 				outputs[i], err = formatter(topics, headers, data)
 				if err != nil {
-					c <- PipelineResult{
+					c <- pipeline.Result{
 						Error: err,
-						Type:  Error,
+						Type:  pipeline.Error,
 					}
 					return
 				}
 			}
-			c <- PipelineResult{
+			c <- pipeline.Result{
 				Measurements: outputs,
-				Type:         Measurement,
+				Type:         pipeline.Measurement,
 			}
 		}
 
 		// This section is run concurrently, since the results can sometimes get quite large and we don't want to eat ram.
-		if len(pipeline.Evaluations) > 0 && (len(pipeline.OutputTrec.Path) > 0 || len(pipeline.EvaluationFormatters.EvaluationFormatters) > 0) {
+		if len(p.Evaluations) > 0 && (len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0) {
 			// Store the measurements to be output later.
 			measurements := make(map[string]map[string]float64)
 
@@ -274,48 +275,48 @@ func (pipeline Pipeline) Execute(c chan PipelineResult) {
 			sem := make(chan bool, concurrency)
 			for i, q := range measurementQueries {
 				sem <- true
-				go func(idx int, query PipelineQuery) {
+				go func(idx int, query pipeline.Query) {
 					defer func() { <-sem }()
 					log.Printf("starting topic %v\n", query.Topic)
 
-					tree, cache, err := combinator.NewLogicalTree(query, pipeline.StatisticsSource, pipeline.QueryCache)
+					tree, cache, err := combinator.NewLogicalTree(query, p.StatisticsSource, p.QueryCache)
 					if err != nil {
-						c <- PipelineResult{
+						c <- pipeline.Result{
 							Topic: query.Topic,
 							Error: err,
-							Type:  Error,
+							Type:  pipeline.Error,
 						}
 						return
 					}
 					docIds := tree.Documents(cache)
 					if err != nil {
-						c <- PipelineResult{
+						c <- pipeline.Result{
 							Topic: query.Topic,
 							Error: err,
-							Type:  Error,
+							Type:  pipeline.Error,
 						}
 						return
 					}
 					trecResults := docIds.Results(query, query.Name)
 
 					// Set the evaluation results.
-					if len(pipeline.Evaluations) > 0 {
-						measurements[query.Topic] = eval.Evaluate(pipeline.Evaluations, &trecResults, pipeline.EvaluationFormatters.EvaluationQrels, query.Topic)
+					if len(p.Evaluations) > 0 {
+						measurements[query.Topic] = eval.Evaluate(p.Evaluations, &trecResults, p.EvaluationFormatters.EvaluationQrels, query.Topic)
 					}
 
 					// MeasurementOutput the trec results.
-					if len(pipeline.OutputTrec.Path) > 0 {
-						c <- PipelineResult{
+					if len(p.OutputTrec.Path) > 0 {
+						c <- pipeline.Result{
 							Topic:       query.Topic,
 							TrecResults: &trecResults,
-							Type:        TrecResult,
+							Type:        pipeline.TrecResult,
 						}
 					}
 
 					// Send the transformation through the channel.
-					c <- PipelineResult{
-						Transformation: QueryResult{Name: query.Name, Topic: query.Topic, Transformation: query.Query},
-						Type:           Transformation,
+					c <- pipeline.Result{
+						Transformation: pipeline.QueryResult{Name: query.Name, Topic: query.Topic, Transformation: query.Query},
+						Type:           pipeline.Transformation,
 					}
 
 					log.Printf("completed topic %v\n", query.Topic)
@@ -332,14 +333,14 @@ func (pipeline Pipeline) Execute(c chan PipelineResult) {
 			}
 
 			// MeasurementOutput the evaluation results.
-			evaluations := make([]string, len(pipeline.EvaluationFormatters.EvaluationFormatters))
+			evaluations := make([]string, len(p.EvaluationFormatters.EvaluationFormatters))
 			// Now we can finally get to formatting the evaluation results.
-			for i, f := range pipeline.EvaluationFormatters.EvaluationFormatters {
+			for i, f := range p.EvaluationFormatters.EvaluationFormatters {
 				r, err := f(measurements)
 				if err != nil {
-					c <- PipelineResult{
+					c <- pipeline.Result{
 						Error: err,
-						Type:  Error,
+						Type:  pipeline.Error,
 					}
 					return
 				}
@@ -347,43 +348,43 @@ func (pipeline Pipeline) Execute(c chan PipelineResult) {
 			}
 
 			// And send the through the channel.
-			c <- PipelineResult{
+			c <- pipeline.Result{
 				Evaluations: evaluations,
-				Type:        Evaluation,
+				Type:        pipeline.Evaluation,
 			}
 		}
 	}
 
-	if pipeline.Model != nil {
-		if pipeline.ModelConfiguration.Generate {
+	if p.Model != nil {
+		if p.ModelConfiguration.Generate {
 			log.Println("generating features for model")
-			err := pipeline.Model.Generate()
+			err := p.Model.Generate()
 			if err != nil {
-				c <- PipelineResult{
+				c <- pipeline.Result{
 					Error: err,
-					Type:  Error,
+					Type:  pipeline.Error,
 				}
 				return
 			}
 		}
-		if pipeline.ModelConfiguration.Train {
+		if p.ModelConfiguration.Train {
 			log.Println("training model")
-			err := pipeline.Model.Train()
+			err := p.Model.Train()
 			if err != nil {
-				c <- PipelineResult{
+				c <- pipeline.Result{
 					Error: err,
-					Type:  Error,
+					Type:  pipeline.Error,
 				}
 				return
 			}
 		}
-		if pipeline.ModelConfiguration.Test {
+		if p.ModelConfiguration.Test {
 			log.Println("testing model")
-			err := pipeline.Model.Test()
+			err := p.Model.Test()
 			if err != nil {
-				c <- PipelineResult{
+				c <- pipeline.Result{
 					Error: err,
-					Type:  Error,
+					Type:  pipeline.Error,
 				}
 				return
 			}
@@ -392,8 +393,8 @@ func (pipeline Pipeline) Execute(c chan PipelineResult) {
 	}
 
 	// Return the formatted results.
-	c <- PipelineResult{
-		Type: Done,
+	c <- pipeline.Result{
+		Type: pipeline.Done,
 	}
 	return
 }

@@ -165,7 +165,7 @@ func TestLTR(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ss := stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://sef-is-017660:8200/"),
+	ss, err := stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://sef-is-017660:8200/"),
 		stats.ElasticsearchIndex("med_stem_sim2"),
 		stats.ElasticsearchDocumentType("doc"),
 		stats.ElasticsearchAnalysedField("stemmed"),
@@ -187,8 +187,8 @@ func TestLTR(t *testing.T) {
 		Compression:  diskv.NewGzipCompression(),
 	})
 
-	ltr := learning.NewLTRQueryCandidateSelector("/Users/harryscells/Papers/sysrev_queries/clef2018_tar/clef2018.model")
-	qc := learning.NewQueryChain(ltr, ss, analysis.NewDiskMeasurementExecutor(statisticsCache), learning.NewAdjacencyReplacementTransformer(), learning.NewAdjacencyRangeTransformer(), learning.NewMeSHExplosionTransformer(), learning.NewFieldRestrictionsTransformer(), learning.NewLogicalOperatorTransformer())
+	ltr := learning.NewSVMRankQueryCandidateSelector("/Users/harryscells/Papers/sysrev_queries/clef2018_tar/clef2018.model")
+	qc := learning.NewQueryChain(ltr, ss, analysis.NewDiskMeasurementExecutor(statisticsCache), []analysis.Measurement{analysis.BooleanClauses}, learning.NewAdjacencyReplacementTransformer(), learning.NewAdjacencyRangeTransformer(), learning.NewMeSHExplosionTransformer(), learning.NewFieldRestrictionsTransformer(), learning.NewLogicalOperatorTransformer())
 	tq, err := qc.Execute(gq)
 	if err != nil {
 		t.Fatal(err)
@@ -205,29 +205,16 @@ func TestLTR(t *testing.T) {
 		d1[i] = combinator.Document(r)
 	}
 
-	fmt.Println(tq.PipelineQuery)
-	results2, err := ss.ExecuteFast(tq.PipelineQuery, ss.SearchOptions())
-	if err != nil {
-		t.Fatal(err)
-	}
-	d2 := make(combinator.Documents, len(results2))
-	for i, r := range results2 {
-		d2[i] = combinator.Document(r)
-	}
+	fmt.Println(tq)
 
 	r1 := d1.Results(gq, gq.Name)
-	r2 := d2.Results(gq, gq.Name)
-
-	fmt.Println(len(r1), len(r2))
 
 	fmt.Println(repr.(cqr.CommonQueryRepresentation))
 	fmt.Println(eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &r1, qrels, topic))
-	fmt.Println(tq.PipelineQuery.Query)
-	fmt.Println(eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &r2, qrels, topic))
 
 	fmt.Println("chain: ")
-	for _, q := range tq.QueryChain {
+	for _, q := range tq.Chain {
 		fmt.Println(q)
 	}
-	fmt.Println(tq.PipelineQuery.Query)
+	fmt.Println(tq.Query)
 }

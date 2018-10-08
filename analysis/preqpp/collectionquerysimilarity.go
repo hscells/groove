@@ -1,8 +1,8 @@
 package preqpp
 
 import (
-	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/stat"
@@ -29,7 +29,7 @@ func (sc summedCollectionQuerySimilarity) Name() string {
 	return "SummedCollectionQuerySimilarity"
 }
 
-func (sc summedCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (sc summedCollectionQuerySimilarity) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Query)
 
 	sumSCQ := 0.0
@@ -52,7 +52,7 @@ func (sc maxCollectionQuerySimilarity) Name() string {
 	return "MaxCollectionQuerySimilarity"
 }
 
-func (sc maxCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (sc maxCollectionQuerySimilarity) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Query)
 
 	var scq []float64
@@ -74,7 +74,7 @@ func (sc averageCollectionQuerySimilarity) Name() string {
 	return "AverageCollectionQuerySimilarity"
 }
 
-func (sc averageCollectionQuerySimilarity) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (sc averageCollectionQuerySimilarity) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Query)
 
 	var scq []float64

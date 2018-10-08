@@ -1,4 +1,4 @@
-package groove
+package pipeline
 
 import (
 	"github.com/hscells/cqr"
@@ -30,8 +30,8 @@ const (
 	Done
 )
 
-// PipelineResult is the output of a groove pipeline.
-type PipelineResult struct {
+// Result is the output of a groove pipeline.
+type Result struct {
 	Topic          string
 	Measurements   []string
 	Evaluations    []string
@@ -42,8 +42,8 @@ type PipelineResult struct {
 }
 
 // ToGroovePipelineQuery converts a QueryResult into a pipeline query.
-func (qr QueryResult) ToGroovePipelineQuery() PipelineQuery {
-	return PipelineQuery{
+func (qr QueryResult) ToGroovePipelineQuery() Query {
+	return Query{
 		Topic: qr.Topic,
 		Name:  qr.Name,
 		Query: qr.Transformation,

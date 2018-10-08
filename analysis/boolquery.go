@@ -2,8 +2,8 @@ package analysis
 
 import (
 	"github.com/hscells/cqr"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/groove"
 )
 
 var (
@@ -19,7 +19,7 @@ func (booleanFields) Name() string {
 	return "BooleanFields"
 }
 
-func (booleanFields) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (booleanFields) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	return float64(len(QueryFields(q.Query))), nil
 }
 
@@ -29,7 +29,7 @@ func (booleanKeywords) Name() string {
 	return "BooleanKeywords"
 }
 
-func (booleanKeywords) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (booleanKeywords) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	return float64(len(QueryKeywords(q.Query))), nil
 }
 
@@ -39,7 +39,7 @@ func (booleanClauses) Name() string {
 	return "BooleanClauses"
 }
 
-func (booleanClauses) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (booleanClauses) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	return float64(len(QueryBooleanQueries(q.Query))), nil
 }
 
@@ -49,7 +49,7 @@ func (booleanTruncated) Name() string {
 	return "BooleanTruncated"
 }
 
-func (booleanTruncated) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (booleanTruncated) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	return float64(len(TruncatedKeywords(q.Query))), nil
 }
 

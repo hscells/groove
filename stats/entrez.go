@@ -8,7 +8,7 @@ import (
 	"github.com/biogo/ncbi/entrez"
 	"github.com/biogo/ncbi/entrez/search"
 	"github.com/hscells/cqr"
-	"github.com/hscells/groove"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/trecresults"
@@ -460,7 +460,7 @@ func (e EntrezStatisticsSource) VocabularySize(field string) (float64, error) {
 	return 0, nil
 }
 
-func (e EntrezStatisticsSource) Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error) {
+func (e EntrezStatisticsSource) Execute(query pipeline.Query, options SearchOptions) (trecresults.ResultList, error) {
 	// First we need to transform the query into a PubMed query (suitable for entrez)
 	d, err := backend.NewCQRQuery(query.Query).String()
 	if err != nil {

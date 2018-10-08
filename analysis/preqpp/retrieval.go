@@ -1,7 +1,7 @@
 package preqpp
 
 import (
-	"github.com/hscells/groove"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 )
 
@@ -14,6 +14,6 @@ func (retrievalSize) Name() string {
 	return "RetrievalSize"
 }
 
-func (retrievalSize) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (retrievalSize) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	return s.RetrievalSize(q.Query)
 }

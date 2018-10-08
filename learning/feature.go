@@ -2,16 +2,16 @@ package learning
 
 import (
 	"fmt"
+	"github.com/go-errors/errors"
 	"github.com/hscells/cqr"
-	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/analysis/preqpp"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"github.com/xtgo/set"
 	"io"
 	"sort"
 	"strings"
-	"github.com/go-errors/errors"
-	"github.com/hscells/groove/analysis/preqpp"
 )
 
 // Feature is some value that is applicable to a query transformation.
@@ -30,9 +30,9 @@ type deltaFeatures map[int]float64
 
 const (
 	// Context features.
-	nilFeature           = iota
+	nilFeature = iota
 	DepthFeature
-	ClauseTypeFeature     // This isn't the operator type, it's the type of the clause (keyword query/Boolean query).
+	ClauseTypeFeature  // This isn't the operator type, it's the type of the clause (keyword query/Boolean query).
 	ChildrenCountFeature
 
 	// Transformation-based features.
@@ -183,7 +183,7 @@ func contextFeatures(context TransformationContext) Features {
 func deltas(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, measurements []analysis.Measurement, me analysis.MeasurementExecutor) (deltaFeatures, error) {
 	deltas := make(deltaFeatures)
 
-	gq := groove.NewPipelineQuery("qpp", "test", query)
+	gq := pipeline.NewQuery("qpp", "test", query)
 	m, err := me.Execute(gq, ss, measurements...)
 	if err != nil {
 		return nil, err

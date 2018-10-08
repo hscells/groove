@@ -1,7 +1,7 @@
 package postqpp
 
 import (
-	"github.com/hscells/groove"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/trecresults"
 	"math"
@@ -16,7 +16,7 @@ func (normalisedQueryCommitment) Name() string {
 	return "NormalisedQueryCommitment"
 }
 
-func (normalisedQueryCommitment) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (normalisedQueryCommitment) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	results, err := s.Execute(q, s.SearchOptions())
 	if err != nil {
 		return 0.0, nil

@@ -4,7 +4,7 @@ package stats
 import (
 	"errors"
 	"github.com/hscells/cqr"
-	"github.com/hscells/groove"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/trecresults"
 	"math"
 	"strconv"
@@ -44,14 +44,14 @@ type StatisticsSource interface {
 	InverseDocumentFrequency(term, field string) (float64, error)
 	RetrievalSize(query cqr.CommonQueryRepresentation) (float64, error)
 	VocabularySize(field string) (float64, error)
-	Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error)
+	Execute(query pipeline.Query, options SearchOptions) (trecresults.ResultList, error)
 	CollectionSize() (float64, error)
 }
 
 // ToPipelineQuery creates a pipeline query from a term vector. This can be used to perform analysis on documents (since
 // the term vector is a representation of a document).
-func (tv TermVector) ToPipelineQuery(topic, name string) groove.PipelineQuery {
-	var pq groove.PipelineQuery
+func (tv TermVector) ToPipelineQuery(topic, name string) pipeline.Query {
+	var pq pipeline.Query
 	pq.Topic = topic
 	pq.Name = name
 	query := make([]cqr.CommonQueryRepresentation, len(tv))
@@ -64,7 +64,7 @@ func (tv TermVector) ToPipelineQuery(topic, name string) groove.PipelineQuery {
 
 // GetDocumentIDs retrieves the document IDs for a query as fast as possible. Using Elasticsearch this will create a
 // very fast concurrent scroll service. This method does not guarantee order.
-func GetDocumentIDs(query groove.PipelineQuery, ss StatisticsSource) ([]uint32, error) {
+func GetDocumentIDs(query pipeline.Query, ss StatisticsSource) ([]uint32, error) {
 	var docs []uint32
 
 	// Elasticsearch has a "fast" execute to scroll quickly so we can account for that here.

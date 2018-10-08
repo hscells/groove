@@ -1,11 +1,11 @@
 package preqpp
 
 import (
-	"github.com/hscells/groove"
-	"github.com/hscells/groove/stats"
-	"math"
-	"github.com/xtgo/set"
 	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/pipeline"
+	"github.com/hscells/groove/stats"
+	"github.com/xtgo/set"
+	"math"
 )
 
 type queryScope struct{}
@@ -19,7 +19,7 @@ func (qs queryScope) Name() string {
 	return "QueryScope"
 }
 
-func (qs queryScope) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (qs queryScope) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	Nq, err := s.RetrievalSize(q.Query)
 	if err != nil {
 		return 0.0, err

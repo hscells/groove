@@ -1,8 +1,8 @@
 package postqpp
 
 import (
-	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/trecresults"
 	"math"
@@ -23,7 +23,7 @@ func (wig weightedInformationGain) Name() string {
 	return "WIG"
 }
 
-func (wig weightedInformationGain) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (wig weightedInformationGain) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	queryLength := float64(len(analysis.QueryTerms(q.Query)))
 	results, err := s.Execute(q, s.SearchOptions())
 	if err != nil {
@@ -64,7 +64,7 @@ func (weg weightedExpansionGain) cnprf(k float64, results trecresults.ResultList
 	return nprf / float64(len(results[n:]))
 }
 
-func (weg weightedExpansionGain) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (weg weightedExpansionGain) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	queryLength := float64(len(analysis.QueryTerms(q.Query)))
 	results, err := s.Execute(q, s.SearchOptions())
 	if err != nil {

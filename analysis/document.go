@@ -1,7 +1,7 @@
 package analysis
 
 import (
-	"github.com/hscells/groove"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"github.com/xtgo/set"
 	"sort"
@@ -32,7 +32,7 @@ func (DocumentOverlap) Name() string {
 }
 
 // Execute computes document overlap between query and document.
-func (d DocumentOverlap) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (d DocumentOverlap) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	t := docs(QueryTerms(q.Query))
 	sort.Sort(t)
 	sort.Sort(d.document)

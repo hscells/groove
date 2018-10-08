@@ -2,8 +2,8 @@
 package probability
 
 import (
-	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 )
 
@@ -54,7 +54,7 @@ func NewProbabilisticMeasurement(measurement Probability) ProbabilisticMeasureme
 }
 
 // Compute a Measurement and how that Measurement affects precision and recall.
-func (pm ProbabilisticMeasurement) Compute(q groove.PipelineQuery, s stats.StatisticsSource) (ProbabilisticMeasurementResult, error) {
+func (pm ProbabilisticMeasurement) Compute(q pipeline.Query, s stats.StatisticsSource) (ProbabilisticMeasurementResult, error) {
 	measurement, err := pm.Measurement.Execute(q, s)
 	if err != nil {
 		return ProbabilisticMeasurementResult{}, err

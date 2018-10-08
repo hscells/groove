@@ -4,7 +4,7 @@ package combinator
 import (
 	"fmt"
 	"github.com/hscells/cqr"
-	"github.com/hscells/groove"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/trecresults"
 	"github.com/pkg/errors"
@@ -100,7 +100,7 @@ type notOperator struct {
 }
 
 // Results converts the documents from the resulting logical operator tree into eval-compatible trec results.
-func (d Documents) Results(query groove.PipelineQuery, run string) trecresults.ResultList {
+func (d Documents) Results(query pipeline.Query, run string) trecresults.ResultList {
 	r := make(trecresults.ResultList, len(d))
 	for i, doc := range d {
 		r[i] = &trecresults.Result{
@@ -373,7 +373,7 @@ func HashCQR(representation cqr.CommonQueryRepresentation) uint64 {
 // (i.e. it is not one of `or`, `and`, `not`, or an `adj` operator) the default operator will be `or`.
 //
 // Note that once one tree has been constructed, the returned map can be used to save processing.
-func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen QueryCacher) (LogicalTreeNode, QueryCacher, error) {
+func constructTree(query pipeline.Query, ss stats.StatisticsSource, seen QueryCacher) (LogicalTreeNode, QueryCacher, error) {
 	if seen == nil {
 		seen = NewMapQueryCache()
 	}
@@ -453,7 +453,7 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen Q
 		clauses := make([]LogicalTreeNode, len(q.Children))
 		for i, child := range q.Children {
 			var err error
-			clauses[i], seen, err = constructTree(groove.NewPipelineQuery(query.Name, query.Topic, child), ss, seen)
+			clauses[i], seen, err = constructTree(pipeline.NewQuery(query.Name, query.Topic, child), ss, seen)
 			if err != nil {
 				return nil, seen, err
 			}
@@ -468,7 +468,7 @@ func constructTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen Q
 // (i.e. it is not one of `or`, `and`, `not`, or an `adj` operator) the default operator will be `or`.
 //
 // Note that once one tree has been constructed, the returned map can be used to save processing.
-func NewLogicalTree(query groove.PipelineQuery, ss stats.StatisticsSource, seen QueryCacher) (LogicalTree, QueryCacher, error) {
+func NewLogicalTree(query pipeline.Query, ss stats.StatisticsSource, seen QueryCacher) (LogicalTree, QueryCacher, error) {
 	if seen == nil {
 		seen = NewMapQueryCache()
 	}

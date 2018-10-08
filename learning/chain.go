@@ -2,30 +2,30 @@
 package learning
 
 import (
-	"github.com/hscells/groove/analysis"
-	"github.com/hscells/groove/combinator"
-	"github.com/hscells/groove/stats"
-	"io"
-	"github.com/hscells/groove"
-	"github.com/hscells/groove/eval"
-	"log"
-	"sync"
-	"fmt"
-	"runtime"
-	"github.com/hscells/transmute/backend"
-	"github.com/hscells/transmute"
-	"strconv"
-	"path"
+	"bufio"
 	"bytes"
-	"math"
-	"math/rand"
-	"sort"
-	"github.com/hscells/trecresults"
-	"io/ioutil"
-	"os"
+	"fmt"
 	"github.com/go-errors/errors"
 	"github.com/hscells/cqr"
-	"bufio"
+	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/combinator"
+	"github.com/hscells/groove/eval"
+	"github.com/hscells/groove/pipeline"
+	"github.com/hscells/groove/stats"
+	"github.com/hscells/transmute"
+	"github.com/hscells/transmute/backend"
+	"github.com/hscells/trecresults"
+	"io"
+	"io/ioutil"
+	"log"
+	"math"
+	"math/rand"
+	"os"
+	"path"
+	"runtime"
+	"sort"
+	"strconv"
+	"sync"
 )
 
 // QueryChain contains implementations for transformations to apply to a query and the selector to pick a candidate.
@@ -35,7 +35,7 @@ type QueryChain struct {
 	CandidateSelector   QueryChainCandidateSelector
 	StatisticsSource    stats.StatisticsSource
 	MeasurementExecutor analysis.MeasurementExecutor
-	Queries             []groove.PipelineQuery
+	Queries             []pipeline.Query
 	TransformedOutput   string
 	LearntFeatures      []LearntFeature
 	GenerationFile      string
@@ -183,7 +183,7 @@ func (qc *QueryChain) Generate() error {
 							return
 						}
 
-						gq := groove.NewPipelineQuery(cq.Name, cq.Topic, s3.(cqr.CommonQueryRepresentation))
+						gq := pipeline.NewQuery(cq.Name, cq.Topic, s3.(cqr.CommonQueryRepresentation))
 
 						// Configure the Statistics Source.
 
@@ -323,7 +323,7 @@ func NewQueryChain(selector QueryChainCandidateSelector, ss stats.StatisticsSour
 // Execute executes a query chain in full. At each "transition point" in the chain, the candidate selector is queried
 // in order to see if the chain should continue or not. At the end of the chain, the selector is cleaned using the
 // finalise method.
-func (qc *QueryChain) Execute(q groove.PipelineQuery) (CandidateQuery, error) {
+func (qc *QueryChain) Execute(q pipeline.Query) (CandidateQuery, error) {
 	var (
 		stop bool
 	)
@@ -354,7 +354,7 @@ func (qc *QueryChain) Execute(q groove.PipelineQuery) (CandidateQuery, error) {
 		log.Println("chain length", len(cq.Chain))
 		log.Println("applied", cq.TransformationID)
 		log.Println(cq.Query)
-		stop = sel.StoppingCriteria()
+		sel.StoppingCriteria()
 	}
 	return cq, nil
 }
@@ -400,9 +400,9 @@ func getRanking(filename string, candidates []CandidateQuery) (CandidateQuery, e
 	return ranks[0].query, nil
 }
 
-func NewQuickRankQueryChain(binary string, arguments map[string]interface{}) *QueryChain {
+func NewQuickRankQueryChain(binary string, arguments map[string]interface{}, options ...func(c *QuickRankQueryCandidateSelector)) *QueryChain {
 	return &QueryChain{
-		CandidateSelector: NewQuickRankQueryCandidateSelector(binary, arguments),
+		CandidateSelector: NewQuickRankQueryCandidateSelector(binary, arguments, options...),
 	}
 }
 

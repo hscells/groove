@@ -24,7 +24,7 @@ characters, and in lowercase. Finally, we would like to output the results of th
 
 ```go
 // Construct the pipeline.
-pipelineChannel := make(chan groove.PipelineResult)
+pipelineChannel := make(chan groove.Result)
 p := pipeline.NewGroovePipeline(
 	query.NewTransmuteQuerySource(query.MedlineTransmutePipeline),
 	stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://localhost:9200"),

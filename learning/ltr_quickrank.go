@@ -1,13 +1,13 @@
 package learning
 
 import (
-	"io"
-	"os/exec"
 	"bufio"
-	"log"
 	"fmt"
-	"os"
+	"io"
+	"log"
 	"math"
+	"os"
+	"os/exec"
 )
 
 type QuickRankQueryCandidateSelector struct {

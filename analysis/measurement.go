@@ -5,9 +5,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/hscells/cqr"
-	"github.com/hscells/groove"
 	"github.com/hscells/groove/combinator"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/transmute/fields"
 	"github.com/peterbourgon/diskv"
 	"hash/fnv"
 	"math"
@@ -15,7 +16,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"github.com/hscells/transmute/fields"
 )
 
 // Measurement is a representation for how a measurement fits into the pipeline.
@@ -23,7 +23,7 @@ type Measurement interface {
 	// Name is the name of the measurement in the output. It should not contain any spaces.
 	Name() string
 	// Execute computes the implemented measurement for a query and optionally using the specified statistics.
-	Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error)
+	Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error)
 }
 
 // MeasurementCacher is a cache that can store the measurements for queries.
@@ -76,7 +76,7 @@ func hash(representation cqr.CommonQueryRepresentation, measurement Measurement)
 }
 
 // Execute executes the specified measurements on the query using the statistics source.
-func (m MeasurementExecutor) Execute(query groove.PipelineQuery, ss stats.StatisticsSource, measurements ...Measurement) (results []float64, err error) {
+func (m MeasurementExecutor) Execute(query pipeline.Query, ss stats.StatisticsSource, measurements ...Measurement) (results []float64, err error) {
 	results = make([]float64, len(measurements))
 	for i, measurement := range measurements {
 		qHash := hash(query.Query, measurement)

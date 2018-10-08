@@ -5,20 +5,20 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/hscells/cqr"
-	"github.com/hscells/groove"
+	gpipeline "github.com/hscells/groove/pipeline"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
 	"github.com/hscells/transmute/parser"
-	"github.com/hscells/transmute/pipeline"
+	tpipeline "github.com/hscells/transmute/pipeline"
 	"github.com/hscells/trecresults"
 	"gopkg.in/olivere/elastic.v5"
 	"io"
+	"log"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"log"
 )
 
 // ElasticsearchStatisticsSource is a way of gathering statistics for a collection using Elasticsearch.
@@ -227,7 +227,7 @@ func (es *ElasticsearchStatisticsSource) TermVector(document string) (TermVector
 
 // ExecuteFast executes an Elasticsearch query and retrieves only the document ids in the fastest possible way. Do not
 // use this for ranked results as the concurrency of this method does not guarantee order.
-func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery, options SearchOptions) ([]uint32, error) {
+func (es *ElasticsearchStatisticsSource) ExecuteFast(query gpipeline.Query, options SearchOptions) ([]uint32, error) {
 	// Transform the query to an Elasticsearch query.
 	q, err := toElasticsearch(query.Query)
 	if err != nil {
@@ -257,13 +257,13 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 				KeepAlive("10m").
 				Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
 				SearchSource(
-				elastic.NewSearchSource().
-					NoStoredFields().
-					FetchSource(false).
-					Size(options.Size).
-					Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
-					TrackScores(false).
-					Query(elastic.NewRawStringQuery(q)))
+					elastic.NewSearchSource().
+						NoStoredFields().
+						FetchSource(false).
+						Size(options.Size).
+						Slice(elastic.NewSliceQuery().Id(n).Max(concurrency)).
+						TrackScores(false).
+						Query(elastic.NewRawStringQuery(q)))
 
 			for {
 				result, err := svc.Do(context.Background())
@@ -317,7 +317,7 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query groove.PipelineQuery,
 }
 
 // Execute runs the query on Elasticsearch and returns results in trec format.
-func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, options SearchOptions) (trecresults.ResultList, error) {
+func (es *ElasticsearchStatisticsSource) Execute(query gpipeline.Query, options SearchOptions) (trecresults.ResultList, error) {
 	// Transform the query to an Elasticsearch query.
 	q, err := toElasticsearch(query.Query)
 	if err != nil {
@@ -336,12 +336,12 @@ func (es *ElasticsearchStatisticsSource) Execute(query groove.PipelineQuery, opt
 			Type(es.documentType).
 			KeepAlive("30m").
 			SearchSource(
-			elastic.NewSearchSource().
-				NoStoredFields().
-				FetchSource(false).
-				Size(options.Size).
-				TrackScores(false).
-				Query(elastic.NewRawStringQuery(q)))
+				elastic.NewSearchSource().
+					NoStoredFields().
+					FetchSource(false).
+					Size(options.Size).
+					TrackScores(false).
+					Query(elastic.NewRawStringQuery(q)))
 
 		for {
 			result, err := svc.Do(context.Background())
@@ -434,10 +434,10 @@ func toElasticsearch(query cqr.CommonQueryRepresentation) (string, error) {
 	}
 
 	// Then we need to compile it into an Elasticsearch query.
-	p := pipeline.NewPipeline(
+	p := tpipeline.NewPipeline(
 		parser.NewCQRParser(),
 		backend.NewElasticsearchCompiler(),
-		pipeline.TransmutePipelineOptions{
+		tpipeline.TransmutePipelineOptions{
 			LexOptions: lexer.LexOptions{
 				FormatParenthesis: true,
 			},

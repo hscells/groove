@@ -1,8 +1,8 @@
 package preqpp
 
 import (
-	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"math"
 )
@@ -17,7 +17,7 @@ func (qs simplifiedClarityScore) Name() string {
 	return "SimplifiedClarityScore"
 }
 
-func (qs simplifiedClarityScore) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (qs simplifiedClarityScore) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	m := float64(len(analysis.QueryTerms(q.Query)))
 	avgICTFPredictor := AvgICTF
 	avgICTF, err := avgICTFPredictor.Execute(q, s)

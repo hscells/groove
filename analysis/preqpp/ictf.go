@@ -1,8 +1,8 @@
 package preqpp
 
 import (
-	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"math"
 )
@@ -18,7 +18,7 @@ func (avgi avgICTF) Name() string {
 	return "AvgICTF"
 }
 
-func (avgi avgICTF) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (avgi avgICTF) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	terms := analysis.QueryTerms(q.Query)
 
 	if len(terms) == 0 {

@@ -5,9 +5,9 @@ package learning
 import (
 	"fmt"
 	"github.com/hscells/svmrank"
+	"io"
 	"math"
 	"os"
-	"io"
 )
 
 // SVMRankQueryCandidateSelector uses learning to rank to select query chain candidates.

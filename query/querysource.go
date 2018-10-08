@@ -1,12 +1,10 @@
 // Package query provides sources for loading queries in different formats.
 package query
 
-import (
-	"github.com/hscells/groove"
-)
+import "github.com/hscells/groove/pipeline"
 
 // QueriesSource represents a source for queries and how to parse them.
 type QueriesSource interface {
 	// Load determines how a query is loaded and parsed into the common query representation format.
-	Load(directory string) ([]groove.PipelineQuery, error)
+	Load(directory string) ([]pipeline.Query, error)
 }

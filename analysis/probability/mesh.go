@@ -2,7 +2,7 @@ package probability
 
 import (
 	"github.com/hscells/cqr"
-	"github.com/hscells/groove"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"math"
 )
@@ -50,7 +50,7 @@ func countExplodedMeSHTerms(query cqr.CommonQueryRepresentation) (numMeSH, numEx
 }
 
 // Execute returns the ratio of exploded MeSH queries to the number of total MeSH queries in the search strategy.
-func (MeSHExplosionsRatio) Execute(pq groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (MeSHExplosionsRatio) Execute(pq pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	numExpMeSH, numMeSH := countExplodedMeSHTerms(pq.Query)
 	if numMeSH == 0 {
 		return 0.0, nil

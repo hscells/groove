@@ -1,7 +1,7 @@
 package postqpp
 
 import (
-	"github.com/hscells/groove"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"gonum.org/v1/gonum/stat"
 )
@@ -15,7 +15,7 @@ func (clarityScore) Name() string {
 	return "ClarityScore"
 }
 
-func (clarityScore) Execute(q groove.PipelineQuery, s stats.StatisticsSource) (float64, error) {
+func (clarityScore) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	lambda, ok := s.Parameters()["lambda"]
 	if !ok {
 		lambda = 0.6

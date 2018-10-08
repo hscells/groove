@@ -3,15 +3,15 @@ package learning
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/hscells/groove"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/trecresults"
+	"io"
 	"io/ioutil"
 	"log"
 	"time"
-	"io"
 )
 
 // OracleQueryChainCandidateSelector finds the best possible combination of query rewrites.
@@ -39,7 +39,7 @@ func (oc OracleQueryChainCandidateSelector) Output(lf LearntFeature, w io.Writer
 }
 
 // Features creates features using a oracle query chain candidate selector.
-//func (oc OracleQueryChainCandidateSelector) Features(query groove.PipelineQuery, transformations []Transformer) (lf []LearntFeature, err error) {
+//func (oc OracleQueryChainCandidateSelector) Features(query pipeline.Query, transformations []Transformer) (lf []LearntFeature, err error) {
 //	bestQuery := query
 //
 //	candidates, err := Variations(query.Query, transformations...)
@@ -65,7 +65,7 @@ func (oc OracleQueryChainCandidateSelector) Output(lf LearntFeature, w io.Writer
 //	return
 //}
 
-func writeQuery(query groove.PipelineQuery, depth int, candidate CandidateQuery, evaluation map[string]float64) error {
+func writeQuery(query pipeline.Query, depth int, candidate CandidateQuery, evaluation map[string]float64) error {
 	f := fmt.Sprintf("chain/%v", combinator.HashCQR(query.Query))
 	b, err := json.MarshalIndent(map[string]interface{}{
 		"topic":     query.Topic,
@@ -93,7 +93,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query CandidateQuery, candida
 		var err error
 		var tree combinator.LogicalTree
 		log.Printf("topic %v - getting the baseline\n", query.Topic)
-		pq := groove.NewPipelineQuery(query.Topic, query.Topic, query.Query)
+		pq := pipeline.NewQuery(query.Topic, query.Topic, query.Query)
 		tree, oc.seen, err = combinator.NewLogicalTree(pq, oc.ss, oc.seen)
 		if err != nil {
 			return query, oc, err
@@ -116,7 +116,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query CandidateQuery, candida
 	log.Printf("topic %v - RR %v, RL %v\n", query.Topic, oc.bestRelRet, oc.bestRet)
 
 	// Apply the transformations to all of the queries.
-	var transformed groove.PipelineQuery
+	var transformed pipeline.Query
 
 	for _, applied := range candidates {
 
@@ -124,7 +124,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query CandidateQuery, candida
 
 		start := time.Now()
 		// The new query.
-		nq := groove.NewPipelineQuery(query.Topic, query.Topic, applied.Query)
+		nq := pipeline.NewQuery(query.Topic, query.Topic, applied.Query)
 
 		// Test if the query actually is executable.
 		_, err := oc.ss.RetrievalSize(applied.Query)
@@ -161,7 +161,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query CandidateQuery, candida
 			oc.bestRelRet = bestRelRet
 			oc.bestRet = bestRet
 			log.Printf("topic %v - P %v, R %v, %v %v, %v %v, %v %v\n", query.Topic, evaluation[eval.PrecisionEvaluator.Name()], evaluation[eval.RecallEvaluator.Name()], eval.NumRel.Name(), evaluation[eval.NumRel.Name()], eval.NumRet.Name(), evaluation[eval.NumRet.Name()], eval.NumRelRet.Name(), evaluation[eval.NumRelRet.Name()])
-			transformed = groove.NewPipelineQuery(query.Topic, query.Topic, applied.Query)
+			transformed = pipeline.NewQuery(query.Topic, query.Topic, applied.Query)
 		}
 
 		log.Printf("topic %v - query took %v minutes; features: %v", nq.Topic, time.Now().Sub(start).Minutes(), applied.Features.String())

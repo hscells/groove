@@ -4,15 +4,15 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
+	"github.com/hscells/groove/learning"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
 	"github.com/peterbourgon/diskv"
-	"testing"
-	"github.com/hscells/groove/learning"
 	"log"
+	"testing"
 )
 
 func TestLogicalOperatorReplacement_Apply(t *testing.T) {
@@ -70,7 +70,7 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 		Compression:  diskv.NewGzipCompression(),
 	})
 
-	candidates, err := learning.Variations(learning.NewCandidateQuery(repr.(cqr.CommonQueryRepresentation), nil), ss, analysis.NewDiskMeasurementExecutor(statisticsCache), []analysis.Measurement{analysis.BooleanClauses}, learning.NewLogicalOperatorTransformer())
+	candidates, err := learning.Variations(learning.NewCandidateQuery(repr.(cqr.CommonQueryRepresentation), "1", nil), ss, analysis.NewDiskMeasurementExecutor(statisticsCache), []analysis.Measurement{analysis.BooleanClauses}, learning.NewFieldRestrictionsTransformer())
 
 	//queries, err := LogicalOperatorReplacement.Apply(repr.(cqr.CommonQueryRepresentation))
 	//if err != nil {
