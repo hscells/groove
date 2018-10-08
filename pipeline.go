@@ -1,28 +1,27 @@
 // Package pipeline provides a framework for constructing reproducible query experiments.
-package pipeline
+package groove
 
 import (
 	"bytes"
 	"errors"
-	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
+	"github.com/hscells/groove/learning"
 	"github.com/hscells/groove/output"
 	"github.com/hscells/groove/preprocess"
 	"github.com/hscells/groove/query"
-	"github.com/hscells/groove/learning"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/trecresults"
+	"github.com/peterbourgon/diskv"
 	"io/ioutil"
 	"log"
 	"runtime"
 	"sort"
-	"github.com/peterbourgon/diskv"
 )
 
-// GroovePipeline contains all the information for executing a pipeline for query analysis.
-type GroovePipeline struct {
+// Pipeline contains all the information for executing a pipeline for query analysis.
+type Pipeline struct {
 	QueryPath             string
 	QueriesSource         query.QueriesSource
 	StatisticsSource      stats.StatisticsSource
@@ -59,19 +58,19 @@ func Preprocess(processor ...preprocess.QueryProcessor) func() interface{} {
 	}
 }
 
-// Measurement adds measurements to the pipeline.
-func Measurement(measurements ...analysis.Measurement) func() interface{} {
-	return func() interface{} {
-		return measurements
-	}
-}
-
-// Evaluation adds evaluation measures to the pipeline.
-func Evaluation(measures ...eval.Evaluator) func() interface{} {
-	return func() interface{} {
-		return measures
-	}
-}
+//// Measurement adds measurements to the pipeline.
+//func Measurement(measurements ...analysis.Measurement) func() interface{} {
+//	return func() interface{} {
+//		return measurements
+//	}
+//}
+//
+//// Evaluation adds evaluation measures to the pipeline.
+//func Evaluation(measures ...eval.Evaluator) func() interface{} {
+//	return func() interface{} {
+//		return measures
+//	}
+//}
 
 // MeasurementOutput adds outputs to the pipeline.
 func MeasurementOutput(formatter ...output.MeasurementFormatter) func() interface{} {
@@ -109,8 +108,8 @@ func EvaluationOutput(qrels string, formatters ...output.EvaluationFormatter) fu
 
 // NewGroovePipeline creates a new groove pipeline. The query source and statistics source are required. Additional
 // components are provided via the optional functional arguments.
-func NewGroovePipeline(qs query.QueriesSource, ss stats.StatisticsSource, components ...func() interface{}) GroovePipeline {
-	gp := GroovePipeline{
+func NewGroovePipeline(qs query.QueriesSource, ss stats.StatisticsSource, components ...func() interface{}) Pipeline {
+	gp := Pipeline{
 		QueriesSource:    qs,
 		StatisticsSource: ss,
 	}
@@ -133,8 +132,10 @@ func NewGroovePipeline(qs query.QueriesSource, ss stats.StatisticsSource, compon
 }
 
 // Execute runs a groove pipeline for a particular directory of queries.
-func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
+func (pipeline Pipeline) Execute(c chan PipelineResult) {
 	defer close(c)
+	log.Println("starting groove pipeline...")
+
 	// TODO this method needs some serious refactoring done to it.
 
 	// Configure caches.
@@ -153,12 +154,13 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 
 	// Only perform this section if there are some queries.
 	if len(pipeline.QueryPath) > 0 {
+		log.Println("loading queries...")
 		// Load and process the queries.
 		queries, err := pipeline.QueriesSource.Load(pipeline.QueryPath)
 		if err != nil {
-			c <- groove.PipelineResult{
+			c <- PipelineResult{
 				Error: err,
-				Type:  groove.Error,
+				Type:  Error,
 			}
 			return
 		}
@@ -174,7 +176,7 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 		}
 
 		// This means preprocessing the query.
-		measurementQueries := make([]groove.PipelineQuery, len(queries))
+		measurementQueries := make([]PipelineQuery, len(queries))
 		topics := make([]string, len(queries))
 		for i, q := range queries {
 			topics[i] = q.Name
@@ -182,22 +184,24 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 
 			// And apply the processing if there is any.
 			for _, p := range pipeline.Preprocess {
-				q = groove.NewPipelineQuery(q.Name, q.Topic, preprocess.ProcessQuery(q.Query, p))
+				q = NewPipelineQuery(q.Name, q.Topic, preprocess.ProcessQuery(q.Query, p))
 			}
 
 			// Apply any transformations.
 			for _, t := range pipeline.Transformations.BooleanTransformations {
-				q = groove.NewPipelineQuery(q.Name, q.Topic, t(q.Query)())
+				q = NewPipelineQuery(q.Name, q.Topic, t(q.Query)())
 			}
 			for _, t := range pipeline.Transformations.ElasticsearchTransformations {
 				if s, ok := pipeline.StatisticsSource.(*stats.ElasticsearchStatisticsSource); ok {
-					q = groove.NewPipelineQuery(q.Name, q.Topic, t(q.Query, s)())
+					q = NewPipelineQuery(q.Name, q.Topic, t(q.Query, s)())
 				} else {
 					log.Fatal("Elasticsearch transformations only work with an Elasticsearch statistics source.")
 				}
 			}
 			measurementQueries[i] = q
 		}
+
+		log.Println("sorting queries by complexity...")
 
 		// Sort the transformed queries by size.
 		sort.Slice(measurementQueries, func(i, j int) bool {
@@ -223,9 +227,9 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 				for qi, measurementQuery := range measurementQueries {
 					data[i][qi], err = m.Execute(measurementQuery, pipeline.StatisticsSource)
 					if err != nil {
-						c <- groove.PipelineResult{
+						c <- PipelineResult{
 							Error: err,
-							Type:  groove.Error,
+							Type:  Error,
 						}
 						return
 					}
@@ -236,29 +240,28 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 			outputs := make([]string, len(pipeline.MeasurementFormatters))
 			for i, formatter := range pipeline.MeasurementFormatters {
 				if len(data) > 0 && len(topics) != len(data[0]) {
-					c <- groove.PipelineResult{
+					c <- PipelineResult{
 						Error: errors.New("the length of topics and data must be the same"),
-						Type:  groove.Error,
+						Type:  Error,
 					}
 				}
 				outputs[i], err = formatter(topics, headers, data)
 				if err != nil {
-					c <- groove.PipelineResult{
+					c <- PipelineResult{
 						Error: err,
-						Type:  groove.Error,
+						Type:  Error,
 					}
 					return
 				}
 			}
-			c <- groove.PipelineResult{
+			c <- PipelineResult{
 				Measurements: outputs,
-				Type:         groove.Measurement,
+				Type:         Measurement,
 			}
 		}
 
 		// This section is run concurrently, since the results can sometimes get quite large and we don't want to eat ram.
 		if len(pipeline.Evaluations) > 0 && (len(pipeline.OutputTrec.Path) > 0 || len(pipeline.EvaluationFormatters.EvaluationFormatters) > 0) {
-
 			// Store the measurements to be output later.
 			measurements := make(map[string]map[string]float64)
 
@@ -266,49 +269,34 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 			// http://jmoiron.net/blog/limiting-concurrency-in-go/
 			concurrency := runtime.NumCPU()
 
+			log.Printf("starting to execute queries with %d goroutines\n", concurrency)
+
 			sem := make(chan bool, concurrency)
 			for i, q := range measurementQueries {
 				sem <- true
-				go func(idx int, query groove.PipelineQuery) {
+				go func(idx int, query PipelineQuery) {
 					defer func() { <-sem }()
+					log.Printf("starting topic %v\n", query.Topic)
 
 					tree, cache, err := combinator.NewLogicalTree(query, pipeline.StatisticsSource, pipeline.QueryCache)
 					if err != nil {
-						c <- groove.PipelineResult{
+						c <- PipelineResult{
 							Topic: query.Topic,
 							Error: err,
-							Type:  groove.Error,
+							Type:  Error,
 						}
 						return
 					}
 					docIds := tree.Documents(cache)
 					if err != nil {
-						c <- groove.PipelineResult{
+						c <- PipelineResult{
 							Topic: query.Topic,
 							Error: err,
-							Type:  groove.Error,
+							Type:  Error,
 						}
 						return
 					}
 					trecResults := docIds.Results(query, query.Name)
-
-					// Execute the query.
-					//docIds, err := stats.GetDocumentIDs(query, pipeline.StatisticsSource)
-					//if err != nil {
-					//	c <- groove.PipelineResult{
-					//		Topic: query.Topic,
-					//		Error: err,
-					//		Type:  groove.Error,
-					//	}
-					//	return
-					//}
-					//results := make(combinator.Documents, len(docIds))
-					//for i, id := range docIds {
-					//	results[i] = combinator.Document(id)
-					//}
-					//pipeline.QueryCache.Set(query.Query, results)
-					//trecResults := results.Results(query, query.Name)
-					//trecResults, err := pipeline.StatisticsSource.Execute(query, pipeline.StatisticsSource.SearchOptions())
 
 					// Set the evaluation results.
 					if len(pipeline.Evaluations) > 0 {
@@ -317,20 +305,24 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 
 					// MeasurementOutput the trec results.
 					if len(pipeline.OutputTrec.Path) > 0 {
-						c <- groove.PipelineResult{
+						c <- PipelineResult{
 							Topic:       query.Topic,
 							TrecResults: &trecResults,
-							Type:        groove.TrecResult,
+							Type:        TrecResult,
 						}
 					}
 
 					// Send the transformation through the channel.
-					c <- groove.PipelineResult{
-						Transformation: groove.QueryResult{Name: query.Name, Topic: query.Topic, Transformation: query.Query},
-						Type:           groove.Transformation,
+					c <- PipelineResult{
+						Transformation: QueryResult{Name: query.Name, Topic: query.Topic, Transformation: query.Query},
+						Type:           Transformation,
 					}
 
 					log.Printf("completed topic %v\n", query.Topic)
+
+					docIds = nil
+					trecResults = nil
+					runtime.GC()
 				}(i, q)
 			}
 
@@ -345,9 +337,9 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 			for i, f := range pipeline.EvaluationFormatters.EvaluationFormatters {
 				r, err := f(measurements)
 				if err != nil {
-					c <- groove.PipelineResult{
+					c <- PipelineResult{
 						Error: err,
-						Type:  groove.Error,
+						Type:  Error,
 					}
 					return
 				}
@@ -355,9 +347,9 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 			}
 
 			// And send the through the channel.
-			c <- groove.PipelineResult{
+			c <- PipelineResult{
 				Evaluations: evaluations,
-				Type:        groove.Evaluation,
+				Type:        Evaluation,
 			}
 		}
 	}
@@ -367,9 +359,9 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 			log.Println("generating features for model")
 			err := pipeline.Model.Generate()
 			if err != nil {
-				c <- groove.PipelineResult{
+				c <- PipelineResult{
 					Error: err,
-					Type:  groove.Error,
+					Type:  Error,
 				}
 				return
 			}
@@ -378,9 +370,9 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 			log.Println("training model")
 			err := pipeline.Model.Train()
 			if err != nil {
-				c <- groove.PipelineResult{
+				c <- PipelineResult{
 					Error: err,
-					Type:  groove.Error,
+					Type:  Error,
 				}
 				return
 			}
@@ -389,9 +381,9 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 			log.Println("testing model")
 			err := pipeline.Model.Test()
 			if err != nil {
-				c <- groove.PipelineResult{
+				c <- PipelineResult{
 					Error: err,
-					Type:  groove.Error,
+					Type:  Error,
 				}
 				return
 			}
@@ -400,8 +392,8 @@ func (pipeline GroovePipeline) Execute(c chan groove.PipelineResult) {
 	}
 
 	// Return the formatted results.
-	c <- groove.PipelineResult{
-		Type: groove.Done,
+	c <- PipelineResult{
+		Type: Done,
 	}
 	return
 }
