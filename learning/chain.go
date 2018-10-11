@@ -353,8 +353,8 @@ func (qc *QueryChain) Execute(q pipeline.Query) (CandidateQuery, error) {
 		}
 		log.Println("chain length", len(cq.Chain))
 		log.Println("applied", cq.TransformationID)
-		log.Println(cq.Query)
-		sel.StoppingCriteria()
+		log.Println(transmute.CompileCqr2Medline(cq.Query))
+		stop = sel.StoppingCriteria()
 	}
 	return cq, nil
 }
