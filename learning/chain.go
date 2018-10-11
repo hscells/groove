@@ -247,9 +247,10 @@ func (qc *QueryChain) Generate() error {
 }
 
 func (qc *QueryChain) Test() error {
-	// Check and create directory if not exists.
-	if _, err := os.Stat(qc.TransformedOutput); os.IsNotExist(err) {
-		os.Mkdir(qc.TransformedOutput, 0777)
+	// Create directory if not exists.
+	err := os.MkdirAll(qc.TransformedOutput, 0777)
+	if err != nil {
+		return err
 	}
 
 	for _, q := range qc.Queries {
