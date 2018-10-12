@@ -352,9 +352,9 @@ func (qc *QueryChain) Execute(q pipeline.Query) (CandidateQuery, error) {
 		if err != nil && err != combinator.ErrCacheMiss {
 			return CandidateQuery{}, err
 		}
+		log.Println(transmute.CompileCqr2Medline(cq.Query))
 		log.Println("chain length", len(cq.Chain))
 		log.Println("applied", cq.TransformationID)
-		log.Println(transmute.CompileCqr2Medline(cq.Query))
 		stop = sel.StoppingCriteria()
 	}
 	return cq, nil
