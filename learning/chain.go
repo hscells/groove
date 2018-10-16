@@ -342,10 +342,6 @@ func (qc *QueryChain) Execute(q pipeline.Query) (CandidateQuery, error) {
 			break
 		}
 
-		log.Printf("topic: %s, depth: %d, stoping: %t", q.Topic, d, sel.StoppingCriteria())
-
-		log.Println("candidates:", len(candidates))
-
 		d++
 
 		cq, sel, err = sel.Select(cq, candidates)
@@ -353,8 +349,10 @@ func (qc *QueryChain) Execute(q pipeline.Query) (CandidateQuery, error) {
 			return CandidateQuery{}, err
 		}
 		log.Println(transmute.CompileCqr2Medline(cq.Query))
-		log.Println("chain length", len(cq.Chain))
-		log.Println("applied", cq.TransformationID)
+		log.Printf("topic: %s, depth: %d, stoping: %t", q.Topic, d, sel.StoppingCriteria())
+		log.Println("candidates:", len(candidates))
+		log.Println("chain length:", len(cq.Chain))
+		log.Println("applied:", cq.TransformationID)
 		stop = sel.StoppingCriteria()
 	}
 	return cq, nil

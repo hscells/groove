@@ -172,11 +172,42 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	log.Println(len(pmids) == e.options.Size, len(pmids), e.options.Size)
 	// If the number of pmids equals the execute size, there might be more to come.
 	if len(pmids) == e.options.Size {
-		l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)), e.SearchSize(e.SearchOptions().Size))
-		if err != nil {
+		type resp struct {
+			ids []int
+			err error
+		}
+		c := make(chan resp)
+		go func(c chan resp) {
+			/*
+		c := make(chan resp)
+		go func(c chan resp) {
+			l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)), e.SearchSize(e.SearchOptions().Size))
+			if err != nil {
+				c <- resp{
+					ids: nil,
+					err: err,
+				}
+			}
+			c <- resp{
+				ids: l,
+				err: nil,
+			}
+		}(c)
+
+		v := <-c
+		if v.err != nil {
 			return nil, err
 		}
-		pmids = append(pmids, l...)
+			 */
+			l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)), e.SearchSize(e.SearchOptions().Size))
+			if err != nil {
+				c <- resp{
+					ids: nil,
+					err: err,
+				}
+			}
+			pmids = append(pmids, l...)
+		}(c)
 	}
 	return pmids, nil
 }

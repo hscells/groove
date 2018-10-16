@@ -188,5 +188,6 @@ func NewQuickRankQueryCandidateSelector(binary string, arguments map[string]inte
 		arg(q)
 	}
 
+	fmt.Printf("created quick rank query candidate selector with depth %d\n", q.depth)
 	return *q
 }
