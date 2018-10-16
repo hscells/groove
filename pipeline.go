@@ -4,6 +4,7 @@ package groove
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
@@ -135,7 +136,7 @@ func NewGroovePipeline(qs query.QueriesSource, ss stats.StatisticsSource, compon
 // Execute runs a groove pipeline for a particular directory of queries.
 func (p Pipeline) Execute(c chan pipeline.Result) {
 	defer close(c)
-	log.Println("starting groove p...")
+	log.Println("starting groove pipeline...")
 
 	// TODO this method needs some serious refactoring done to it.
 
@@ -210,8 +211,9 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 		})
 
 		for _, mq := range measurementQueries {
-			log.Println(mq.Topic)
+			fmt.Printf("%s ", mq.Topic)
 		}
+		log.Println()
 
 		// Compute measurements for each of the queries.
 		// The measurements are computed in parallel.
