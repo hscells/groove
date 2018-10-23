@@ -15,6 +15,7 @@ type Evaluator interface {
 func Evaluate(evaluators []Evaluator, results *trecresults.ResultList, qrels trecresults.QrelsFile, topic string) map[string]float64 {
 	scores := map[string]float64{}
 
+	// When we evaluate we only ever do so on that topic for performance reasons.
 	q := qrels.Qrels[topic]
 
 	// When we retrieve documents, evaluate them.
