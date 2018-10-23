@@ -18,17 +18,16 @@ import (
 func TestName(t *testing.T) {
 
 	// Construct the pipeline.
-	pipelineChannel := make(chan groove.PipelineResult)
+	ss, _ := stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://localhost:9200"),
+		stats.ElasticsearchIndex("medline"),
+		stats.ElasticsearchScroll(true),
+		stats.ElasticsearchSearchOptions(stats.SearchOptions{
+			Size:    10000,
+			RunName: "qpp",
+		}))
+	pipelineChannel := make(chan groove.Result)
 	p := pipeline.NewGroovePipeline(
-		query.NewTransmuteQuerySource(query.MedlineTransmutePipeline),
-		stats.NewElasticsearchStatisticsSource(stats.ElasticsearchHosts("http://localhost:9200"),
-			stats.ElasticsearchIndex("medline"),
-			stats.ElasticsearchField("abstract"),
-			stats.ElasticsearchScroll(true),
-			stats.ElasticsearchSearchOptions(stats.SearchOptions{
-				Size:    10000,
-				RunName: "qpp",
-			})),
+		query.NewTransmuteQuerySource(query.MedlineTransmutePipeline), ss,
 		pipeline.Measurement(preqpp.AvgICTF, preqpp.SumIDF, preqpp.AvgIDF, preqpp.StdDevIDF, preqpp.MaxIDF, postqpp.ClarityScore),
 		pipeline.Evaluation(eval.PrecisionEvaluator, eval.RecallEvaluator),
 		pipeline.MeasurementOutput(output.JsonMeasurementFormatter),

@@ -213,7 +213,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 		for _, mq := range measurementQueries {
 			fmt.Printf("%s ", mq.Topic)
 		}
-		log.Println()
+		fmt.Println()
 
 		// Compute measurements for each of the queries.
 		// The measurements are computed in parallel.
