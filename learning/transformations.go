@@ -127,7 +127,7 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 		candidates []CandidateQuery
 	)
 
-	// Compute features (and pre-transformation features) for the original Boolean query.
+	// Compute Features (and pre-transformation Features) for the original Boolean query.
 	preDeltas, err := deltas(query.Query, ss, measurements, me)
 	if err != nil {
 		return nil, err
@@ -166,16 +166,16 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 
 				features := applied.Features
 				if len(applied.Features) == 0 {
-					// Context features.
+					// Context Features.
 					features = contextFeatures(context)
 
-					// Optional keyword features.
+					// Optional keyword Features.
 					switch applied.Query.(type) {
 					case cqr.Keyword:
 						features = append(features, keywordFeatures(applied.Query.(cqr.Keyword))...)
 					}
 
-					// Boolean features.
+					// Boolean Features.
 					features = append(features, booleanFeatures(tmp)...)
 
 					deltas, err := deltas(tmp, ss, measurements, me)

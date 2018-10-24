@@ -1,6 +1,7 @@
 package learning
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/go-errors/errors"
 	"github.com/hscells/cqr"
@@ -11,6 +12,7 @@ import (
 	"github.com/xtgo/set"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -29,13 +31,13 @@ func (f Feature) Set(score float64) Feature {
 type deltaFeatures map[int]float64
 
 const (
-	// Context features.
+	// Context Features.
 	nilFeature = iota
 	DepthFeature
 	ClauseTypeFeature  // This isn't the operator type, it's the type of the clause (keyword query/Boolean query).
 	ChildrenCountFeature
 
-	// Transformation-based features.
+	// Transformation-based Features.
 	TransformationTypeFeature
 	LogicalReplacementTypeFeature
 	AdjacencyReplacementFeature
@@ -47,15 +49,15 @@ const (
 	Cui2vecExpansionFeature
 	Cui2vecNumExpansionsFeature
 
-	// Keyword specific features.
+	// Keyword specific Features.
 	IsExplodedFeature
 	IsTruncatedFeature
 	NumFieldsFeature
 
-	// Boolean specific features.
+	// Boolean specific Features.
 	OperatorTypeFeature
 
-	// Measurement features.
+	// Measurement Features.
 	measurementFeatures
 
 	// Chain of transformations !!THIS MUST BE THE LAST FEATURE IN THE LIST!!
@@ -85,14 +87,22 @@ func NewFeature(id int, score float64) Feature {
 	return Feature{id, score}
 }
 
-// Features is the group of features used to learn or predict a score.
+// Features is the group of Features used to learn or predict a score.
 type Features []Feature
 
 func (ff Features) Len() int           { return len(ff) }
 func (ff Features) Swap(i, j int)      { ff[i], ff[j] = ff[j], ff[i] }
 func (ff Features) Less(i, j int) bool { return ff[i].ID < ff[j].ID }
 
-// LearntFeature contains the features that were used to produce a particular score.
+func (ff Features) Scores(max int) []float64 {
+	v := make([]float64, max)
+	for _, f := range ff {
+		v[f.ID] = f.Score
+	}
+	return v
+}
+
+// LearntFeature contains the Features that were used to produce a particular score.
 type LearntFeature struct {
 	Features
 	Scores  []float64
@@ -107,6 +117,73 @@ type CandidateQuery struct {
 	Query            cqr.CommonQueryRepresentation
 	Chain            []CandidateQuery
 	Features
+}
+
+func LoadFeatures(reader io.Reader) ([]LearntFeature, error) {
+	var lfs []LearntFeature
+	s := bufio.NewScanner(reader)
+	for s.Scan() {
+		var (
+			comment  string
+			topic    string
+			features Features
+			scores   []float64
+
+			rest string
+		)
+		l := s.Text()
+
+		// {line} # [comment]
+		a := strings.Split(l, "#")
+		if len(a) == 2 {
+			comment = a[1]
+			rest = a[0]
+		} else {
+			rest = l
+		}
+
+		// [topic] * {scores} * {Features}
+		b := strings.Split(rest, "*")
+		topic = b[0]
+
+		// [score {scores}]
+		c := strings.Split(strings.TrimSpace(b[1]), " ")
+		scores = make([]float64, len(c))
+		for i, v := range c {
+			var err error
+			scores[i], err = strconv.ParseFloat(v, 64)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// [feature {Features}]
+		d := strings.Split(strings.TrimSpace(b[2]), " ")
+		features = make(Features, len(d))
+		for i, v := range d {
+			f := strings.Split(v, ":")
+			id, err := strconv.Atoi(f[0])
+			if err != nil {
+				return nil, err
+			}
+			score, err := strconv.ParseFloat(f[1], 64)
+			if err != nil {
+				return nil, err
+			}
+			features[i] = Feature{
+				ID:    id,
+				Score: score,
+			}
+		}
+
+		lfs = append(lfs, LearntFeature{
+			Topic:    topic,
+			Comment:  comment,
+			Features: features,
+			Scores:   scores,
+		})
+	}
+	return lfs, nil
 }
 
 func keywordFeatures(q cqr.Keyword) Features {
@@ -125,7 +202,7 @@ func keywordFeatures(q cqr.Keyword) Features {
 		}
 	}
 
-	// Truncation. Same feature values as exploded.
+	// Truncation. Same feature Values as exploded.
 	truncatedFeature := NewFeature(IsTruncatedFeature, 0)
 	if _, ok := q.Options["truncated"]; ok {
 		if truncated, ok := q.Options["truncated"].(bool); ok && truncated {
@@ -179,7 +256,7 @@ func contextFeatures(context TransformationContext) Features {
 		NewFeature(ChildrenCountFeature, context.ChildrenCount))
 }
 
-// QPPFeatures computes query performance predictor features for a query.
+// QPPFeatures computes query performance predictor Features for a query.
 func deltas(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, measurements []analysis.Measurement, me analysis.MeasurementExecutor) (deltaFeatures, error) {
 	deltas := make(deltaFeatures)
 
@@ -284,7 +361,7 @@ func (lf LearntFeature) WriteLibSVMRank(writer io.Writer) (int, error) {
 	return writer.Write([]byte(line + "\n"))
 }
 
-// AverageScore compute the average Feature score for a group of features.
+// AverageScore compute the average Feature score for a group of Features.
 func (ff Features) AverageScore() float64 {
 	if len(ff) == 0 {
 		return 0
@@ -302,7 +379,7 @@ func (ff Features) AverageScore() float64 {
 	return totalScore / float64(len(ff))
 }
 
-// NewLearntFeature creates a new learnt feature with a score and a set of features.
+// NewLearntFeature creates a new learnt feature with a score and a set of Features.
 func NewLearntFeature(features Features) LearntFeature {
 	return LearntFeature{
 		Features: features,
@@ -326,7 +403,7 @@ func (c CandidateQuery) SetTransformationID(id int) CandidateQuery {
 }
 
 // Append adds the previous query to the chain of transformations so far so we can keep track of which transformations
-// have been applied up until this point, and for features about the query.
+// have been applied up until this point, and for Features about the query.
 func (c CandidateQuery) Append(query CandidateQuery) CandidateQuery {
 
 	query.Chain = append(query.Chain, query)
@@ -350,7 +427,7 @@ func (c CandidateQuery) Append(query CandidateQuery) CandidateQuery {
 
 	c.Features = features
 
-	// Chain features is the minimum possible index for these features.
+	// Chain Features is the minimum possible index for these Features.
 	idx := ChainFeatures
 	for i, candidate := range c.Chain {
 		c.Features = append(c.Features, NewFeature(idx+i, float64(candidate.TransformationID)))

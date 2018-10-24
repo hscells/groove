@@ -38,7 +38,7 @@ func (oc OracleQueryChainCandidateSelector) Output(lf LearntFeature, w io.Writer
 	panic("implement me")
 }
 
-// Features creates features using a oracle query chain candidate selector.
+// Features creates Features using a oracle query chain candidate selector.
 //func (oc OracleQueryChainCandidateSelector) Features(query pipeline.Query, transformations []Transformer) (lf []LearntFeature, err error) {
 //	bestQuery := query
 //
@@ -164,7 +164,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query CandidateQuery, candida
 			transformed = pipeline.NewQuery(query.Topic, query.Topic, applied.Query)
 		}
 
-		log.Printf("topic %v - query took %v minutes; features: %v", nq.Topic, time.Now().Sub(start).Minutes(), applied.Features.String())
+		log.Printf("topic %v - query took %v minutes; Features: %v", nq.Topic, time.Now().Sub(start).Minutes(), applied.Features.String())
 
 		//results = nil
 		//debug.FreeOSMemory()

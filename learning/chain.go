@@ -193,7 +193,7 @@ func (qc *QueryChain) Generate() error {
 							fmt.Println(errors.Wrap(err, 0).ErrorStack())
 							return
 						}
-						r := tree.Documents(qc.QueryCacher).Results(gq, "features")
+						r := tree.Documents(qc.QueryCacher).Results(gq, "Features")
 
 						evaluation := eval.Evaluate(qc.Evaluators, &r, qc.QrelsFile, gq.Topic)
 
@@ -337,6 +337,7 @@ func (qc *QueryChain) Execute(q pipeline.Query) (CandidateQuery, error) {
 		if err != nil {
 			return CandidateQuery{}, err
 		}
+
 		if len(candidates) == 0 {
 			stop = true
 			break
@@ -397,6 +398,12 @@ func getRanking(filename string, candidates []CandidateQuery) (CandidateQuery, e
 	}
 
 	return ranks[0].query, nil
+}
+
+func NewDivDistQueryChain(options ...func(c *DivDistQueryCandidateSelector)) *QueryChain {
+	return &QueryChain{
+		CandidateSelector: NewDivDistCandidateSelector(options...),
+	}
 }
 
 func NewQuickRankQueryChain(binary string, arguments map[string]interface{}, options ...func(c *QuickRankQueryCandidateSelector)) *QueryChain {

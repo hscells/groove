@@ -34,17 +34,17 @@ func makeArguments(a map[string]interface{}) []string {
 
 func (qr QuickRankQueryCandidateSelector) Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error) {
 	args := makeArguments(qr.arguments)
-	args = append(args, "--test", "tmp.features")
-	defer os.Remove("tmp.features")
+	args = append(args, "--test", "tmp.Features")
+	defer os.Remove("tmp.Features")
 
-	// Create a temporary file to contain the features for testing.
-	f, err := os.OpenFile("tmp.features", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// Create a temporary file to contain the Features for testing.
+	f, err := os.OpenFile("tmp.Features", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		panic(err)
 	}
 	defer f.Close()
 
-	// Write the features of the variation to temporary file.
+	// Write the Features of the variation to temporary file.
 	for _, applied := range transformations {
 		_, err := f.WriteString(fmt.Sprintf("0 qid:%s %s\n", query.Topic, applied.Features.String()))
 		if err != nil {
