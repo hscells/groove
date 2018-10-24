@@ -143,7 +143,7 @@ func LoadFeatures(reader io.Reader) ([]LearntFeature, error) {
 		}
 
 		// [score] qid:[topic] {features}
-		b := strings.Split(rest, " ")
+		b := strings.Split(strings.TrimSpace(rest), " ")
 		s, err := strconv.ParseFloat(strings.TrimSpace(b[0]), 64)
 		if err != nil {
 			return nil, err
