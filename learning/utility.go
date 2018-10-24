@@ -12,7 +12,6 @@ import (
 
 type DivDistQueryCandidateSelector struct {
 	depth     int // How far should the model go before stopping?
-	target    int // Which score should be optimised in the learnt Features?
 	modelName string
 	model     divDistModel
 }
@@ -80,8 +79,8 @@ func (u DivDistQueryCandidateSelector) maximumScore(topic string, lfs []LearntFe
 	var features Features
 	for _, f := range lfs {
 		if f.Topic == topic {
-			if f.Scores[u.target] > max {
-				max = f.Scores[u.target]
+			if f.Scores[0] > max {
+				max = f.Scores[0]
 				features = f.Features
 			}
 		}
@@ -121,7 +120,7 @@ func (u DivDistQueryCandidateSelector) Train(lfs []LearntFeature) ([]byte, error
 			fmt.Printf("%s [%f]\n", f.Topic, maxScore)
 		}
 
-		score := f.Scores[u.target]
+		score := f.Scores[0]
 		divergence := maxScore - score
 		scores := f.Features.Scores(60)
 
@@ -173,12 +172,6 @@ func DivDistLoadModel(file string) func(c *DivDistQueryCandidateSelector) {
 func DivDistModelName(file string) func(c *DivDistQueryCandidateSelector) {
 	return func(c *DivDistQueryCandidateSelector) {
 		c.modelName = file
-	}
-}
-
-func DivDistTarget(t int) func(c *DivDistQueryCandidateSelector) {
-	return func(c *DivDistQueryCandidateSelector) {
-		c.target = t
 	}
 }
 

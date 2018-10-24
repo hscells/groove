@@ -142,6 +142,66 @@ func LoadFeatures(reader io.Reader) ([]LearntFeature, error) {
 			rest = l
 		}
 
+		// [score] qid:[topic] {features}
+		b := strings.Split(rest, " ")
+		s, err := strconv.ParseFloat(strings.TrimSpace(b[0]), 64)
+		if err != nil {
+			return nil, err
+		}
+		scores = []float64{s}
+
+		topic = strings.Split(b[1], ":")[1]
+
+		features = make(Features, len(b[2:]))
+		for i, v := range b[2:] {
+			f := strings.Split(v, ":")
+			id, err := strconv.Atoi(f[0])
+			if err != nil {
+				return nil, err
+			}
+			score, err := strconv.ParseFloat(f[1], 64)
+			if err != nil {
+				return nil, err
+			}
+			features[i] = Feature{
+				ID:    id,
+				Score: score,
+			}
+		}
+
+		lfs = append(lfs, LearntFeature{
+			Topic:    topic,
+			Comment:  comment,
+			Features: features,
+			Scores:   scores,
+		})
+	}
+	return lfs, nil
+}
+
+func LoadReinforcementFeatures(reader io.Reader) ([]LearntFeature, error) {
+	var lfs []LearntFeature
+	s := bufio.NewScanner(reader)
+	for s.Scan() {
+		var (
+			comment  string
+			topic    string
+			features Features
+			scores   []float64
+
+			rest string
+		)
+		l := s.Text()
+
+		// {line} # [comment]
+		a := strings.Split(l, "#")
+		if len(a) == 2 {
+			comment = a[1]
+			rest = a[0]
+		} else {
+			rest = l
+		}
+
 		// [topic] * {scores} * {Features}
 		b := strings.Split(rest, "*")
 		topic = b[0]
