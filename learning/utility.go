@@ -11,7 +11,8 @@ import (
 )
 
 type DivDistQueryCandidateSelector struct {
-	depth     int // How far should the model go before stopping?
+	depth     int
+	stopDepth int // How far should the model go before stopping?
 	modelName string
 	model     divDistModel
 }
@@ -150,7 +151,7 @@ func (u DivDistQueryCandidateSelector) Output(lf LearntFeature, w io.Writer) err
 }
 
 func (u DivDistQueryCandidateSelector) StoppingCriteria() bool {
-	return u.depth > 1
+	return u.depth >= u.stopDepth
 }
 
 func DivDistLoadModel(file string) func(c *DivDistQueryCandidateSelector) {
@@ -172,6 +173,12 @@ func DivDistLoadModel(file string) func(c *DivDistQueryCandidateSelector) {
 func DivDistModelName(file string) func(c *DivDistQueryCandidateSelector) {
 	return func(c *DivDistQueryCandidateSelector) {
 		c.modelName = file
+	}
+}
+
+func DivDistDepth(depth int) func(c *DivDistQueryCandidateSelector) {
+	return func(c *DivDistQueryCandidateSelector) {
+		c.stopDepth = depth
 	}
 }
 
