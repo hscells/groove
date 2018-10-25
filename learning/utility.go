@@ -10,11 +10,16 @@ import (
 	"sort"
 )
 
+var (
+	DivDistFeaturesN = 60
+)
+
 type DivDistQueryCandidateSelector struct {
 	depth     int
 	stopDepth int // How far should the model go before stopping?
 	modelName string
 	model     divDistModel
+	topics    map[string]float64
 }
 
 func (u DivDistQueryCandidateSelector) closest(n float64, f []float64) int {
@@ -39,31 +44,42 @@ type scoredDivergenceQuery struct {
 
 func (u DivDistQueryCandidateSelector) Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error) {
 	queries := make([]scoredDivergenceQuery, len(transformations))
+	if _, ok := u.topics[query.Topic]; !ok {
+		u.topics[query.Topic] = math.MaxFloat64
+	}
+	prevDivergence := u.topics[query.Topic]
 	for k, t := range transformations {
-		scores := t.Features.Scores(60)
-		minDivergence := math.MaxFloat64
+		scores := t.Features.Scores(DivDistFeaturesN)
 		divergencePredict := 0.0
+		minDivergence := math.MaxFloat64
+
 		for i, f := range u.model.Features {
-			for len(scores) < len(f.Scores(60)) {
+			for len(scores) < len(f.Scores(DivDistFeaturesN)) {
 				scores = append(scores, 0.0)
 			}
-			for len(f.Scores(60)) < len(scores) {
+			for len(f.Scores(DivDistFeaturesN)) < len(scores) {
 				scores = append(scores, 0.0)
 			}
-			distance, err := cui2vec.Cosine(scores, f.Scores(60))
+			distance, err := cui2vec.Cosine(scores, f.Scores(DivDistFeaturesN))
 			if err != nil {
 				return CandidateQuery{}, nil, err
 			}
-			j := u.closest(distance, f.Scores(60))
+			j := u.closest(distance, f.Scores(DivDistFeaturesN))
 			divergencePredict = u.model.Values[i][j].Divergence
 			if divergencePredict < minDivergence {
 				minDivergence = divergencePredict
 			}
 		}
+
 		queries[k] = scoredDivergenceQuery{
 			divergence: divergencePredict,
 			query:      t,
 		}
+	}
+
+	if prevDivergence > u.topics[query.Topic] {
+		u.depth = u.stopDepth
+		return query, u, nil
 	}
 
 	sort.Slice(queries, func(i, j int) bool {
@@ -114,7 +130,7 @@ func (u DivDistQueryCandidateSelector) Train(lfs []LearntFeature) ([]byte, error
 			topic = f.Topic
 			var vec Features
 			maxScore, vec = u.maximumScore(topic, lfs)
-			bestScores = vec.Scores(60)
+			bestScores = vec.Scores(DivDistFeaturesN)
 			dd.Features = append(dd.Features, vec)
 			dd.Values = append(dd.Values, []divDist{})
 			idx++
@@ -123,7 +139,7 @@ func (u DivDistQueryCandidateSelector) Train(lfs []LearntFeature) ([]byte, error
 
 		score := f.Scores[0]
 		divergence := maxScore - score
-		scores := f.Features.Scores(60)
+		scores := f.Features.Scores(DivDistFeaturesN)
 
 		distance, err := cui2vec.Cosine(bestScores, scores)
 		if err != nil {
@@ -187,5 +203,6 @@ func NewDivDistCandidateSelector(options ...func(c *DivDistQueryCandidateSelecto
 	for _, o := range options {
 		o(u)
 	}
+	u.topics = make(map[string]float64)
 	return *u
 }
