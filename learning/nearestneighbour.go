@@ -4,6 +4,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"github.com/hscells/cui2vec"
+	"github.com/hscells/groove/stats"
 	"io"
 	"log"
 	"math"
@@ -12,18 +13,19 @@ import (
 )
 
 var (
-	DivDistFeaturesN = 60
+	NNFeaturesN = 60
 )
 
-type DivDistQueryCandidateSelector struct {
+type NearestNeighbourQueryCandidateSelector struct {
 	depth     int
 	stopDepth int // How far should the model go before stopping?
 	modelName string
 	model     divDistModel
 	topics    map[string]float64
+	s         stats.StatisticsSource
 }
 
-func (u DivDistQueryCandidateSelector) closest(n float64, f []float64) int {
+func (u NearestNeighbourQueryCandidateSelector) closest(n float64, f []float64) int {
 	if len(f) == 0 {
 		return 0
 	}
@@ -43,29 +45,29 @@ type scoredDivergenceQuery struct {
 	query      CandidateQuery
 }
 
-func (u DivDistQueryCandidateSelector) Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error) {
+func (u NearestNeighbourQueryCandidateSelector) Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error) {
 	queries := make([]scoredDivergenceQuery, len(transformations))
 	if _, ok := u.topics[query.Topic]; !ok {
 		u.topics[query.Topic] = math.MaxFloat64
 	}
 	for k, t := range transformations {
-		scores := t.Features.Scores(DivDistFeaturesN)
+		scores := t.Features.Scores(NNFeaturesN)
 		divergencePredict := 0.0
 		minDivergence := math.MaxFloat64
 		minScore := 0.0
 
 		for i, f := range u.model.Features {
-			for len(scores) < len(f.Scores(DivDistFeaturesN)) {
+			for len(scores) < len(f.Scores(NNFeaturesN)) {
 				scores = append(scores, 0.0)
 			}
-			for len(f.Scores(DivDistFeaturesN)) < len(scores) {
+			for len(f.Scores(NNFeaturesN)) < len(scores) {
 				scores = append(scores, 0.0)
 			}
-			distance, err := cui2vec.Cosine(scores, f.Scores(DivDistFeaturesN))
+			distance, err := cui2vec.Cosine(scores, f.Scores(NNFeaturesN))
 			if err != nil {
 				return CandidateQuery{}, nil, err
 			}
-			j := u.closest(distance, f.Scores(DivDistFeaturesN))
+			j := u.closest(distance, f.Scores(NNFeaturesN))
 			divergencePredict = u.model.Values[i][j].Divergence
 			if divergencePredict < minDivergence && u.model.Scores[i] > minScore {
 				minDivergence = divergencePredict
@@ -85,8 +87,18 @@ func (u DivDistQueryCandidateSelector) Select(query CandidateQuery, transformati
 	})
 
 	if len(queries) > 1 {
-		log.Printf("best: %f, worst: %f", queries[0].divergence, queries[len(queries)-1].divergence)
+		log.Printf("best: %f, worst: %f\n", queries[0].divergence, queries[len(queries)-1].divergence)
 	}
+
+	ret, err := u.s.RetrievalSize(queries[0].query.Query)
+	if err != nil {
+		return CandidateQuery{}, nil, err
+	}
+	if ret == 0 {
+		u.depth = u.stopDepth
+		return query, u, nil
+	}
+	log.Printf("numret: %f\n", ret)
 
 	prevDivergence := u.topics[query.Topic]
 	if prevDivergence == math.MaxFloat64 {
@@ -96,7 +108,7 @@ func (u DivDistQueryCandidateSelector) Select(query CandidateQuery, transformati
 	u.topics[query.Topic] = queries[0].divergence
 	u.depth++
 
-	log.Printf("previous div: %f, current div: %f", prevDivergence, queries[0].divergence)
+	log.Printf("previous div: %f, current div: %f\n", prevDivergence, queries[0].divergence)
 	if prevDivergence > u.topics[query.Topic] {
 		u.depth = u.stopDepth
 		return query, u, nil
@@ -105,7 +117,7 @@ func (u DivDistQueryCandidateSelector) Select(query CandidateQuery, transformati
 	return queries[0].query, u, nil
 }
 
-func (u DivDistQueryCandidateSelector) maximumScore(topic string, lfs []LearntFeature) (float64, Features) {
+func (u NearestNeighbourQueryCandidateSelector) maximumScore(topic string, lfs []LearntFeature) (float64, Features) {
 	max := 0.0
 	var features Features
 	for _, f := range lfs {
@@ -130,7 +142,7 @@ type divDistModel struct {
 	Values   [][]divDist
 }
 
-func (u DivDistQueryCandidateSelector) Train(lfs []LearntFeature) ([]byte, error) {
+func (u NearestNeighbourQueryCandidateSelector) Train(lfs []LearntFeature) ([]byte, error) {
 	var (
 		topic      string
 		maxScore   float64
@@ -148,7 +160,7 @@ func (u DivDistQueryCandidateSelector) Train(lfs []LearntFeature) ([]byte, error
 			if maxScore == 0 {
 				continue
 			}
-			bestScores = vec.Scores(DivDistFeaturesN)
+			bestScores = vec.Scores(NNFeaturesN)
 			dd.Features = append(dd.Features, vec)
 			dd.Values = append(dd.Values, []divDist{})
 			dd.Scores = append(dd.Scores, maxScore)
@@ -158,7 +170,7 @@ func (u DivDistQueryCandidateSelector) Train(lfs []LearntFeature) ([]byte, error
 
 		score := f.Scores[0]
 		divergence := maxScore - score
-		scores := f.Features.Scores(DivDistFeaturesN)
+		scores := f.Features.Scores(NNFeaturesN)
 
 		distance, err := cui2vec.Cosine(bestScores, scores)
 		if err != nil {
@@ -181,16 +193,16 @@ func (u DivDistQueryCandidateSelector) Train(lfs []LearntFeature) ([]byte, error
 	return nil, err
 }
 
-func (u DivDistQueryCandidateSelector) Output(lf LearntFeature, w io.Writer) error {
+func (u NearestNeighbourQueryCandidateSelector) Output(lf LearntFeature, w io.Writer) error {
 	panic("implement me")
 }
 
-func (u DivDistQueryCandidateSelector) StoppingCriteria() bool {
+func (u NearestNeighbourQueryCandidateSelector) StoppingCriteria() bool {
 	return u.depth >= u.stopDepth
 }
 
-func DivDistLoadModel(file string) func(c *DivDistQueryCandidateSelector) {
-	return func(c *DivDistQueryCandidateSelector) {
+func NearestNeighbourLoadModel(file string) func(c *NearestNeighbourQueryCandidateSelector) {
+	return func(c *NearestNeighbourQueryCandidateSelector) {
 		f, err := os.OpenFile(file, os.O_RDONLY, os.ModePerm)
 		if err != nil {
 			panic(err)
@@ -205,20 +217,26 @@ func DivDistLoadModel(file string) func(c *DivDistQueryCandidateSelector) {
 	}
 }
 
-func DivDistModelName(file string) func(c *DivDistQueryCandidateSelector) {
-	return func(c *DivDistQueryCandidateSelector) {
+func NearestNeighbourModelName(file string) func(c *NearestNeighbourQueryCandidateSelector) {
+	return func(c *NearestNeighbourQueryCandidateSelector) {
 		c.modelName = file
 	}
 }
 
-func DivDistDepth(depth int) func(c *DivDistQueryCandidateSelector) {
-	return func(c *DivDistQueryCandidateSelector) {
+func NearestNeighbourDepth(depth int) func(c *NearestNeighbourQueryCandidateSelector) {
+	return func(c *NearestNeighbourQueryCandidateSelector) {
 		c.stopDepth = depth
 	}
 }
 
-func NewDivDistCandidateSelector(options ...func(c *DivDistQueryCandidateSelector)) DivDistQueryCandidateSelector {
-	u := &DivDistQueryCandidateSelector{}
+func NearestNeighbourStatisticsSource(s stats.StatisticsSource) func(c *NearestNeighbourQueryCandidateSelector) {
+	return func(c *NearestNeighbourQueryCandidateSelector) {
+		c.s = s
+	}
+}
+
+func NewNearestNeighbourCandidateSelector(options ...func(c *NearestNeighbourQueryCandidateSelector)) NearestNeighbourQueryCandidateSelector {
+	u := &NearestNeighbourQueryCandidateSelector{}
 	for _, o := range options {
 		o(u)
 	}
