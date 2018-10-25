@@ -72,7 +72,7 @@ func (u DivDistQueryCandidateSelector) Select(query CandidateQuery, transformati
 		}
 
 		queries[k] = scoredDivergenceQuery{
-			divergence: divergencePredict,
+			divergence: minDivergence,
 			query:      t,
 		}
 	}
