@@ -52,6 +52,7 @@ func (u DivDistQueryCandidateSelector) Select(query CandidateQuery, transformati
 		scores := t.Features.Scores(DivDistFeaturesN)
 		divergencePredict := 0.0
 		minDivergence := math.MaxFloat64
+		minScore := 0.0
 
 		for i, f := range u.model.Features {
 			for len(scores) < len(f.Scores(DivDistFeaturesN)) {
@@ -66,7 +67,7 @@ func (u DivDistQueryCandidateSelector) Select(query CandidateQuery, transformati
 			}
 			j := u.closest(distance, f.Scores(DivDistFeaturesN))
 			divergencePredict = u.model.Values[i][j].Divergence
-			if divergencePredict < minDivergence {
+			if divergencePredict < minDivergence && u.model.Scores[i] > minScore {
 				minDivergence = divergencePredict
 				log.Printf("%s[%d] - %f\n", query.Topic, k, minDivergence)
 			}
@@ -124,6 +125,7 @@ type divDist struct {
 
 type divDistModel struct {
 	Features []Features
+	Scores   []float64
 	Values   [][]divDist
 }
 
@@ -142,9 +144,13 @@ func (u DivDistQueryCandidateSelector) Train(lfs []LearntFeature) ([]byte, error
 			topic = f.Topic
 			var vec Features
 			maxScore, vec = u.maximumScore(topic, lfs)
+			if maxScore == 0 {
+				continue
+			}
 			bestScores = vec.Scores(DivDistFeaturesN)
 			dd.Features = append(dd.Features, vec)
 			dd.Values = append(dd.Values, []divDist{})
+			dd.Scores = append(dd.Scores, maxScore)
 			idx++
 			fmt.Printf("%s [%f]\n", f.Topic, maxScore)
 		}
