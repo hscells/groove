@@ -69,6 +69,7 @@ func (u DivDistQueryCandidateSelector) Select(query CandidateQuery, transformati
 			divergencePredict = u.model.Values[i][j].Divergence
 			if divergencePredict < minDivergence && u.model.Scores[i] > minScore {
 				minDivergence = divergencePredict
+				minScore = u.model.Scores[i]
 				log.Printf("%s[%d] - %f\n", query.Topic, k, minDivergence)
 			}
 		}
