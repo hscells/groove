@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/hscells/cui2vec"
 	"io"
+	"log"
 	"math"
 	"os"
 	"sort"
@@ -47,7 +48,6 @@ func (u DivDistQueryCandidateSelector) Select(query CandidateQuery, transformati
 	if _, ok := u.topics[query.Topic]; !ok {
 		u.topics[query.Topic] = math.MaxFloat64
 	}
-	prevDivergence := u.topics[query.Topic]
 	for k, t := range transformations {
 		scores := t.Features.Scores(DivDistFeaturesN)
 		divergencePredict := 0.0
@@ -77,16 +77,24 @@ func (u DivDistQueryCandidateSelector) Select(query CandidateQuery, transformati
 		}
 	}
 
-	if prevDivergence > u.topics[query.Topic] {
-		u.depth = u.stopDepth
-		return query, u, nil
-	}
-
 	sort.Slice(queries, func(i, j int) bool {
 		return queries[i].divergence < queries[j].divergence
 	})
 
+	if len(queries) > 1 {
+		log.Printf("best: %f, worst: %f", queries[0].divergence, queries[len(queries)-1].divergence)
+	}
+
+	prevDivergence := u.topics[query.Topic]
+
+	u.topics[query.Topic] = queries[0].divergence
 	u.depth++
+
+	log.Printf("previous div: %f, current div: %f", prevDivergence, queries[0].divergence)
+	if prevDivergence > u.topics[query.Topic] {
+		u.depth = u.stopDepth
+		return query, u, nil
+	}
 
 	return queries[0].query, u, nil
 }
