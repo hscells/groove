@@ -3,6 +3,7 @@ package learning
 import (
 	"bufio"
 	"fmt"
+	"github.com/hscells/groove/stats"
 	"io"
 	"log"
 	"math"
@@ -16,6 +17,8 @@ type QuickRankQueryCandidateSelector struct {
 	// Maximum depth allowed to generate queries.
 	depth        int
 	currentDepth int
+	// Statistics source.
+	s stats.StatisticsSource
 	// Command-line arguments for configuration.
 	arguments map[string]interface{}
 }
@@ -104,6 +107,17 @@ func (qr QuickRankQueryCandidateSelector) Select(query CandidateQuery, transform
 	f.Truncate(0)
 	f.Seek(0, 0)
 
+	ret, err := qr.s.RetrievalSize(query.Query)
+	if err != nil {
+		return CandidateQuery{}, nil, err
+	}
+	if ret == 0 {
+		log.Println("stopping early")
+		qr.currentDepth = qr.depth
+		return query, qr, nil
+	}
+	log.Printf("numret: %f\n", ret)
+
 	qr.currentDepth++
 
 	if query.Query.String() == candidate.String() {
@@ -173,6 +187,12 @@ func (qr QuickRankQueryCandidateSelector) StoppingCriteria() bool {
 func QuickRankCandidateSelectorMaxDepth(d int) func(c *QuickRankQueryCandidateSelector) {
 	return func(c *QuickRankQueryCandidateSelector) {
 		c.depth = d
+	}
+}
+
+func QuickRankCandidateSelectorStatisticsSource(s stats.StatisticsSource) func(c *QuickRankQueryCandidateSelector) {
+	return func(c *QuickRankQueryCandidateSelector) {
+		c.s = s
 	}
 }
 

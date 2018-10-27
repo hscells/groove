@@ -400,7 +400,7 @@ func getRanking(filename string, candidates []CandidateQuery) (CandidateQuery, e
 	return ranks[0].query, nil
 }
 
-func NewDivDistQueryChain(options ...func(c *NearestNeighbourQueryCandidateSelector)) *QueryChain {
+func NewNearestNeighbourQueryChain(options ...func(c *NearestNeighbourQueryCandidateSelector)) *QueryChain {
 	return &QueryChain{
 		CandidateSelector: NewNearestNeighbourCandidateSelector(options...),
 	}

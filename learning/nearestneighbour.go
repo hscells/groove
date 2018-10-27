@@ -72,7 +72,6 @@ func (u NearestNeighbourQueryCandidateSelector) Select(query CandidateQuery, tra
 			if divergencePredict < minDivergence && u.model.Scores[i] > minScore {
 				minDivergence = divergencePredict
 				minScore = u.model.Scores[i]
-				log.Printf("%s[%d] - %f\n", query.Topic, k, minDivergence)
 			}
 		}
 
