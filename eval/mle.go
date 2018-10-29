@@ -3,6 +3,7 @@ package eval
 import (
 	"fmt"
 	"github.com/hscells/trecresults"
+	"log"
 	"math"
 )
 
