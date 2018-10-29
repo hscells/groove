@@ -70,6 +70,7 @@ func (m MaximumLikelihoodEvaluator) Name() string {
 }
 
 func (m MaximumLikelihoodEvaluator) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
+	log.Println("mle qrel lengths:", len(qrels), len(m.Residual(results, qrels)))
 	return m.Evaluator.Score(results, m.Residual(results, qrels))
 }
 
