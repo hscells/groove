@@ -44,6 +44,7 @@ func (m MaximumLikelihoodEvaluator) Residual(results *trecresults.ResultList, qr
 	mle := m.Probability(qrels)
 	var n int64 = 0
 
+	log.Println("mle:", mle)
 	// Add the unjudged documents into the qrels with a positive relevance label while n < mle.
 	for _, result := range *results {
 		// For performance, we can simply exit the loop when n >= mle.
@@ -71,7 +72,7 @@ func (m MaximumLikelihoodEvaluator) Name() string {
 }
 
 func (m MaximumLikelihoodEvaluator) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
-	log.Println("mle qrel lengths:", len(qrels), len(m.Residual(results, qrels)))
+	log.Println("mle qrel lengths:", len(qrels), len(m.Residual(results, qrels)), "; result size:", results.Len())
 	return m.Evaluator.Score(results, m.Residual(results, qrels))
 }
 
