@@ -19,7 +19,7 @@ type MaximumLikelihoodEvaluator struct {
 // Probability computes the maximum likelihood that a given unjudged document
 // can be considered relevant.
 func (m MaximumLikelihoodEvaluator) Probability(qrels trecresults.Qrels) int64 {
-	var r, nr float64 = 0, 0
+	var r, nr float64 = 1, 1
 	// Consider scores above 1 as relevant.
 	for _, q := range qrels {
 		switch q.Score {
@@ -29,6 +29,7 @@ func (m MaximumLikelihoodEvaluator) Probability(qrels trecresults.Qrels) int64 {
 			r++
 		}
 	}
+	log.Println(r, nr, r/nr)
 	// We take the floor of the result because it doesn't
 	// make sense to have a fraction of a document.
 	return int64(math.Floor(r / nr))
