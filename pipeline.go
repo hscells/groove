@@ -177,6 +177,18 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			}
 		}
 
+		log.Println("sorting queries by complexity...")
+
+		// Sort the transformed queries by size.
+		sort.Slice(queries, func(i, j int) bool {
+			return len(analysis.QueryBooleanQueries(queries[i].Query)) < len(analysis.QueryBooleanQueries(queries[j].Query))
+		})
+
+		for _, q := range queries {
+			fmt.Printf("%s ", q.Topic)
+		}
+		fmt.Println()
+
 		// This means preprocessing the query.
 		measurementQueries := make([]pipeline.Query, len(queries))
 		topics := make([]string, len(queries))
@@ -202,18 +214,6 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			}
 			measurementQueries[i] = q
 		}
-
-		log.Println("sorting queries by complexity...")
-
-		// Sort the transformed queries by size.
-		sort.Slice(measurementQueries, func(i, j int) bool {
-			return len(analysis.QueryBooleanQueries(measurementQueries[i].Query)) < len(analysis.QueryBooleanQueries(measurementQueries[j].Query))
-		})
-
-		for _, mq := range measurementQueries {
-			fmt.Printf("%s ", mq.Topic)
-		}
-		fmt.Println()
 
 		// Compute measurements for each of the queries.
 		// The measurements are computed in parallel.

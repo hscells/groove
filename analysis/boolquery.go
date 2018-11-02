@@ -4,14 +4,112 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/transmute/fields"
 )
 
 var (
-	BooleanFields    booleanFields
-	BooleanKeywords  booleanKeywords
-	BooleanClauses   booleanClauses
-	BooleanTruncated booleanTruncated
+	BooleanFields          booleanFields
+	BooleanKeywords        booleanKeywords
+	BooleanClauses         booleanClauses
+	BooleanAtomicNonAtomic booleanAtomicNonAtomic
+	BooleanTruncated       booleanTruncated
+	BooleanFieldsTitle     booleanFieldsTitle
+	BooleanFieldsAbstract  booleanFieldsAbstract
+	BooleanFieldsMeSH      booleanFieldsMeSH
+	BooleanFieldsOther     booleanFieldsOther
+	BooleanAndCount        booleanAndCount
+	BooleanOrCount         booleanOrCount
+	BooleanNotCount        booleanNotCount
 )
+
+type booleanNotCount struct{}
+
+func (booleanNotCount) Name() string {
+	return "BooleanNotCount"
+}
+
+func (booleanNotCount) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
+	return float64(QueryBooleanClauseCount(q.Query, cqr.NOT)), nil
+}
+
+type booleanOrCount struct{}
+
+func (booleanOrCount) Name() string {
+	return "BooleanOrCount"
+}
+
+func (booleanOrCount) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
+	return float64(QueryBooleanClauseCount(q.Query, cqr.OR)), nil
+}
+
+type booleanAndCount struct{}
+
+func (booleanAndCount) Name() string {
+	return "BooleanAndCount"
+}
+
+func (booleanAndCount) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
+	return float64(QueryBooleanClauseCount(q.Query, cqr.AND)), nil
+}
+
+type booleanFieldsTitle struct{}
+
+func (booleanFieldsTitle) Name() string {
+	return "BooleanFieldsTitle"
+}
+
+func (booleanFieldsTitle) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
+	return float64(QueryFieldsOfField(q.Query, fields.Title)), nil
+}
+
+type booleanFieldsAbstract struct{}
+
+func (booleanFieldsAbstract) Name() string {
+	return "BooleanFieldsAbstract"
+}
+
+func (booleanFieldsAbstract) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
+	return float64(QueryFieldsOfField(q.Query, fields.Abstract)), nil
+}
+
+type booleanFieldsMeSH struct{}
+
+func (booleanFieldsMeSH) Name() string {
+	return "BooleanFieldsMeSH"
+}
+
+func (booleanFieldsMeSH) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
+	return float64(QueryFieldsOfField(q.Query, fields.MeSHTerms) +
+		QueryFieldsOfField(q.Query, fields.MeSHSubheading) +
+		QueryFieldsOfField(q.Query, fields.MeshHeadings) +
+		QueryFieldsOfField(q.Query, fields.MeSHMajorTopic)), nil
+}
+
+type booleanFieldsOther struct{}
+
+func (booleanFieldsOther) Name() string {
+	return "BooleanFieldsOther"
+}
+
+func (booleanFieldsOther) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
+	return float64(
+		len(QueryFields(q.Query)) - (QueryFieldsOfField(q.Query, fields.Abstract) +
+			QueryFieldsOfField(q.Query, fields.Title) +
+			QueryFieldsOfField(q.Query, fields.MeSHTerms) +
+			QueryFieldsOfField(q.Query, fields.MeSHSubheading) +
+			QueryFieldsOfField(q.Query, fields.MeshHeadings) +
+			QueryFieldsOfField(q.Query, fields.MeSHMajorTopic))), nil
+}
+
+type booleanAtomicNonAtomic struct{}
+
+func (booleanAtomicNonAtomic) Name() string {
+	return "BooleanAtomicNonAtomic"
+}
+
+func (booleanAtomicNonAtomic) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
+	return float64(len(QueryBooleanClauses(q.Query))), nil
+}
 
 type booleanFields struct{}
 

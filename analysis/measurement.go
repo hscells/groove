@@ -124,6 +124,24 @@ func QueryFields(r cqr.CommonQueryRepresentation) (fields []string) {
 	return
 }
 
+// QueryFields extracts the fields from a query.
+func QueryFieldsOfField(r cqr.CommonQueryRepresentation, field string) (fields int) {
+	switch q := r.(type) {
+	case cqr.Keyword:
+		for _, f := range q.Fields {
+			if field == f {
+				return 1
+			}
+		}
+		return 0
+	case cqr.BooleanQuery:
+		for _, c := range q.Children {
+			fields += QueryFieldsOfField(c, field)
+		}
+	}
+	return
+}
+
 // QueryKeywords extracts the keywords from a query.
 func QueryKeywords(r cqr.CommonQueryRepresentation) (keywords []cqr.Keyword) {
 	switch q := r.(type) {
@@ -153,13 +171,53 @@ func QueryBooleanQueries(r cqr.CommonQueryRepresentation) (children []cqr.Boolea
 	return
 }
 
+// QueryBooleanClauses extracts all of the clauses from a Boolean query, recursively.
+func QueryBooleanClauses(r cqr.CommonQueryRepresentation) (children []cqr.BooleanQuery) {
+	switch q := r.(type) {
+	case cqr.BooleanQuery:
+		q.Operator = strings.ToLower(strings.TrimSpace(q.Operator))
+		if q.Operator == cqr.AND || q.Operator == cqr.OR || q.Operator == cqr.NOT {
+			children = append(children, q)
+		} else if strings.Contains(q.Operator, "adj") {
+			children = append(children, q)
+		}
+		for _, child := range q.Children {
+			switch c := child.(type) {
+			case cqr.BooleanQuery:
+				children = append(children, QueryBooleanClauses(c)...)
+			}
+		}
+	}
+	return
+}
+
+// QueryBooleanClauses extracts all of the clauses from a Boolean query, recursively.
+func QueryBooleanClauseCount(r cqr.CommonQueryRepresentation, operator string) (n int) {
+	switch q := r.(type) {
+	case cqr.BooleanQuery:
+		q.Operator = strings.TrimSpace(q.Operator)
+		if strings.ToLower(operator) == strings.ToLower(cqr.AND) && strings.Contains(strings.ToLower(q.Operator), "adj") {
+			n++
+		} else if strings.ToLower(q.Operator) == strings.ToLower(operator) {
+			n++
+		}
+		for _, child := range q.Children {
+			switch c := child.(type) {
+			case cqr.BooleanQuery:
+				n += QueryBooleanClauseCount(c, operator)
+			}
+		}
+	}
+	return
+}
+
 // MeshKeywords extracts all keywords which have a particular field.
-func KeywordsWithField(r cqr.CommonQueryRepresentation, f string) (mesh []cqr.Keyword) {
+func KeywordsWithField(r cqr.CommonQueryRepresentation, f string) (k []cqr.Keyword) {
 	keywords := QueryKeywords(r)
 	for _, kw := range keywords {
 		for _, field := range kw.Fields {
 			if field == f {
-				mesh = append(mesh, kw)
+				k = append(k, kw)
 				break
 			}
 		}
