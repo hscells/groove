@@ -48,7 +48,7 @@ func (r RankOracleCandidateSelector) Select(query CandidateQuery, transformation
 	wg.Wait()
 
 	sort.Slice(ranked, func(i, j int) bool {
-		return ranked[i].score < ranked[j].score
+		return ranked[i].score > ranked[j].score
 	})
 
 	ret, err := r.ss.RetrievalSize(query.Query)
