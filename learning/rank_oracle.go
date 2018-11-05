@@ -1,6 +1,7 @@
 package learning
 
 import (
+	"fmt"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
@@ -25,11 +26,12 @@ type oracleQuery struct {
 func (r RankOracleCandidateSelector) Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error) {
 	ranked := make([]oracleQuery, len(transformations))
 	for i, candidate := range transformations {
-		results, err := r.ss.Execute(pipeline.NewQuery(candidate.Topic, candidate.Topic, candidate.Query), r.ss.SearchOptions())
+		results, err := r.ss.Execute(pipeline.NewQuery(query.Topic, query.Topic, candidate.Query), r.ss.SearchOptions())
 		if err != nil {
 			return CandidateQuery{}, nil, err
 		}
-		qrels := r.qrels.Qrels[candidate.Topic]
+		qrels := r.qrels.Qrels[query.Topic]
+		fmt.Println(len(results), len(qrels), r.measure.Name())
 		score := r.measure.Score(&results, qrels)
 		ranked[i] = oracleQuery{score, candidate}
 	}
