@@ -330,7 +330,6 @@ func (qc *QueryChain) Execute(q pipeline.Query) (CandidateQuery, error) {
 	)
 	cq := NewCandidateQuery(q.Query, q.Topic, nil)
 	sel := qc.CandidateSelector
-	log.Println(sel)
 	stop = sel.StoppingCriteria()
 	d := 0
 	for !stop {

@@ -31,7 +31,8 @@ func (r RankOracleCandidateSelector) Select(query CandidateQuery, transformation
 			return CandidateQuery{}, nil, err
 		}
 		qrels := r.qrels.Qrels[query.Topic]
-		fmt.Println(len(results), len(qrels), r.measure.Name())
+		fmt.Println(len(results), len(qrels))
+		fmt.Println(r.measure.Name())
 		score := r.measure.Score(&results, qrels)
 		ranked[i] = oracleQuery{score, candidate}
 	}
