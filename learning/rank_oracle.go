@@ -52,7 +52,7 @@ func (RankOracleCandidateSelector) Output(lf LearntFeature, w io.Writer) error {
 }
 
 func (r RankOracleCandidateSelector) StoppingCriteria() bool {
-	return r.depth < r.maxDepth
+	return r.depth > r.maxDepth
 }
 
 func NewRankOracleCandidateSelector(ss stats.StatisticsSource, qrels trecresults.QrelsFile, measure eval.Evaluator, maxDepth int) *QueryChain {
