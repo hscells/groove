@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"sort"
+	"sync"
 )
 
 type RankOracleCandidateSelector struct {
@@ -25,15 +26,22 @@ type oracleQuery struct {
 
 func (r RankOracleCandidateSelector) Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error) {
 	ranked := make([]oracleQuery, len(transformations))
+	var wg sync.WaitGroup
 	for i, candidate := range transformations {
-		results, err := r.ss.Execute(pipeline.NewQuery(query.Topic, query.Topic, candidate.Query), r.ss.SearchOptions())
-		if err != nil {
-			return CandidateQuery{}, nil, err
-		}
-		qrels := r.qrels.Qrels[query.Topic]
-		score := r.measure.Score(&results, qrels)
-		ranked[i] = oracleQuery{score, candidate}
+		wg.Add(1)
+		go func(q CandidateQuery, j int) {
+			defer wg.Done()
+			results, err := r.ss.Execute(pipeline.NewQuery(query.Topic, query.Topic, q.Query), r.ss.SearchOptions())
+			if err != nil {
+				panic(err)
+			}
+			qrels := r.qrels.Qrels[query.Topic]
+			score := r.measure.Score(&results, qrels)
+			ranked[j] = oracleQuery{score, q}
+		}(candidate, i)
 	}
+
+	wg.Wait()
 
 	sort.Slice(ranked, func(i, j int) bool {
 		return ranked[i].score < ranked[j].score
