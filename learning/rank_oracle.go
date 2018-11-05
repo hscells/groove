@@ -1,6 +1,7 @@
 package learning
 
 import (
+	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
@@ -14,6 +15,7 @@ import (
 type RankOracleCandidateSelector struct {
 	qrels    trecresults.QrelsFile
 	ss       stats.StatisticsSource
+	cache    combinator.QueryCacher
 	measure  eval.Evaluator
 	maxDepth int
 	depth    int
@@ -31,10 +33,12 @@ func (r RankOracleCandidateSelector) Select(query CandidateQuery, transformation
 		wg.Add(1)
 		go func(q CandidateQuery, j int) {
 			defer wg.Done()
-			results, err := r.ss.Execute(pipeline.NewQuery(query.Topic, query.Topic, q.Query), r.ss.SearchOptions())
+			pq := pipeline.NewQuery(query.Topic, query.Topic, q.Query)
+			tree, _, err := combinator.NewLogicalTree(pq, r.ss, r.cache)
 			if err != nil {
 				panic(err)
 			}
+			results := tree.Documents(r.cache).Results(pq, pq.Topic)
 			qrels := r.qrels.Qrels[query.Topic]
 			score := r.measure.Score(&results, qrels)
 			ranked[j] = oracleQuery{score, q}
@@ -86,6 +90,7 @@ func NewRankOracleCandidateSelector(ss stats.StatisticsSource, qrels trecresults
 			qrels:    qrels,
 			measure:  measure,
 			maxDepth: maxDepth,
+			cache:    combinator.NewFileQueryCache("file_cache"),
 		},
 	}
 }
