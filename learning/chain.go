@@ -343,6 +343,8 @@ func (qc *QueryChain) Execute(q pipeline.Query) (CandidateQuery, error) {
 			break
 		}
 
+		candidates = append(candidates, cq)
+
 		d++
 
 		cq, sel, err = sel.Select(cq, candidates)
