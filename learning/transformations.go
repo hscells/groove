@@ -305,9 +305,9 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 				return
 			}
 			mu.Lock()
+			log.Println("done variations for", t.Name())
 			vars = append(vars, c...)
 			mu.Unlock()
-			log.Println("done variations for", t.Name())
 		}(transformation)
 	}
 
