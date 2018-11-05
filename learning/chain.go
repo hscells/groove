@@ -333,6 +333,7 @@ func (qc *QueryChain) Execute(q pipeline.Query) (CandidateQuery, error) {
 	stop = sel.StoppingCriteria()
 	d := 0
 	for !stop {
+		log.Println("generating candidates...")
 		candidates, err := Variations(cq, qc.StatisticsSource, qc.MeasurementExecutor, qc.Measurements, qc.Transformations...)
 		if err != nil {
 			return CandidateQuery{}, err

@@ -43,7 +43,11 @@ func (r RankOracleCandidateSelector) Select(query CandidateQuery, transformation
 		return ranked[i].score > ranked[j].score
 	})
 
-	ret, err := r.ss.RetrievalSize(query.Query)
+	if query.Query.String() == ranked[0].query.String() {
+		r.depth = r.maxDepth
+	}
+
+	ret, err := r.ss.RetrievalSize(ranked[0].query.Query)
 	if err != nil {
 		return CandidateQuery{}, nil, err
 	}
@@ -55,10 +59,6 @@ func (r RankOracleCandidateSelector) Select(query CandidateQuery, transformation
 	log.Printf("numret: %f\n", ret)
 
 	r.depth++
-
-	if query.Query.String() == ranked[0].query.String() {
-		r.depth = r.maxDepth
-	}
 
 	return ranked[0].query, r, nil
 }
