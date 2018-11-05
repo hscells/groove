@@ -606,6 +606,11 @@ func (clauseRemoval) Name() string {
 func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []cqr.CommonQueryRepresentation, err error) {
 	switch q := query.(type) {
 	case cqr.Keyword:
+		// If the string is truncated, then don't bother.
+		if strings.ContainsAny(q.QueryString, "*$") {
+			return []cqr.CommonQueryRepresentation{}, nil
+		}
+
 		// Use MetaMap to get the preferred cui.
 		candidates, err := c.quickumls.Match(q.QueryString)
 		if err != nil {
