@@ -45,8 +45,12 @@ func (rec recallEvaluator) Name() string {
 }
 
 func (rec recallEvaluator) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
+	if float64(len(*results)) == 0 {
+		return 0.0
+	}
 	numRel := 0.0
-	numRelRet := 0.0
+	numRelRet := 0.0    // tp
+	numRelNotRet := 0.0 // fn
 	for _, result := range *results {
 		docID := result.DocId
 		if qrel, ok := qrels[docID]; ok {
@@ -66,7 +70,9 @@ func (rec recallEvaluator) Score(results *trecresults.ResultList, qrels trecresu
 		return 0.0
 	}
 
-	return numRelRet / numRel
+	numRelNotRet = numRel - numRelRet
+
+	return numRelRet / (numRelRet + numRelNotRet)
 }
 
 func (rec precisionEvaluator) Name() string {
@@ -74,22 +80,29 @@ func (rec precisionEvaluator) Name() string {
 }
 
 func (rec precisionEvaluator) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
-	numRet := float64(len(*results))
-	numRelRet := 0.0
+	if float64(len(*results)) == 0 {
+		return 0.0
+	}
+	numRelRet := 0.0    // tp
+	numNonRelRet := 0.0 // fp
 	for _, result := range *results {
 		docID := result.DocId
 		if qrel, ok := qrels[docID]; ok {
 			if qrel.Score > RelevanceGrade {
 				numRelRet++
+			} else {
+				numNonRelRet++
 			}
+		} else {
+			numNonRelRet++
 		}
 	}
 
-	if numRet == 0 {
+	if numRelRet == 0 || numNonRelRet == 0 {
 		return 0.0
 	}
 
-	return numRelRet / numRet
+	return numRelRet / (numRelRet + numNonRelRet)
 }
 
 func (numRel) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
