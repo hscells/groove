@@ -6,6 +6,7 @@ import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/trecresults"
 	"io"
+	"log"
 	"sort"
 )
 
@@ -38,7 +39,22 @@ func (r RankOracleCandidateSelector) Select(query CandidateQuery, transformation
 		return ranked[i].score < ranked[j].score
 	})
 
+	ret, err := r.ss.RetrievalSize(query.Query)
+	if err != nil {
+		return CandidateQuery{}, nil, err
+	}
+	if ret == 0 {
+		log.Println("stopping early")
+		r.depth = r.maxDepth
+		return query, r, nil
+	}
+	log.Printf("numret: %f\n", ret)
+
 	r.depth++
+
+	if query.Query.String() == ranked[0].query.String() {
+		r.depth = r.maxDepth
+	}
 
 	return ranked[0].query, r, nil
 }
@@ -52,7 +68,7 @@ func (RankOracleCandidateSelector) Output(lf LearntFeature, w io.Writer) error {
 }
 
 func (r RankOracleCandidateSelector) StoppingCriteria() bool {
-	return r.depth > r.maxDepth
+	return r.depth >= r.maxDepth
 }
 
 func NewRankOracleCandidateSelector(ss stats.StatisticsSource, qrels trecresults.QrelsFile, measure eval.Evaluator, maxDepth int) *QueryChain {
