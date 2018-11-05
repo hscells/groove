@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"sort"
-	"sync"
 )
 
 type RankOracleCandidateSelector struct {
@@ -28,24 +27,17 @@ type oracleQuery struct {
 
 func (r RankOracleCandidateSelector) Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error) {
 	ranked := make([]oracleQuery, len(transformations))
-	var wg sync.WaitGroup
 	for i, candidate := range transformations {
-		wg.Add(1)
-		go func(q CandidateQuery, j int) {
-			defer wg.Done()
-			pq := pipeline.NewQuery(query.Topic, query.Topic, q.Query)
-			tree, _, err := combinator.NewLogicalTree(pq, r.ss, r.cache)
-			if err != nil {
-				panic(err)
-			}
-			results := tree.Documents(r.cache).Results(pq, pq.Topic)
-			qrels := r.qrels.Qrels[query.Topic]
-			score := r.measure.Score(&results, qrels)
-			ranked[j] = oracleQuery{score, q}
-		}(candidate, i)
+		pq := pipeline.NewQuery(query.Topic, query.Topic, candidate.Query)
+		tree, _, err := combinator.NewLogicalTree(pq, r.ss, r.cache)
+		if err != nil {
+			panic(err)
+		}
+		results := tree.Documents(r.cache).Results(pq, pq.Topic)
+		qrels := r.qrels.Qrels[query.Topic]
+		score := r.measure.Score(&results, qrels)
+		ranked[i] = oracleQuery{score, candidate}
 	}
-
-	wg.Wait()
 
 	sort.Slice(ranked, func(i, j int) bool {
 		return ranked[i].score > ranked[j].score
