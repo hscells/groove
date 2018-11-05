@@ -423,30 +423,31 @@ func constructTree(query pipeline.Query, ss stats.StatisticsSource, seen QueryCa
 
 		// We need to create a special case for adjacent clauses.
 		if strings.Contains(strings.ToLower(q.Operator), "adj") {
-			// Return a seen clause.
-			docs, err := seen.Get(q)
-			if err == nil && docs != nil {
-				return NewAdjAtom(q), seen, nil
-			} else if err != nil && err != ErrCacheMiss {
-				return nil, nil, err
-			}
-
-			ids, err := stats.GetDocumentIDs(query, ss)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			docs = make(Documents, len(ids))
-			for i, id := range ids {
-				docs[i] = Document(id)
-			}
-
-			a := NewAdjAtom(q)
-			err = seen.Set(a.Query(), docs)
-			if err != nil {
-				return nil, nil, err
-			}
-			return a, seen, nil
+			operator = AndOperator
+			//// Return a seen clause.
+			//docs, err := seen.Get(q)
+			//if err == nil && docs != nil {
+			//	return NewAdjAtom(q), seen, nil
+			//} else if err != nil && err != ErrCacheMiss {
+			//	return nil, nil, err
+			//}
+			//
+			//ids, err := stats.GetDocumentIDs(query, ss)
+			//if err != nil {
+			//	return nil, nil, err
+			//}
+			//
+			//docs = make(Documents, len(ids))
+			//for i, id := range ids {
+			//	docs[i] = Document(id)
+			//}
+			//
+			//a := NewAdjAtom(q)
+			//err = seen.Set(a.Query(), docs)
+			//if err != nil {
+			//	return nil, nil, err
+			//}
+			//return a, seen, nil
 		}
 
 		// Otherwise, we can just perform the operation with a typical operator.
