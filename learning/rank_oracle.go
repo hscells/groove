@@ -31,7 +31,7 @@ func (r RankOracleCandidateSelector) Select(query CandidateQuery, transformation
 		pq := pipeline.NewQuery(query.Topic, query.Topic, candidate.Query)
 		tree, _, err := combinator.NewLogicalTree(pq, r.ss, r.cache)
 		if err != nil {
-			panic(err)
+			return CandidateQuery{}, nil, err
 		}
 		results := tree.Documents(r.cache).Results(pq, pq.Topic)
 		qrels := r.qrels.Qrels[query.Topic]
