@@ -298,7 +298,7 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 		wg.Add(1)
 		go func(t Transformation) {
 			defer wg.Done()
-			log.Println("generating variations for", t.Name())
+			log.Println("starting generating variations for", t.Name())
 			c, err := variations(query, TransformationContext{}, ss, me, measurements, t)
 			if err != nil {
 				e = err
@@ -307,6 +307,7 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 			mu.Lock()
 			vars = append(vars, c...)
 			mu.Unlock()
+			log.Println("completed generating variations for", t.Name())
 		}(transformation)
 	}
 
