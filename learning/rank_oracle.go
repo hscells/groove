@@ -1,7 +1,6 @@
 package learning
 
 import (
-	"fmt"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
