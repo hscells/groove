@@ -6,6 +6,8 @@ import (
 	"math"
 )
 
+var RelevanceGrade int64 = 1
+
 type recallEvaluator struct{}
 type precisionEvaluator struct{}
 type numRel struct{}
@@ -48,14 +50,14 @@ func (rec recallEvaluator) Score(results *trecresults.ResultList, qrels trecresu
 	for _, result := range *results {
 		docID := result.DocId
 		if qrel, ok := qrels[docID]; ok {
-			if qrel.Score > 0 {
+			if qrel.Score > RelevanceGrade {
 				numRelRet++
 			}
 		}
 	}
 
 	for _, qrel := range qrels {
-		if qrel.Score > 0 {
+		if qrel.Score > RelevanceGrade {
 			numRel++
 		}
 	}
@@ -77,7 +79,7 @@ func (rec precisionEvaluator) Score(results *trecresults.ResultList, qrels trecr
 	for _, result := range *results {
 		docID := result.DocId
 		if qrel, ok := qrels[docID]; ok {
-			if qrel.Score > 0 {
+			if qrel.Score > RelevanceGrade {
 				numRelRet++
 			}
 		}
@@ -93,7 +95,7 @@ func (rec precisionEvaluator) Score(results *trecresults.ResultList, qrels trecr
 func (numRel) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
 	n := 0.0
 	for _, qrel := range qrels {
-		if qrel.Score > 0 {
+		if qrel.Score > RelevanceGrade {
 			n++
 		}
 	}
@@ -117,7 +119,7 @@ func (numRelRet) Score(results *trecresults.ResultList, qrels trecresults.Qrels)
 	for _, result := range *results {
 		docID := result.DocId
 		if qrel, ok := qrels[docID]; ok {
-			if qrel.Score > 0 {
+			if qrel.Score > RelevanceGrade {
 				n++
 			}
 		}
