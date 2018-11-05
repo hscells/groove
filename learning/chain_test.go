@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/hscells/cqr"
-	"github.com/hscells/groove"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/learning"
+	p "github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
@@ -85,12 +85,12 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 
 	chain := learning.NewQueryChain(selector, ss, analysis.NewDiskMeasurementExecutor(statisticsCache), []analysis.Measurement{analysis.BooleanClauses}, learning.NewLogicalOperatorTransformer(), learning.NewAdjacencyReplacementTransformer(), learning.NewAdjacencyRangeTransformer(), learning.NewMeSHExplosionTransformer(), learning.NewFieldRestrictionsTransformer())
 	//fmt.Printf("Rewriting query with %v possible transformations\n", len(chain.Transformations))
-	_, err = chain.Execute(groove.NewPipelineQuery("test", topic, repr.(cqr.CommonQueryRepresentation)))
+	_, err = chain.Execute(p.NewQuery("test", topic, repr.(cqr.CommonQueryRepresentation)))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	results1, err := ss.Execute(groove.NewPipelineQuery("test", topic, repr.(cqr.CommonQueryRepresentation)), ss.SearchOptions())
+	results1, err := ss.Execute(p.NewQuery("test", topic, repr.(cqr.CommonQueryRepresentation)), ss.SearchOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2,16 +2,19 @@ package learning_test
 
 import (
 	"github.com/hscells/cqr"
+	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/learning"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/quickumlsrest"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
 	"github.com/hscells/transmute/parser"
 	"github.com/hscells/transmute/pipeline"
 	"github.com/peterbourgon/diskv"
 	"log"
+	"os"
 	"testing"
 )
 
@@ -70,7 +73,21 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 		Compression:  diskv.NewGzipCompression(),
 	})
 
-	candidates, err := learning.Variations(learning.NewCandidateQuery(repr.(cqr.CommonQueryRepresentation), "1", nil), ss, analysis.NewDiskMeasurementExecutor(statisticsCache), []analysis.Measurement{analysis.BooleanClauses}, learning.NewFieldRestrictionsTransformer())
+	f, err := os.OpenFile("/Users/harryscells/Repositories/cui2vec/testdata/cui2vec_precomputed.bin", os.O_RDONLY, os.ModePerm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := cui2vec.NewPrecomputedEmbeddings(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := cui2vec.LoadCUIMapping("/Users/harryscells/Repositories/cui2vec/cuis.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	candidates, err := learning.Variations(learning.NewCandidateQuery(repr.(cqr.CommonQueryRepresentation), "1", nil), ss, analysis.NewDiskMeasurementExecutor(statisticsCache), []analysis.Measurement{analysis.BooleanClauses}, learning.Newcui2vecExpansionTransformer(v, m, quickumlsrest.NewClient("http://43.240.96.223:5000/")))
 
 	//queries, err := LogicalOperatorReplacement.Apply(repr.(cqr.CommonQueryRepresentation))
 	//if err != nil {
