@@ -31,8 +31,6 @@ func (r RankOracleCandidateSelector) Select(query CandidateQuery, transformation
 			return CandidateQuery{}, nil, err
 		}
 		qrels := r.qrels.Qrels[query.Topic]
-		fmt.Println(len(results), len(qrels))
-		fmt.Println(r.measure.Name())
 		score := r.measure.Score(&results, qrels)
 		ranked[i] = oracleQuery{score, candidate}
 	}
@@ -59,7 +57,6 @@ func (r RankOracleCandidateSelector) StoppingCriteria() bool {
 }
 
 func NewRankOracleCandidateSelector(ss stats.StatisticsSource, qrels trecresults.QrelsFile, measure eval.Evaluator, maxDepth int) *QueryChain {
-	fmt.Println(measure.Name())
 	return &QueryChain{
 		CandidateSelector: RankOracleCandidateSelector{
 			ss:       ss,
