@@ -59,6 +59,7 @@ func (r RankOracleCandidateSelector) StoppingCriteria() bool {
 }
 
 func NewRankOracleCandidateSelector(ss stats.StatisticsSource, qrels trecresults.QrelsFile, measure eval.Evaluator, maxDepth int) *QueryChain {
+	fmt.Println(measure.Name())
 	return &QueryChain{
 		CandidateSelector: RankOracleCandidateSelector{
 			ss:       ss,
