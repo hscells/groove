@@ -66,17 +66,26 @@ const (
 
 // MeasurementFeatureKeys contains a mapping of applicable measurement to a feature.
 var MeasurementFeatureKeys = map[string]int{
-	analysis.BooleanFields.Name():        measurementFeatures,
-	analysis.BooleanClauses.Name():       measurementFeatures + 1,
-	analysis.BooleanKeywords.Name():      measurementFeatures + 2,
-	analysis.BooleanTruncated.Name():     measurementFeatures + 3,
-	preqpp.RetrievalSize.Name():          measurementFeatures + 4,
-	preqpp.QueryScope.Name():             measurementFeatures + 5,
-	analysis.MeshKeywordCount.Name():     measurementFeatures + 6,
-	analysis.MeshExplodedCount.Name():    measurementFeatures + 7,
-	analysis.MeshNonExplodedCount.Name(): measurementFeatures + 8,
-	analysis.MeshAvgDepth.Name():         measurementFeatures + 9,
-	analysis.MeshMaxDepth.Name():         measurementFeatures + 10,
+	analysis.BooleanFields.Name():           measurementFeatures,
+	analysis.BooleanClauses.Name():          measurementFeatures + 1,
+	analysis.BooleanKeywords.Name():         measurementFeatures + 2,
+	analysis.BooleanTruncated.Name():        measurementFeatures + 3,
+	preqpp.RetrievalSize.Name():             measurementFeatures + 4,
+	preqpp.QueryScope.Name():                measurementFeatures + 5,
+	analysis.MeshKeywordCount.Name():        measurementFeatures + 6,
+	analysis.MeshExplodedCount.Name():       measurementFeatures + 7,
+	analysis.MeshNonExplodedCount.Name():    measurementFeatures + 8,
+	analysis.MeshAvgDepth.Name():            measurementFeatures + 9,
+	analysis.MeshMaxDepth.Name():            measurementFeatures + 10,
+	analysis.BooleanNonAtomicClauses.Name(): measurementFeatures + 11,
+	analysis.BooleanAndCount.Name():         measurementFeatures + 12,
+	analysis.BooleanOrCount.Name():          measurementFeatures + 13,
+	analysis.BooleanNotCount.Name():         measurementFeatures + 14,
+	analysis.BooleanFieldsTitle.Name():      measurementFeatures + 15,
+	analysis.BooleanFieldsAbstract.Name():   measurementFeatures + 16,
+	analysis.BooleanFieldsMeSH.Name():       measurementFeatures + 17,
+	analysis.BooleanFieldsOther.Name():      measurementFeatures + 18,
+	analysis.TermCount.Name():               measurementFeatures + 19,
 }
 
 // Chain of transformations !!THIS MUST BE THE LAST FEATURE IN THE LIST!!

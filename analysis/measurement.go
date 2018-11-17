@@ -2,6 +2,7 @@
 package analysis
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"github.com/hscells/cqr"
@@ -10,11 +11,9 @@ import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/fields"
 	"github.com/peterbourgon/diskv"
-	"hash/fnv"
 	"math"
 	"os"
 	"reflect"
-	"strconv"
 	"strings"
 )
 
@@ -70,9 +69,10 @@ func NewMemoryMeasurementExecutor() MeasurementExecutor {
 
 // hash hashes a query and measurement pair ready to be cached.
 func hash(representation cqr.CommonQueryRepresentation, measurement Measurement) string {
-	h := fnv.New32()
-	h.Write([]byte(representation.String() + measurement.Name()))
-	return strconv.Itoa(int(h.Sum32()))
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(representation.String()+measurement.Name())))
+	//h := fnv.New32()
+	//h.Write([]byte(representation.String() + measurement.Name()))
+	//return strconv.Itoa(int(h.Sum32()))
 }
 
 // Execute executes the specified measurements on the query using the statistics source.

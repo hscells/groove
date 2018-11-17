@@ -9,7 +9,7 @@ import (
 	"github.com/hscells/trecresults"
 	"github.com/pkg/errors"
 	"github.com/xtgo/set"
-	"hash/fnv"
+	"hash/crc64"
 	"math"
 	"sort"
 	"strconv"
@@ -364,9 +364,10 @@ func NewCombinator(query cqr.BooleanQuery, operator Operator, clauses ...Logical
 
 // HashCQR creates a hash of the query.
 func HashCQR(representation cqr.CommonQueryRepresentation) uint64 {
-	h := fnv.New64a()
-	h.Write([]byte(representation.String()))
-	return h.Sum64()
+	return crc64.Checksum([]byte(representation.String()), crc64.MakeTable(crc64.ISO))
+	//h := fnv.New64a()
+	//h.Write([]byte(representation.String()))
+	//return h.Sum64()
 }
 
 // constructTree creates a logical tree recursively by descending top down. If the operator of the query is unknown

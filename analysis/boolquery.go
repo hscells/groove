@@ -8,18 +8,18 @@ import (
 )
 
 var (
-	BooleanFields          booleanFields
-	BooleanKeywords        booleanKeywords
-	BooleanClauses         booleanClauses
-	BooleanAtomicNonAtomic booleanAtomicNonAtomic
-	BooleanTruncated       booleanTruncated
-	BooleanFieldsTitle     booleanFieldsTitle
-	BooleanFieldsAbstract  booleanFieldsAbstract
-	BooleanFieldsMeSH      booleanFieldsMeSH
-	BooleanFieldsOther     booleanFieldsOther
-	BooleanAndCount        booleanAndCount
-	BooleanOrCount         booleanOrCount
-	BooleanNotCount        booleanNotCount
+	BooleanFields           booleanFields
+	BooleanKeywords         booleanKeywords
+	BooleanClauses          booleanClauses
+	BooleanNonAtomicClauses booleanNonAtomicClauses
+	BooleanTruncated        booleanTruncated
+	BooleanFieldsTitle      booleanFieldsTitle
+	BooleanFieldsAbstract   booleanFieldsAbstract
+	BooleanFieldsMeSH       booleanFieldsMeSH
+	BooleanFieldsOther      booleanFieldsOther
+	BooleanAndCount         booleanAndCount
+	BooleanOrCount          booleanOrCount
+	BooleanNotCount         booleanNotCount
 )
 
 type booleanNotCount struct{}
@@ -101,13 +101,13 @@ func (booleanFieldsOther) Execute(q pipeline.Query, s stats.StatisticsSource) (f
 			QueryFieldsOfField(q.Query, fields.MeSHMajorTopic))), nil
 }
 
-type booleanAtomicNonAtomic struct{}
+type booleanNonAtomicClauses struct{}
 
-func (booleanAtomicNonAtomic) Name() string {
-	return "BooleanAtomicNonAtomic"
+func (booleanNonAtomicClauses) Name() string {
+	return "BooleanNonAtomicClauses"
 }
 
-func (booleanAtomicNonAtomic) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
+func (booleanNonAtomicClauses) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
 	return float64(len(QueryBooleanClauses(q.Query))), nil
 }
 
