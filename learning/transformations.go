@@ -7,11 +7,9 @@ import (
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/quickumlsrest"
 	"github.com/hscells/transmute/fields"
 	"github.com/xtgo/set"
 	"log"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -66,9 +64,10 @@ type adjacencyReplacement struct{}
 type clauseRemoval struct{}
 
 type cui2vecExpansion struct {
-	vector    cui2vec.Embeddings
-	mapping   cui2vec.Mapping
-	quickumls quickumlsrest.Client
+	vector         cui2vec.Embeddings
+	mapping        cui2vec.Mapping
+	reverseMapping map[string]string
+	//quickumls quickumlsrest.Client
 }
 
 type meshParent struct{}
@@ -105,13 +104,17 @@ func NewClauseRemovalTransformer() Transformation {
 }
 
 // NewClauseRemovalTransformer creates a clause removal transformer.
-func Newcui2vecExpansionTransformer(vector cui2vec.Embeddings, mapping cui2vec.Mapping, quickumls quickumlsrest.Client) Transformation {
+func Newcui2vecExpansionTransformer(vector cui2vec.Embeddings, mapping cui2vec.Mapping) Transformation {
+	r := make(map[string]string)
+	for k, v := range mapping {
+		r[v] = k
+	}
 	return Transformation{
 		ID: Cui2vecExpansionTransformation,
 		Transformer: cui2vecExpansion{
-			vector:    vector,
-			mapping:   mapping,
-			quickumls: quickumls,
+			vector:         vector,
+			mapping:        mapping,
+			reverseMapping: r,
 		},
 	}
 }
@@ -612,33 +615,33 @@ func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []
 			return []cqr.CommonQueryRepresentation{}, nil
 		}
 
-		// Use MetaMap to get the preferred cui.
-		candidates, err := c.quickumls.Match(q.QueryString)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(candidates) == 0 {
-			return []cqr.CommonQueryRepresentation{}, nil
-		}
-
-		// Next, parse and sort the candidates from MetaMap.
-		type concept struct {
-			cui   string
-			score float64
-		}
-		cuis := make([]concept, len(candidates))
-		for i, candidate := range candidates {
-			cuis[i] = concept{cui: candidate.CUI, score: candidate.Similarity}
-		}
-		sort.Slice(cuis, func(i, j int) bool {
-			return cuis[i].score < cuis[j].score
-		})
+		//// Use MetaMap to get the preferred cui.
+		//candidates, err := c.quickumls.Match(q.QueryString)
+		//if err != nil {
+		//	return nil, err
+		//}
+		//
+		//if len(candidates) == 0 {
+		//	return []cqr.CommonQueryRepresentation{}, nil
+		//}
+		//
+		//// Next, parse and sort the candidates from MetaMap.
+		//type concept struct {
+		//	cui   string
+		//	score float64
+		//}
+		//cuis := make([]concept, len(candidates))
+		//for i, candidate := range candidates {
+		//	cuis[i] = concept{cui: candidate.CUI, score: candidate.Similarity}
+		//}
+		//sort.Slice(cuis, func(i, j int) bool {
+		//	return cuis[i].score < cuis[j].score
+		//})
 
 		// Now we know the target cui that is most associated with the input term.
-		target := cuis[0].cui
-		if err != nil {
-			return nil, err
+		target, ok := c.reverseMapping[q.QueryString]
+		if !ok {
+			return []cqr.CommonQueryRepresentation{}, nil
 		}
 
 		// We can get cuis that are similar to each other from cui2vec.

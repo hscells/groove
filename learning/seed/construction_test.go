@@ -1,12 +1,16 @@
 package seed_test
 
 import (
+	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/analysis/preqpp"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/learning"
 	"github.com/hscells/groove/learning/seed"
+	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute"
 	"github.com/peterbourgon/diskv"
+	"os"
 	"testing"
 )
 
@@ -36,9 +40,35 @@ Ideally, articles for inclusion should have described a physical test, or refere
 Instability may underlie impingement, but tests of instability were only included if they were intended to demonstrate associated impingement pain, as in the modified relocation test (Hamner 2000), as opposed to instability per se. Similarly, tests for ACJ disorders were only included if, like the active compression test (O'Brien 1998a), they had a component intended to reproduce impingement pain.`)
 	queries, _ := c.Construct()
 	t.Log(len(queries))
+	//for _, q := range queries {
+	//	t.Log(q.GetOption(seed.ProtocolOption))
+	//	t.Log(transmute.CompileCqr2Medline(q))
+	//}
 
-	v, err := learning.Variations(learning.NewCandidateQuery(queries[0], "1", nil),
-		nil,
+	f, err := os.OpenFile("/Users/harryscells/Repositories/cui2vec/testdata/cui2vec_precomputed.bin", os.O_RDONLY, os.ModePerm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := cui2vec.LoadCUIMapping("/Users/harryscells/Repositories/cui2vec/cuis.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := cui2vec.NewPrecomputedEmbeddings(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ss, err := stats.NewEntrezStatisticsSource(
+		stats.EntrezAPIKey("22a11de46af145ce59bb288e0ede66721f09"),
+		stats.EntrezEmail("harryscells@gmail.com"),
+		stats.EntrezTool("groove"),
+		stats.EntrezOptions(stats.SearchOptions{Size: 100000}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := learning.Variations(learning.NewCandidateQuery(queries[len(queries)-1], "1", nil),
+		ss,
 		analysis.NewDiskMeasurementExecutor(diskv.New(diskv.Options{
 			BasePath:     "statistics_cache",
 			Transform:    combinator.BlockTransform(16),
@@ -61,6 +91,7 @@ Instability may underlie impingement, but tests of instability were only include
 			analysis.MeshExplodedCount,
 			analysis.MeshAvgDepth,
 			analysis.MeshMaxDepth,
+			preqpp.RetrievalSize,
 		},
 		learning.NewLogicalOperatorTransformer(),
 		learning.NewFieldRestrictionsTransformer(),
@@ -68,11 +99,13 @@ Instability may underlie impingement, but tests of instability were only include
 		learning.NewMeshParentTransformer(),
 		learning.NewClauseRemovalTransformer(),
 		learning.NewFieldRestrictionsTransformer(),
+		learning.Newcui2vecExpansionTransformer(p, m),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, q := range v {
+		t.Log(q.Query.GetOption(seed.ProtocolOption))
 		t.Log(transmute.CompileCqr2Medline(q.Query))
 	}
 	t.Log(len(v))
