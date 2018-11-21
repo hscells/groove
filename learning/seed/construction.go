@@ -2,6 +2,7 @@ package seed
 
 import (
 	"github.com/hscells/cqr"
+	"github.com/hscells/transmute/fields"
 	"github.com/jdkato/prose/tokenize"
 	"gopkg.in/neurosnap/sentences.v1"
 	"strings"
@@ -239,7 +240,7 @@ func MakeKeywords(text string, stopwords []string, punctuation sentences.PunctSt
 		if punkt.IsAlpha(sentences.NewToken(token)) {
 			if _, ok := seen[token]; !ok {
 				if _, ok := stopMap[token]; !ok {
-					keywords = append(keywords, cqr.NewKeyword(token, "title", "text"))
+					keywords = append(keywords, cqr.NewKeyword(token, fields.Title, fields.Abstract))
 				}
 				seen[token] = struct{}{}
 			}
