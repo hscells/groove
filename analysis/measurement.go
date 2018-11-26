@@ -69,6 +69,9 @@ func NewMemoryMeasurementExecutor() MeasurementExecutor {
 
 // hash hashes a query and measurement pair ready to be cached.
 func hash(representation cqr.CommonQueryRepresentation, measurement Measurement) string {
+	if representation == nil {
+		return "0"
+	}
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(representation.String()+measurement.Name())))
 	//h := fnv.New32()
 	//h.Write([]byte(representation.String() + measurement.Name()))

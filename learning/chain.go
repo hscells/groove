@@ -18,8 +18,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"math"
-	"math/rand"
 	"os"
 	"path"
 	"runtime"
@@ -42,21 +40,23 @@ type QueryChain struct {
 	Evaluators          []eval.Evaluator
 	QueryCacher         combinator.QueryCacher
 	QrelsFile           trecresults.QrelsFile
+	Sampler             Sampler
 }
 
-// sample n% of candidate queries.
-func sample(n int, a []CandidateQuery) []CandidateQuery {
-	// shuffle the items to sample.
-	s := rand.Perm(len(a))
-
-	// sample n% items from shuffled slice.
-	p := int(math.Ceil((float64(n) / 100.0) * float64(len(a))))
-	c := make([]CandidateQuery, p)
-	for i := 0; i < p; i++ {
-		c[i] = a[s[i]]
-	}
-	return c
-}
+//
+//// sample n% of candidate queries.
+//func sample(n int, a []CandidateQuery) []CandidateQuery {
+//	// shuffle the items to sample.
+//	s := rand.Perm(len(a))
+//
+//	// sample n% items from shuffled slice.
+//	p := int(math.Ceil((float64(n) / 100.0) * float64(len(a))))
+//	c := make([]CandidateQuery, p)
+//	for i := 0; i < p; i++ {
+//		c[i] = a[s[i]]
+//	}
+//	return c
+//}
 
 // Generate will create test data sampling using random stratified sampling.
 func (qc *QueryChain) Generate() error {
@@ -67,11 +67,19 @@ func (qc *QueryChain) Generate() error {
 	defer w.Close()
 	var mu sync.Mutex
 	nTimes := 5
+
+	// Set the limit to how many goroutines can be run.
+	// http://jmoiron.net/blog/limiting-concurrency-in-go/
+	maxConcurrency := 16
+	concurrency := runtime.NumCPU()
+	if concurrency > maxConcurrency {
+		concurrency = maxConcurrency
+	}
+
 	for _, cq := range qc.Queries {
 		var queryCandidates []CandidateQuery
 		var nextCandidates []CandidateQuery
 		queryCandidates = append(queryCandidates, NewCandidateQuery(cq.Query, cq.Topic, nil))
-		cache := make(map[uint64]struct{})
 		for i := 0; i < nTimes; i++ {
 			log.Printf("loop #%v with %v candidate(s)", i, len(queryCandidates))
 			for j, q := range queryCandidates {
@@ -90,78 +98,26 @@ func (qc *QueryChain) Generate() error {
 
 				log.Println("generated", len(candidates), "candidates")
 
-				log.Println("computing number of candidates to sample")
-				totalCandidates := len(candidates)
-				if totalCandidates > 20 {
-					totalCandidates = 20
-					totalCandidates += len(sample(10, candidates))
-					if totalCandidates > len(candidates) {
-						totalCandidates = len(candidates)
-					}
+				log.Println("first pass sampling...")
+
+				candidates, err = qc.Sampler.Sample(candidates)
+				if err != nil {
+					return err
 				}
+				log.Println("sampled to", len(candidates), "candidates")
 
-				log.Println("computed", totalCandidates, "candidates to sample")
-
-				sort.Slice(candidates, func(i, j int) bool {
-					return candidates[i].TransformationID > candidates[j].TransformationID
-				})
-
-				log.Println("sorted candidates")
-
-				max := make(map[int]int)
-				sam := make(map[int]int)
-				can := make(map[int][]CandidateQuery)
-				for _, candidate := range candidates {
-					max[candidate.TransformationID]++
-					can[candidate.TransformationID] = append(can[candidate.TransformationID], candidate)
-					sam[candidate.TransformationID] = 0
-				}
-
-				var c []CandidateQuery
-				for len(c) < totalCandidates {
-					for t := range sam {
-						if sam[t] < max[t] {
-							c = append(c, can[t][sam[t]])
-							sam[t]++
-							fmt.Printf("%v/%v...", len(c), totalCandidates)
-							if len(c) >= totalCandidates {
-								break
-							}
-						}
-					}
-				}
-				fmt.Println()
-
-				candidates = c
-
-				log.Println("sampled", len(candidates), "candidates")
-
-				for i := 0; i < len(candidates); i++ {
-					hash := combinator.HashCQR(candidates[i].Query)
-					if _, ok := cache[hash]; !ok {
-						candidates = append(candidates[:i], candidates[i+1:]...)
-						cache[hash] = struct{}{}
-					}
-				}
-				log.Println("cut to", len(candidates), "candidates")
-
-				// Set the limit to how many goroutines can be run.
-				// http://jmoiron.net/blog/limiting-concurrency-in-go/
-				maxConcurrency := 16
-				concurrency := runtime.NumCPU()
-				if concurrency > maxConcurrency {
-					concurrency = maxConcurrency
-				}
+				log.Println("evaluating", len(candidates), "candidates...")
 
 				sem := make(chan bool, concurrency)
 				for i, candidate := range candidates {
 					sem <- true
 					nextCandidates = append(nextCandidates, candidate)
 
-					//innerWg.Add(1)
 					go func(c CandidateQuery, n int) {
 						defer func() { <-sem }()
-						//defer innerWg.Done()
+
+						fmt.Printf("%d/%d...", n, len(candidates))
+
 						s1, err := transmute.CompileCqr2PubMed(c.Query)
 						if err != nil {
 							fmt.Println(err)
@@ -185,8 +141,6 @@ func (qc *QueryChain) Generate() error {
 
 						gq := pipeline.NewQuery(cq.Name, cq.Topic, s3.(cqr.CommonQueryRepresentation))
 
-						// Configure the Statistics Source.
-
 						tree, _, err := combinator.NewLogicalTree(gq, qc.StatisticsSource, qc.QueryCacher)
 						if err != nil {
 							fmt.Println(err)
@@ -197,11 +151,9 @@ func (qc *QueryChain) Generate() error {
 
 						evaluation := eval.Evaluate(qc.Evaluators, &r, qc.QrelsFile, gq.Topic)
 
-						s, _ := backend.NewCQRQuery(c.Query).String()
-						x, _ := transmute.Cqr2Medline.Execute(s)
-						s, _ = x.String()
-
 						fn := strconv.Itoa(int(combinator.HashCQR(c.Query)))
+
+						s, _ := s2.String()
 						// Write the query outside the lock.
 						err = ioutil.WriteFile(
 							path.Join("transformed_queries", fn),
@@ -239,8 +191,12 @@ func (qc *QueryChain) Generate() error {
 				log.Println("finished processing variations")
 			}
 
-			log.Println("sampling the generated candidates...")
-			queryCandidates = sample(10, nextCandidates)
+			log.Println("second pass sampling...")
+			queryCandidates, err = qc.Sampler.Sample(nextCandidates)
+			if err != nil {
+				return err
+			}
+			log.Println("sampled down to", len(queryCandidates), "candidates")
 		}
 	}
 	return nil

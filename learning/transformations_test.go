@@ -7,7 +7,6 @@ import (
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/learning"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/quickumlsrest"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
 	"github.com/hscells/transmute/parser"
@@ -87,7 +86,7 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	candidates, err := learning.Variations(learning.NewCandidateQuery(repr.(cqr.CommonQueryRepresentation), "1", nil), ss, analysis.NewDiskMeasurementExecutor(statisticsCache), []analysis.Measurement{analysis.BooleanClauses}, learning.Newcui2vecExpansionTransformer(v, m, quickumlsrest.NewClient("http://43.240.96.223:5000/")))
+	candidates, err := learning.Variations(learning.NewCandidateQuery(repr.(cqr.CommonQueryRepresentation), "1", nil), ss, analysis.NewDiskMeasurementExecutor(statisticsCache), []analysis.Measurement{analysis.BooleanClauses}, learning.Newcui2vecExpansionTransformer(v, m))
 
 	//queries, err := LogicalOperatorReplacement.Apply(repr.(cqr.CommonQueryRepresentation))
 	//if err != nil {

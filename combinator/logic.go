@@ -364,6 +364,9 @@ func NewCombinator(query cqr.BooleanQuery, operator Operator, clauses ...Logical
 
 // HashCQR creates a hash of the query.
 func HashCQR(representation cqr.CommonQueryRepresentation) uint64 {
+	if representation == nil {
+		return 0
+	}
 	return crc64.Checksum([]byte(representation.String()), crc64.MakeTable(crc64.ISO))
 	//h := fnv.New64a()
 	//h.Write([]byte(representation.String()))
