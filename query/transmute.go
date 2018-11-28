@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	// MedlineTransmutePipeline is a default gpipeline for Medline queries.
+	// MedlineTransmutePipeline is a default pipeline for Medline queries.
 	MedlineTransmutePipeline = tpipeline.NewPipeline(
 		parser.NewMedlineParser(),
 		backend.NewCQRBackend(),
@@ -22,7 +22,7 @@ var (
 			},
 			RequiresLexing: true,
 		})
-	// PubMedTransmutePipeline is a default gpipeline for PubMed queries.
+	// PubMedTransmutePipeline is a default pipeline for PubMed queries.
 	PubMedTransmutePipeline = tpipeline.NewPipeline(
 		parser.NewPubMedParser(),
 		backend.NewCQRBackend(),
