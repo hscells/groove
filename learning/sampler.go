@@ -124,7 +124,7 @@ type EvaluationSampler struct {
 	n       int
 	delta   float64
 	measure eval.Evaluator
-	qrels   trecresults.Qrels
+	qrels   trecresults.QrelsFile
 	cache   combinator.QueryCacher
 	ss      stats.StatisticsSource
 }
@@ -161,7 +161,7 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 			return nil, err
 		}
 		results := t.Documents(s.cache).Results(pq, "")
-		v := s.measure.Score(&results, s.qrels)
+		v := s.measure.Score(&results, s.qrels.Qrels[child.Topic])
 		c[i] = ScoredCandidateQuery{
 			CandidateQuery: child,
 			score:          v,
@@ -196,7 +196,7 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 	return x, nil
 }
 
-func NewEvaluationSampler(n int, delta float64, measure eval.Evaluator, qrels trecresults.Qrels, cache combinator.QueryCacher, ss stats.StatisticsSource) EvaluationSampler {
+func NewEvaluationSampler(n int, delta float64, measure eval.Evaluator, qrels trecresults.QrelsFile, cache combinator.QueryCacher, ss stats.StatisticsSource) EvaluationSampler {
 	return EvaluationSampler{
 		n:       n,
 		delta:   delta,
@@ -214,7 +214,7 @@ type GreedySampler struct {
 	n       int
 	delta   float64
 	measure eval.Evaluator
-	qrels   trecresults.Qrels
+	qrels   trecresults.QrelsFile
 	cache   combinator.QueryCacher
 	ss      stats.StatisticsSource
 }
@@ -252,7 +252,7 @@ func (s GreedySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, er
 			return nil, err
 		}
 		results := t.Documents(s.cache).Results(pq, "")
-		v := s.measure.Score(&results, s.qrels)
+		v := s.measure.Score(&results, s.qrels.Qrels[child.Topic])
 		c[i] = ScoredCandidateQuery{
 			CandidateQuery: child,
 			score:          v,
@@ -274,7 +274,7 @@ func (s GreedySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, er
 	return x, nil
 }
 
-func NewGreedySampler(n int, delta float64, measure eval.Evaluator, qrels trecresults.Qrels, cache combinator.QueryCacher, ss stats.StatisticsSource) GreedySampler {
+func NewGreedySampler(n int, delta float64, measure eval.Evaluator, qrels trecresults.QrelsFile, cache combinator.QueryCacher, ss stats.StatisticsSource) GreedySampler {
 	return GreedySampler{
 		n:       n,
 		delta:   delta,
