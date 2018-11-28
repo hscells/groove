@@ -117,10 +117,10 @@ func NewRandomSampler(n int, delta float64) RandomSampler {
 	}
 }
 
-// EffectivenessSampler samples candidate queries based on some evaluation measure. It
+// EvaluationSampler samples candidate queries based on some evaluation measure. It
 // uses stratified sampling by ensuring a minimum of n candidates are sampled, plus an
 // additional delta-%.
-type EffectivenessSampler struct {
+type EvaluationSampler struct {
 	n       int
 	delta   float64
 	measure eval.Evaluator
@@ -129,7 +129,7 @@ type EffectivenessSampler struct {
 	ss      stats.StatisticsSource
 }
 
-func (s EffectivenessSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
+func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
 	// Compute the number of candidates to sample.
 	N := int(s.delta * float64(len(candidates)))
 
@@ -170,7 +170,7 @@ func (s EffectivenessSampler) Sample(candidates []CandidateQuery) ([]CandidateQu
 
 	// Sort all of the candidates based on score.
 	sort.Slice(c, func(i, j int) bool {
-		return c[i].score < c[j].score
+		return c[i].score > c[j].score
 	})
 
 	// Compute the step size for stratified sampling.
@@ -196,8 +196,86 @@ func (s EffectivenessSampler) Sample(candidates []CandidateQuery) ([]CandidateQu
 	return x, nil
 }
 
-func NewEffectivenessSampler(n int, delta float64, measure eval.Evaluator, qrels trecresults.Qrels, cache combinator.QueryCacher, ss stats.StatisticsSource) EffectivenessSampler {
-	return EffectivenessSampler{
+func NewEvaluationSampler(n int, delta float64, measure eval.Evaluator, qrels trecresults.Qrels, cache combinator.QueryCacher, ss stats.StatisticsSource) EvaluationSampler {
+	return EvaluationSampler{
+		n:       n,
+		delta:   delta,
+		measure: measure,
+		qrels:   qrels,
+		cache:   cache,
+		ss:      ss,
+	}
+}
+
+// GreedySampler samples candidate queries based on both the number of retrieved documents
+// and some evaluation measure. It uses stratified sampling by ensuring a minimum of n
+// candidates are sampled, plus an additional delta-%.
+type GreedySampler struct {
+	n       int
+	delta   float64
+	measure eval.Evaluator
+	qrels   trecresults.Qrels
+	cache   combinator.QueryCacher
+	ss      stats.StatisticsSource
+}
+
+func (s GreedySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
+	// Compute the number of candidates to sample.
+	N := int(s.delta * float64(len(candidates)))
+
+	// If there are not at least n candidates, set the number of candidates to sample to n.
+	// If there are not enough candidates in n, set the number of candidates to sample
+	// as the total number of candidates.
+	if N < s.n {
+		N = s.n
+	}
+
+	if len(candidates) <= N {
+		// We can return early here because there are not enough candidates to satisfy
+		// the sampling conditions.
+		return candidates, nil
+	}
+
+	// ScoredCandidateQuery contains a candidate query and some score.
+	type ScoredCandidateQuery struct {
+		CandidateQuery
+		score  float64
+		numRet int
+	}
+
+	// Score all of the candidates.
+	c := make([]ScoredCandidateQuery, len(candidates))
+	for i, child := range candidates {
+		pq := pipeline.NewQuery(child.Topic, child.Topic, child.Query)
+		t, _, err := combinator.NewLogicalTree(pq, s.ss, s.cache)
+		if err != nil {
+			return nil, err
+		}
+		results := t.Documents(s.cache).Results(pq, "")
+		v := s.measure.Score(&results, s.qrels)
+		c[i] = ScoredCandidateQuery{
+			CandidateQuery: child,
+			score:          v,
+			numRet:         len(results),
+		}
+	}
+
+	// Sort all of the candidates based on numRet and score.
+	sort.Slice(c, func(i, j int) bool {
+		return c[i].numRet < c[j].numRet && c[i].score > c[j].score
+	})
+
+	// Sample the queries from lowest numRet to highest until N.
+	x := make([]CandidateQuery, N)
+	for i, child := range c {
+		x[i] = child.CandidateQuery
+	}
+
+	return x, nil
+}
+
+func NewGreedySampler(n int, delta float64, measure eval.Evaluator, qrels trecresults.Qrels, cache combinator.QueryCacher, ss stats.StatisticsSource) GreedySampler {
+	return GreedySampler{
 		n:       n,
 		delta:   delta,
 		measure: measure,
