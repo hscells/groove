@@ -129,7 +129,6 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 	var (
 		candidates []CandidateQuery
 	)
-
 	// Compute Features (and pre-transformation Features) for the original Boolean query.
 	preDeltas, err := deltas(query.Query, ss, measurements, me)
 	if err != nil {
@@ -143,6 +142,7 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 	switch q := query.Query.(type) {
 	case cqr.BooleanQuery: // First we look at the variations for a Boolean query (that most likely has children).
 		var queries []CandidateQuery
+
 		context = context.
 			AddDepth(1).
 			SetClauseType(booleanClause).
@@ -155,7 +155,6 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 		// the parent query and update the child with the generated permutation.
 		for j, child := range q.Children {
 			// Apply this transformation.
-
 			perms, err := variations(NewCandidateQuery(child, query.Topic, nil).SetTransformationID(query.TransformationID).Append(query), context, ss, me, measurements, transformations...)
 			if err != nil {
 				return nil, err
@@ -292,11 +291,15 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 // query variations that modify the query in one single place. This means that no transformation is applied twice to an
 // already modified query.
 func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.MeasurementExecutor, measurements []analysis.Measurement, transformations ...Transformation) ([]CandidateQuery, error) {
-	var vars []CandidateQuery
-	var mu sync.Mutex
-	var wg sync.WaitGroup
+	var (
+		vars    []CandidateQuery
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+		errOnce sync.Once
+		e       error
+	)
 
-	var e error
+	// Concurrently apply each transformation to generate query variations.
 	for _, transformation := range transformations {
 		wg.Add(1)
 		go func(t Transformation) {
@@ -304,9 +307,13 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 			log.Println("generating variations for", t.Name())
 			c, err := variations(query, TransformationContext{}, ss, me, measurements, t)
 			if err != nil {
-				e = err
+				// Only record the first instance of an error.
+				errOnce.Do(func() {
+					e = err
+				})
 				return
 			}
+			// Must lock here to avoid a concurrent write to the slice.
 			mu.Lock()
 			log.Println("done variations for", t.Name())
 			vars = append(vars, c...)
@@ -315,12 +322,15 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 		}(transformation)
 	}
 
+	// Wait until all goroutines are finished.
 	wg.Wait()
 
+	// If there was an error captured, handle it below.
 	if e != nil {
 		return nil, e
 	}
 
+	// Otherwise, return the remaining variations.
 	return vars, nil
 }
 

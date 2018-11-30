@@ -5,6 +5,7 @@ import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/meshexp"
 	"github.com/hscells/transmute/fields"
+	"log"
 	"strings"
 )
 
@@ -79,7 +80,11 @@ func (meshMaxDepth) Name() string {
 }
 
 func (meshMaxDepth) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
+	log.Println(q)
 	keywords := KeywordsWithField(q.Query, fields.MeshHeadings)
+	if len(keywords) == 0 {
+		return 0, nil
+	}
 	var max int64
 	for _, kw := range keywords {
 		d := MeSHTree.Depth(normalise(kw.QueryString))

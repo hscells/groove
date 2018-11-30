@@ -79,8 +79,8 @@ func hash(representation cqr.CommonQueryRepresentation, measurement Measurement)
 }
 
 // Execute executes the specified measurements on the query using the statistics source.
-func (m MeasurementExecutor) Execute(query pipeline.Query, ss stats.StatisticsSource, measurements ...Measurement) (results []float64, err error) {
-	results = make([]float64, len(measurements))
+func (m MeasurementExecutor) Execute(query pipeline.Query, ss stats.StatisticsSource, measurements ...Measurement) ([]float64, error) {
+	results := make([]float64, len(measurements))
 	for i, measurement := range measurements {
 		qHash := hash(query.Query, measurement)
 		if v, err := m.cache.Read(qHash); err == nil && len(v) > 0 {
@@ -89,21 +89,20 @@ func (m MeasurementExecutor) Execute(query pipeline.Query, ss stats.StatisticsSo
 			results[i] = f
 			continue
 		} else if reflect.TypeOf(err) != reflect.TypeOf(&os.PathError{}) {
-			fmt.Println(err)
 			return nil, err
 		}
 
 		var v float64
-		v, err = measurement.Execute(query, ss)
+		v, err := measurement.Execute(query, ss)
 		if err != nil {
-			return
+			return nil, err
 		}
 		results[i] = v
 		buff := make([]byte, 8)
 		binary.BigEndian.PutUint64(buff[:], math.Float64bits(v))
 		m.cache.Write(qHash, buff)
 	}
-	return
+	return results, nil
 }
 
 // QueryTerms extracts the terms from a query.

@@ -99,7 +99,7 @@ func (s RandomSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, er
 	}
 
 	// Continue to sample until there are at least n candidates sampled.
-	i := len(c) - 1
+	i := len(c)
 	for len(c) < s.n {
 		if i >= len(candidates) {
 			break
@@ -268,6 +268,9 @@ func (s GreedySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, er
 	// Sample the queries from lowest numRet to highest until N.
 	x := make([]CandidateQuery, N)
 	for i, child := range c {
+		if i >= len(x) {
+			break
+		}
 		x[i] = child.CandidateQuery
 	}
 

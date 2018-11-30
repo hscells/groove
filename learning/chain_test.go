@@ -18,6 +18,7 @@ import (
 	"github.com/hscells/trecresults"
 	"github.com/peterbourgon/diskv"
 	"io/ioutil"
+	"log"
 	"os"
 	"testing"
 )
@@ -52,7 +53,7 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Log(repr.(cqr.CommonQueryRepresentation))
+	log.Println(repr.(cqr.CommonQueryRepresentation))
 	ss, err := stats.NewEntrezStatisticsSource(
 		stats.EntrezAPIKey("22a11de46af145ce59bb288e0ede66721f09"),
 		stats.EntrezEmail("harryscells@gmail.com"),
@@ -71,7 +72,7 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cache := combinator.NewFileQueryCache("file_cache")
+	cache := combinator.NewFileQueryCache("../file_cache")
 	// Cache for the statistics of the query performance predictors.
 	statisticsCache := diskv.New(diskv.Options{
 		BasePath:     "../statistics_cache",
@@ -124,8 +125,14 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		learning.Newcui2vecExpansionTransformer(p, m),
 		learning.NewClauseRemovalTransformer(),
 	)
-	chain.Sampler = learning.NewEffectivenessSampler(10, 0.1, eval.F1Measure, qrels.Qrels[topic], cache, ss)
-	chain.GenerationFile = "evaluation.features"
+	//chain.Sampler = learning.NewEvaluationSampler(10, 0.1, eval.PrecisionEvaluator, qrels, cache, ss)
+	//chain.GenerationFile = "../evaluation.features"
+	//chain.Sampler = learning.NewGreedySampler(10, 0.1, eval.PrecisionEvaluator, qrels, cache, ss)
+	//chain.GenerationFile = "../greedy.features"
+	//chain.Sampler = learning.NewTransformationSampler(10, 0.1)
+	//chain.GenerationFile = "../transformation.features"
+	chain.Sampler = learning.NewRandomSampler(10, 0.1)
+	chain.GenerationFile = "../random.features"
 	chain.QueryCacher = cache
 	chain.QrelsFile = qrels
 	chain.Evaluators = []eval.Evaluator{
@@ -135,9 +142,10 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		eval.F1Measure,
 		eval.F3Measure,
 	}
-	chain.Queries = []pipeline2.Query{pipeline2.NewQuery("1", topic, repr.(cqr.CommonQueryRepresentation))}
+	chain.Queries = []pipeline2.Query{pipeline2.NewQuery(topic, topic, repr.(cqr.CommonQueryRepresentation))}
+	log.Println(chain.Queries)
 	//fmt.Printf("Rewriting query with %v possible transformations\n", len(chain.Transformations))
-	t.Log(chain.Generate())
+	log.Println(chain.Generate())
 	//_, err = chain.Execute(p.NewQuery("test", topic, repr.(cqr.CommonQueryRepresentation)))
 	//if err != nil {
 	//	t.Fatal(err)

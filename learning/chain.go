@@ -77,126 +77,158 @@ func (qc *QueryChain) Generate() error {
 	}
 
 	for _, cq := range qc.Queries {
-		var queryCandidates []CandidateQuery
-		var nextCandidates []CandidateQuery
-		queryCandidates = append(queryCandidates, NewCandidateQuery(cq.Query, cq.Topic, nil))
+		var candidates []CandidateQuery
+		candidates = append(candidates, NewCandidateQuery(cq.Query, cq.Topic, nil))
 		for i := 0; i < nTimes; i++ {
-			log.Printf("loop #%v with %v candidate(s)", i, len(queryCandidates))
-			for j, q := range queryCandidates {
+			var nextCandidates []CandidateQuery
+			log.Printf("loop #%v with %v candidate(s)", i, len(candidates))
+			for j, q := range candidates {
 
 				log.Println("this is topic", cq.Topic)
 
 				// Generate variations.
-				log.Println(len(queryCandidates)-j, "to go")
+				log.Println(len(candidates)-j, "to go")
 				log.Println(len(q.Chain), "long chain")
 				log.Println("generating variations...")
 
-				candidates, err := Variations(q, qc.StatisticsSource, qc.MeasurementExecutor, qc.Measurements, qc.Transformations...)
+				vars, err := Variations(q, qc.StatisticsSource, qc.MeasurementExecutor, qc.Measurements, qc.Transformations...)
 				if err != nil {
 					return err
 				}
 
+				nextCandidates = append(nextCandidates, vars...)
 				log.Println("generated", len(candidates), "candidates")
-
-				log.Println("first pass sampling...")
-
-				candidates, err = qc.Sampler.Sample(candidates)
-				if err != nil {
-					return err
-				}
-				log.Println("sampled to", len(candidates), "candidates")
-
-				log.Println("evaluating", len(candidates), "candidates...")
-
-				sem := make(chan bool, concurrency)
-				for i, candidate := range candidates {
-					sem <- true
-					nextCandidates = append(nextCandidates, candidate)
-
-					go func(c CandidateQuery, n int) {
-						defer func() { <-sem }()
-
-						fmt.Printf("%d/%d...", n, len(candidates))
-
-						s1, err := transmute.CompileCqr2PubMed(c.Query)
-						if err != nil {
-							fmt.Println(err)
-							fmt.Println(errors.Wrap(err, 0).ErrorStack())
-							return
-						}
-
-						s2, err := transmute.Pubmed2Cqr.Execute(s1)
-						if err != nil {
-							fmt.Println(err)
-							fmt.Println(errors.Wrap(err, 0).ErrorStack())
-							return
-						}
-
-						s3, err := s2.Representation()
-						if err != nil {
-							fmt.Println(err)
-							fmt.Println(errors.Wrap(err, 0).ErrorStack())
-							return
-						}
-
-						gq := pipeline.NewQuery(cq.Name, cq.Topic, s3.(cqr.CommonQueryRepresentation))
-
-						tree, _, err := combinator.NewLogicalTree(gq, qc.StatisticsSource, qc.QueryCacher)
-						if err != nil {
-							fmt.Println(err)
-							fmt.Println(errors.Wrap(err, 0).ErrorStack())
-							return
-						}
-						r := tree.Documents(qc.QueryCacher).Results(gq, "Features")
-
-						evaluation := eval.Evaluate(qc.Evaluators, &r, qc.QrelsFile, gq.Topic)
-
-						fn := strconv.Itoa(int(combinator.HashCQR(c.Query)))
-
-						s, _ := s2.String()
-						// Write the query outside the lock.
-						err = ioutil.WriteFile(
-							path.Join("transformed_queries", fn),
-							bytes.NewBufferString(s).Bytes(),
-							0644)
-						if err != nil {
-							fmt.Println(err)
-							fmt.Println(errors.Wrap(err, 0).ErrorStack())
-							return
-						}
-
-						// Lock and write the results for each evaluation metric to file.
-						lf := NewLearntFeature(c.Features)
-						lf.Topic = gq.Topic
-						lf.Comment = fn
-						lf.Scores = make([]float64, len(qc.Evaluators))
-						for i, e := range qc.Evaluators {
-							lf.Scores[i] = evaluation[e.Name()]
-						}
-						mu.Lock()
-						defer mu.Unlock()
-						err = qc.CandidateSelector.Output(lf, w)
-						if err != nil {
-							fmt.Println(err)
-							fmt.Println(errors.Wrap(err, 0).ErrorStack())
-							return
-						}
-						return
-					}(candidate, i)
-				}
-				// Wait until the last goroutine has read from the semaphore.
-				for i := 0; i < cap(sem); i++ {
-					sem <- true
-				}
-				log.Println("finished processing variations")
+				log.Println("generated", len(nextCandidates), "candidates so far")
 			}
 
-			log.Println("second pass sampling...")
-			queryCandidates, err = qc.Sampler.Sample(nextCandidates)
+			log.Println("sampling", len(nextCandidates), "candidates...")
+			candidates, err = qc.Sampler.Sample(nextCandidates)
 			if err != nil {
 				return err
 			}
-			log.Println("sampled down to", len(queryCandidates), "candidates")
+			log.Println("sampled down to", len(candidates), "candidates")
+
+			log.Println("evaluating", len(candidates), "candidates...")
+
+			// Create the output folder if it does not exist.
+			if _, err := os.Stat("transformed_queries"); os.IsNotExist(err) {
+				err := os.Mkdir("transformed_queries", os.ModePerm)
+				if err != nil {
+					return err
+				}
+			} else if err != nil {
+				return err
+			}
+
+			sem := make(chan bool, concurrency)
+			var (
+				errOnce sync.Once
+				e       error
+			)
+
+			for i, candidate := range candidates {
+				sem <- true
+
+				go func(c CandidateQuery, n int) {
+					defer func() { <-sem }()
+
+					fmt.Printf("%d/%d...", n, len(candidates))
+
+					s1, err := transmute.CompileCqr2PubMed(c.Query)
+					if err != nil {
+						errOnce.Do(func() {
+							fmt.Println(err)
+							fmt.Println(errors.Wrap(err, 0).ErrorStack())
+							e = err
+							return
+						})
+					}
+
+					s2, err := transmute.Pubmed2Cqr.Execute(s1)
+					if err != nil {
+						errOnce.Do(func() {
+							fmt.Println(err)
+							fmt.Println(errors.Wrap(err, 0).ErrorStack())
+							e = err
+							return
+						})
+					}
+
+					s3, err := s2.Representation()
+					if err != nil {
+						errOnce.Do(func() {
+							fmt.Println(err)
+							fmt.Println(errors.Wrap(err, 0).ErrorStack())
+							e = err
+							return
+						})
+					}
+
+					gq := pipeline.NewQuery(cq.Name, cq.Topic, s3.(cqr.CommonQueryRepresentation))
+
+					tree, _, err := combinator.NewLogicalTree(gq, qc.StatisticsSource, qc.QueryCacher)
+					if err != nil {
+						errOnce.Do(func() {
+							fmt.Println(err)
+							fmt.Println(errors.Wrap(err, 0).ErrorStack())
+							e = err
+							return
+						})
+					}
+					r := tree.Documents(qc.QueryCacher).Results(gq, "Features")
+
+					evaluation := eval.Evaluate(qc.Evaluators, &r, qc.QrelsFile, gq.Topic)
+
+					fn := strconv.Itoa(int(combinator.HashCQR(c.Query)))
+
+					s, _ := s2.String()
+					// Write the query outside the lock.
+					err = ioutil.WriteFile(
+						path.Join("transformed_queries", fn),
+						bytes.NewBufferString(s).Bytes(),
+						0644)
+					if err != nil {
+						errOnce.Do(func() {
+							fmt.Println(err)
+							fmt.Println(errors.Wrap(err, 0).ErrorStack())
+							e = err
+							return
+						})
+					}
+
+					// Lock and write the results for each evaluation metric to file.
+					lf := NewLearntFeature(c.Features)
+					lf.Topic = gq.Topic
+					lf.Comment = fn
+					lf.Scores = make([]float64, len(qc.Evaluators))
+					for i, e := range qc.Evaluators {
+						lf.Scores[i] = evaluation[e.Name()]
+					}
+					mu.Lock()
+					defer mu.Unlock()
+					err = qc.CandidateSelector.Output(lf, w)
+					if err != nil {
+						errOnce.Do(func() {
+							fmt.Println(err)
+							fmt.Println(errors.Wrap(err, 0).ErrorStack())
+							e = err
+							return
+						})
+					}
+					return
+				}(candidate, i)
+			}
+			// Wait until the last goroutine has read from the semaphore.
+			for i := 0; i < cap(sem); i++ {
+				sem <- true
+			}
+
+			// Capture the error that may have occurred in the goroutines.
+			if e != nil {
+				return e
+			}
+
+			log.Println("finished processing variations")
 		}
 	}
 	return nil

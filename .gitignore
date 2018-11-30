@@ -4,6 +4,7 @@ groove
 cache
 statistics_cache
 file_cache
+transformed_queries
 
 *.qrels
 *.model
