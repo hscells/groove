@@ -7,6 +7,7 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/analysis/preqpp"
+	"github.com/hscells/groove/learning/seed"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"github.com/xtgo/set"
@@ -59,6 +60,9 @@ const (
 
 	// Measurement Features.
 	measurementFeatures
+
+	// Protocol Query Type (when generated automatically from a protocol).
+	ProtocolQueryTypeFeature
 
 	// Chain of transformations !!THIS MUST BE THE LAST FEATURE IN THE LIST!!
 	chainFeatures
@@ -313,6 +317,12 @@ func booleanFeatures(q cqr.BooleanQuery) Features {
 	}
 	features = append(features, operatorType)
 
+	// Record the way the query was generated via protocol; if applicable.
+	if v, ok := q.Options[seed.ProtocolOption]; ok {
+		i, _ := v.(int)
+		features = append(features, NewFeature(ProtocolQueryTypeFeature, float64(i)))
+	}
+
 	return features
 }
 
@@ -325,7 +335,7 @@ func contextFeatures(context TransformationContext) Features {
 		NewFeature(ChildrenCountFeature, context.ChildrenCount))
 }
 
-// QPPFeatures computes query performance predictor Features for a query.
+// deltas computes delta Features for a query.
 func deltas(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, measurements []analysis.Measurement, me analysis.MeasurementExecutor) (deltaFeatures, error) {
 	deltas := make(deltaFeatures)
 

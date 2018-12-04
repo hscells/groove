@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"github.com/hscells/groove/learning/seed"
 	"github.com/hscells/groove/pipeline"
+	"github.com/hscells/groove/stats"
 	"io/ioutil"
 )
 
@@ -41,6 +42,13 @@ import (
 //
 // The source then generates queries according to the package github.com/hscells/groove/learning/seed.
 type ProtocolQuerySource struct {
+}
+
+// QuickUMLSProtocolQuerySource uses QuickUMLS to perform additional steps in the query formulation process.
+type QuickUMLSProtocolQuerySource struct {
+	threshold float64
+	url       string
+	ss        stats.StatisticsSource
 }
 
 // protocol is a representation of a systematic review protocol in XML.
@@ -96,4 +104,53 @@ func (ProtocolQuerySource) Load(directory string) ([]pipeline.Query, error) {
 
 func NewProtocolQuerySource() ProtocolQuerySource {
 	return ProtocolQuerySource{}
+}
+
+func (q QuickUMLSProtocolQuerySource) Load(directory string) ([]pipeline.Query, error) {
+	// First, get a list of files in the directory.
+	files, err := ioutil.ReadDir(directory)
+	if err != nil {
+		return nil, err
+	}
+
+	// Next, read all files, generating queries for each file.
+	var queries []pipeline.Query
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+
+		if len(f.Name()) == 0 {
+			continue
+		}
+
+		source, err := ioutil.ReadFile(directory + "/" + f.Name())
+		if err != nil {
+			return nil, err
+		}
+
+		var p protocol
+		err = xml.Unmarshal(source, &p)
+		if err != nil {
+			return nil, err
+		}
+
+		c := seed.NewQuickUMLSProtocolConstructor(p.Objective, p.Participants, p.IndexTests, p.TargetConditions, q.url, q.threshold, q.ss)
+		q, err := c.Construct()
+		if err != nil {
+			return nil, err
+		}
+		for _, query := range q {
+			queries = append(queries, pipeline.NewQuery(f.Name(), f.Name(), query))
+		}
+	}
+	return queries, nil
+}
+
+func NewQuickUMLSProtocolQuerySource(url string, ss stats.StatisticsSource, threshold float64) QuickUMLSProtocolQuerySource {
+	return QuickUMLSProtocolQuerySource{
+		url:       url,
+		ss:        ss,
+		threshold: threshold,
+	}
 }

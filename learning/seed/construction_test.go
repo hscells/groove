@@ -2,12 +2,23 @@ package seed_test
 
 import (
 	"github.com/hscells/groove/learning/seed"
+	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute"
 	"testing"
 )
 
 func TestConstruction(t *testing.T) {
-	c := seed.NewProtocolConstructor(`
+
+	ss, err := stats.NewEntrezStatisticsSource(
+		stats.EntrezAPIKey("22a11de46af145ce59bb288e0ede66721f09"),
+		stats.EntrezEmail("harryscells@gmail.com"),
+		stats.EntrezTool("groove"),
+		stats.EntrezOptions(stats.SearchOptions{Size: 100000}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c := seed.NewQuickUMLSProtocolConstructor(`
 To evaluate the diagnostic accuracy of physical tests, applied singly or in combination, for shoulder impingements (subacromial or internal) or local lesions of bursa, rotator cuff or labrum that may accompany impingement, in people whose symptoms and/or history suggest any of these disorders.
 We also examined the physical tests according to whether they were intended to:
 identify impingement in general (or differentiate it from other causes of shoulder pain, e.g. 'frozen shoulder')
@@ -29,7 +40,8 @@ patients with a medical condition compromising the immune system, such as HIV/AI
 		`Physical tests used singly or in combination to identify shoulder impingement, such as the painful arc test (Cyriax 1982); to classify shoulder impingements, e.g. Neer’s test (Neer 1977; Neer 1983), the modified relocation test (Hamner 2000), the internal rotation resistance strength test (Zaslav 2001); or to diagnose localised conditions that may accompany impingement, e.g. Yergason’s test (Yergason 1931), the lift off test (Gerber 1991a; Gerber 1996; Hertel 1996a), the crank test (Liu 1996b), the active compression test (O'Brien 1998a) and the biceps load II test (Kim 2001) (see Table 1).
 Ideally, articles for inclusion should have described a physical test, or reference a source that did so, in sufficient detail to enable its replication, and clearly indicate what constituted a positive index test result. Those that did not were included only if they provided sufficient information to be of clinical value. Studies reporting the collective diagnostic accuracy of a series of tests were considered, providing each component, and its manner of inclusion, were adequately described. Generic terms such as 'physical examination', as used to denote an unspecified combination of physical tests, led to exclusion unless further details were obtained from authors.`,
 		`Subacromial or internal impingement of the shoulder and the localised conditions that may accompany these classifications, namely bursitis, rotator cuff tears, glenoid labrum tears, and inflammation or rupture of the biceps tendon.
-Instability may underlie impingement, but tests of instability were only included if they were intended to demonstrate associated impingement pain, as in the modified relocation test (Hamner 2000), as opposed to instability per se. Similarly, tests for ACJ disorders were only included if, like the active compression test (O'Brien 1998a), they had a component intended to reproduce impingement pain.`)
+Instability may underlie impingement, but tests of instability were only included if they were intended to demonstrate associated impingement pain, as in the modified relocation test (Hamner 2000), as opposed to instability per se. Similarly, tests for ACJ disorders were only included if, like the active compression test (O'Brien 1998a), they had a component intended to reproduce impingement pain.`,
+		"http://43.240.96.223:5000", 0.1, ss)
 	queries, _ := c.Construct()
 	t.Log(len(queries))
 	for _, q := range queries {
@@ -46,15 +58,6 @@ Instability may underlie impingement, but tests of instability were only include
 	//	t.Fatal(err)
 	//}
 	//p, err := cui2vec.NewPrecomputedEmbeddings(f)
-	//if err != nil {
-	//	t.Fatal(err)
-	//}
-	//
-	//ss, err := stats.NewEntrezStatisticsSource(
-	//	stats.EntrezAPIKey("22a11de46af145ce59bb288e0ede66721f09"),
-	//	stats.EntrezEmail("harryscells@gmail.com"),
-	//	stats.EntrezTool("groove"),
-	//	stats.EntrezOptions(stats.SearchOptions{Size: 100000}))
 	//if err != nil {
 	//	t.Fatal(err)
 	//}

@@ -1,6 +1,7 @@
 package seed
 
 import (
+	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/hscells/transmute/fields"
 	"github.com/jdkato/prose/tokenize"
@@ -245,6 +246,18 @@ func MakeKeywords(text string, stopwords []string, punctuation sentences.PunctSt
 				seen[token] = struct{}{}
 			}
 		}
+	}
+	return keywords
+}
+
+func MakeKeywordsStructured(pairs []queryFieldPair) []cqr.CommonQueryRepresentation {
+	keywords := make([]cqr.CommonQueryRepresentation, len(pairs))
+	for i, pair := range pairs {
+		q := pair.query
+		if strings.ContainsRune(q, ' ') {
+			q = fmt.Sprintf(`"%s"`, q)
+		}
+		keywords[i] = cqr.NewKeyword(q, pair.fields...).SetOption(cqr.ExplodedString, false)
 	}
 	return keywords
 }
