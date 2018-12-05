@@ -15,10 +15,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
-	"sync"
 )
-
-var mu sync.Mutex
 
 // Measurement is a representation for how a measurement fits into the pipeline.
 type Measurement interface {
@@ -103,9 +100,7 @@ func (m MeasurementExecutor) Execute(query pipeline.Query, ss stats.StatisticsSo
 		results[i] = v
 		buff := make([]byte, 8)
 		binary.BigEndian.PutUint64(buff[:], math.Float64bits(v))
-		mu.Lock()
 		m.cache.Write(qHash, buff)
-		mu.Unlock()
 	}
 	return results, nil
 }

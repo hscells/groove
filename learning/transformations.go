@@ -26,6 +26,8 @@ const (
 	MeshParentTransformation
 )
 
+var mu sync.Mutex
+
 // Transformer is applied to a query to generate a set of query candidates.
 type Transformer interface {
 	Apply(query cqr.CommonQueryRepresentation) (queries []cqr.CommonQueryRepresentation, err error)
