@@ -15,9 +15,5 @@ func (retrievalSize) Name() string {
 }
 
 func (retrievalSize) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
-	d, err := stats.GetDocumentIDs(q, s)
-	if err != nil {
-		return 0, err
-	}
-	return float64(len(d)), nil
+	return s.RetrievalSize(q.Query)
 }
