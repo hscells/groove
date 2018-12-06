@@ -467,6 +467,8 @@ func (e EntrezStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentatio
 
 	s, err := entrez.DoSearch("pubmed", q, &entrez.Parameters{RetType: "xml", APIKey: e.key}, nil, e.tool, e.email)
 	if err != nil {
+		log.Println(err)
+		panic(err)
 		return 0, err
 	}
 	return float64(s.Count), nil
