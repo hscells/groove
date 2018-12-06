@@ -218,7 +218,7 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 
 					deltas, err := deltas(applied, ss, measurements, me)
 					if err != nil {
-						panic(err)
+						return nil, err
 					}
 
 					for feature, score := range deltas {
