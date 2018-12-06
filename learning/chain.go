@@ -250,6 +250,7 @@ func (qc *QueryChain) Test() error {
 			log.Println(fmt.Sprintf("skipping topic %s as it already exists", q.Topic))
 			continue
 		}
+		log.Println(fmt.Sprintf("starting topic %s", q.Topic))
 
 		// Perform the query chain process on the query.
 		tq, err := qc.Execute(q)
@@ -262,17 +263,9 @@ func (qc *QueryChain) Test() error {
 		if err != nil {
 			return err
 		}
-		bq, err := transmute.Cqr2Medline.Execute(cq)
-		if err != nil {
-			return err
-		}
-		ml, err := bq.String()
-		if err != nil {
-			return err
-		}
 
 		// Write query to file.
-		err = ioutil.WriteFile(p, bytes.NewBufferString(ml).Bytes(), 0644)
+		err = ioutil.WriteFile(p, bytes.NewBufferString(cq).Bytes(), 0644)
 		if err != nil {
 			return err
 		}
