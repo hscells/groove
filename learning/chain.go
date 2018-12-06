@@ -246,7 +246,7 @@ func (qc *QueryChain) Test() error {
 
 		// Do not process if the file already exists.
 		info, err := os.Stat(p)
-		fmt.Println(info)
+		log.Println(p, info)
 		if err != nil && os.IsExist(err) {
 			continue
 		}
