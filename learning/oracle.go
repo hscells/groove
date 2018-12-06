@@ -120,8 +120,6 @@ func (oc OracleQueryChainCandidateSelector) Select(query CandidateQuery, candida
 
 	for _, applied := range candidates {
 
-		fmt.Println(applied.Features, applied.Query)
-
 		start := time.Now()
 		// The new query.
 		nq := pipeline.NewQuery(query.Topic, query.Topic, applied.Query)

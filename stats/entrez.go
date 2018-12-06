@@ -169,7 +169,7 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	}
 	pmids = s.IdList
 	log.Printf("%d/%d\n", s.RetStart+len(pmids), s.Count)
-	log.Println(len(pmids) == e.options.Size, len(pmids), e.options.Size)
+	//log.Println(len(pmids) == e.options.Size, len(pmids), e.options.Size)
 	// If the number of pmids equals the execute size, there might be more to come.
 	if len(pmids) == e.options.Size {
 		/*

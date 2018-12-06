@@ -80,7 +80,6 @@ func (meshMaxDepth) Name() string {
 }
 
 func (meshMaxDepth) Execute(q pipeline.Query, s stats.StatisticsSource) (float64, error) {
-	log.Println(q)
 	keywords := KeywordsWithField(q.Query, fields.MeshHeadings)
 	if len(keywords) == 0 {
 		return 0, nil

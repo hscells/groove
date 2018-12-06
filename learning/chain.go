@@ -245,7 +245,9 @@ func (qc *QueryChain) Test() error {
 		p := path.Join(qc.TransformedOutput, q.Topic)
 
 		// Do not process if the file already exists.
-		if _, err := os.Stat(p); os.IsExist(err) {
+		info, err := os.Stat(p)
+		fmt.Println(info)
+		if err != nil && os.IsExist(err) {
 			continue
 		}
 
@@ -347,7 +349,7 @@ func (qc *QueryChain) Execute(q pipeline.Query) (CandidateQuery, error) {
 		if err != nil && err != combinator.ErrCacheMiss {
 			return CandidateQuery{}, err
 		}
-		log.Println(transmute.CompileCqr2Medline(cq.Query))
+		log.Println(transmute.CompileCqr2PubMed(cq.Query))
 		log.Printf("topic: %s, depth: %d, stoping: %t", q.Topic, d, sel.StoppingCriteria())
 		log.Println("candidates:", len(candidates))
 		log.Println("chain length:", len(cq.Chain))
