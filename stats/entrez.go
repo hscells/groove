@@ -524,6 +524,9 @@ func (e EntrezStatisticsSource) Execute(query pipeline.Query, options SearchOpti
 }
 
 func (e EntrezStatisticsSource) CollectionSize() (float64, error) {
+	if e.n > 0 {
+		return e.n, nil
+	}
 	info, err := entrez.DoInfo("pubmed", e.tool, e.email)
 	if err != nil {
 		return 0, err
