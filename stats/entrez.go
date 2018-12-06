@@ -571,7 +571,7 @@ func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) 
 		entrez.Limit = ncbi.NewLimiter(time.Second / 10)
 	}
 
-	ncbi.SetTimeout(time.Minute)
+	ncbi.SetTimeout(0)
 
 	var err error
 	e.n, err = e.CollectionSize()
