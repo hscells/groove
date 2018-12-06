@@ -242,6 +242,13 @@ func (qc *QueryChain) Test() error {
 	}
 
 	for _, q := range qc.Queries {
+		p := path.Join(qc.TransformedOutput, q.Topic)
+
+		// Do not process if the file already exists.
+		if _, err := os.Stat(p); os.IsExist(err) {
+			continue
+		}
+
 		// Perform the query chain process on the query.
 		tq, err := qc.Execute(q)
 		if err != nil {
@@ -263,7 +270,7 @@ func (qc *QueryChain) Test() error {
 		}
 
 		// Write query to file.
-		err = ioutil.WriteFile(path.Join(qc.TransformedOutput, q.Topic), bytes.NewBufferString(ml).Bytes(), 0644)
+		err = ioutil.WriteFile(p, bytes.NewBufferString(ml).Bytes(), 0644)
 		if err != nil {
 			return err
 		}
