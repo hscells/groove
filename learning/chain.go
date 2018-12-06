@@ -245,9 +245,8 @@ func (qc *QueryChain) Test() error {
 		p := path.Join(qc.TransformedOutput, q.Topic)
 
 		// Do not process if the file already exists.
-		info, err := os.Stat(p)
-		log.Println(p, info)
-		if os.IsExist(err) {
+		_, err := os.Stat(p)
+		if err == nil {
 			log.Println(fmt.Sprintf("skipping topic %s as it already exists", q.Topic))
 			continue
 		}
