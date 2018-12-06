@@ -32,6 +32,16 @@ var (
 			},
 			RequiresLexing: true,
 		})
+	// PubMedTransmutePipeline is a default pipeline for cqr queries.
+	CQRTransmutePipeline = tpipeline.NewPipeline(
+		parser.NewCQRParser(),
+		backend.NewCQRBackend(),
+		tpipeline.TransmutePipelineOptions{
+			LexOptions: lexer.LexOptions{
+				FormatParenthesis: false,
+			},
+			RequiresLexing: false,
+		})
 )
 
 // TransmuteQuerySource is a source for queries.
