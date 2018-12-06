@@ -11,6 +11,7 @@ import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/fields"
 	"github.com/peterbourgon/diskv"
+	"log"
 	"math"
 	"os"
 	"reflect"
@@ -95,6 +96,8 @@ func (m MeasurementExecutor) Execute(query pipeline.Query, ss stats.StatisticsSo
 		var v float64
 		v, err := measurement.Execute(query, ss)
 		if err != nil {
+			log.Println("error happened here")
+			panic(err)
 			return nil, err
 		}
 		results[i] = v
