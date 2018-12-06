@@ -5,7 +5,6 @@ import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/meshexp"
 	"github.com/hscells/transmute/fields"
-	"log"
 	"strings"
 )
 
