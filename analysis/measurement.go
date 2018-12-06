@@ -96,7 +96,7 @@ func (m MeasurementExecutor) Execute(query pipeline.Query, ss stats.StatisticsSo
 		var v float64
 		v, err := measurement.Execute(query, ss)
 		if err != nil {
-			log.Println("error happened here")
+			log.Println(measurement.Name())
 			panic(err)
 			return nil, err
 		}
