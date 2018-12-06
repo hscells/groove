@@ -247,7 +247,7 @@ func (qc *QueryChain) Test() error {
 		// Do not process if the file already exists.
 		info, err := os.Stat(p)
 		log.Println(p, info)
-		if err != nil && os.IsExist(err) {
+		if os.IsExist(err) {
 			log.Println(fmt.Sprintf("skipping topic %s as it already exists", q.Topic))
 			continue
 		}
