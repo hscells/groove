@@ -248,6 +248,7 @@ func (qc *QueryChain) Test() error {
 		info, err := os.Stat(p)
 		log.Println(p, info)
 		if err != nil && os.IsExist(err) {
+			log.Println(fmt.Sprintf("skipping topic %s as it already exists", q.Topic))
 			continue
 		}
 
