@@ -15,12 +15,104 @@ type Sampler interface {
 	Sample(candidates []CandidateQuery) ([]CandidateQuery, error)
 }
 
+type Strategy func(candidates []CandidateQuery, N int) []CandidateQuery
+
 // TransformationSampler samples candidate queries based on the transformation that was applied.
 // It uses stratified sampling by ensuring a minimum of n candidates are sampled, plus an
 // additional delta-%.
 type TransformationSampler struct {
 	n     int
 	delta float64
+	Strategy
+}
+
+func BalancedTransformationStrategy(candidates []CandidateQuery, N int) []CandidateQuery {
+	// Sort the candidates by transformation ID.
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].TransformationID < candidates[j].TransformationID
+	})
+
+	c := make([]CandidateQuery, N)
+	seen := make(map[int]bool)
+	var (
+		j       int // The index of un-added candidates.
+		prevTID int // The ID of the previous transformation seen.
+	)
+	// Continue adding unseen candidate queries using balanced sampling until the
+	// conditions for stopping are met.
+	for j < N {
+		for i, child := range candidates {
+			if _, ok := seen[i]; !ok {
+				if prevTID != child.TransformationID {
+					seen[i] = true
+
+					prevTID = child.TransformationID
+
+					c[j] = child
+					j++
+					if j >= N {
+						break
+					}
+				}
+			}
+		}
+	}
+	return c
+}
+
+func StratifiedTransformationStrategy(candidates []CandidateQuery, N int) []CandidateQuery {
+	factor := math.Floor(float64(len(candidates)) / float64(N))
+
+	// Create a distribution of the transformation IDs in the candidates.
+	dist := make(map[int][]CandidateQuery)
+	for _, candidate := range candidates {
+		dist[candidate.TransformationID] = append(dist[candidate.TransformationID], candidate)
+	}
+
+	// Perform stratified sampling on the transformations.
+	var c []CandidateQuery
+	for k, v := range dist {
+		n := math.Floor(float64(len(v)) / factor)
+		w := make([]CandidateQuery, len(v))
+		copy(w, v)
+		for i, candidate := range w {
+			if n <= 0 || len(c) >= N || i >= len(dist[k]) {
+				break
+			}
+			c = append(c, candidate)
+			dist[k] = append(dist[k][:i], dist[k][i+1:]...)
+			n--
+		}
+	}
+
+	// Return early if there is a perfectly sampled set.
+	if len(c) >= N {
+		return c
+	}
+
+	// Find the maximum distribution size.
+	for len(c) < N {
+		var max int
+		for _, v := range dist {
+			if len(v) > max {
+				max = len(v)
+			}
+		}
+
+		// Otherwise continue adding from the set of the maximum size.
+		for _, v := range dist {
+			if len(v) == max {
+				for _, candidate := range v {
+					if len(c) >= N {
+						break
+					}
+					c = append(c, candidate)
+				}
+			}
+		}
+	}
+
+	return c
 }
 
 func (s TransformationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
@@ -40,44 +132,16 @@ func (s TransformationSampler) Sample(candidates []CandidateQuery) ([]CandidateQ
 		return candidates, nil
 	}
 
-	// Sort the candidates by transformation ID.
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].TransformationID < candidates[j].TransformationID
-	})
-
-	c := make([]CandidateQuery, N)
-	seen := make(map[int]bool)
-	var (
-		j       int // The index of un-added candidates.
-		prevTID int // The ID of the previous transformation seen.
-	)
-	// Continue adding unseen candidate queries using stratified sampling until the
-	// conditions for stopping are met.
-	for j < N {
-		for i, child := range candidates {
-			if _, ok := seen[i]; !ok {
-				if prevTID != child.TransformationID {
-					seen[i] = true
-
-					prevTID = child.TransformationID
-
-					c[j] = child
-					j++
-					if j >= N {
-						break
-					}
-				}
-			}
-		}
-	}
+	c := s.Strategy(candidates, N)
 
 	return c, nil
 }
 
-func NewTransformationSampler(n int, delta float64) TransformationSampler {
+func NewTransformationSampler(n int, delta float64, strategy Strategy) TransformationSampler {
 	return TransformationSampler{
-		n:     n,
-		delta: delta,
+		n:        n,
+		delta:    delta,
+		Strategy: strategy,
 	}
 }
 

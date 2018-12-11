@@ -136,19 +136,19 @@ func (p ProtocolConstructor) extractQueries(objectiveKeywords []cqr.CommonQueryR
 	queries = append(queries, indexTestsQuery)
 	queries = append(queries, targetConditionsQuery)
 	// Queries with two of the clauses.
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{objectiveQuery, participantsQuery}).SetOption(ProtocolOption, ObjectiveParticipants*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{objectiveQuery, indexTestsQuery}).SetOption(ProtocolOption, ObjectiveIndexTests*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{objectiveQuery, targetConditionsQuery}).SetOption(ProtocolOption, ObjectiveTargetConditions*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{participantsQuery, indexTestsQuery}).SetOption(ProtocolOption, ParticipantsIndexTests*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{participantsQuery, targetConditionsQuery}).SetOption(ProtocolOption, ParticipantsTargetConditions*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{indexTestsQuery, targetConditionsQuery}).SetOption(ProtocolOption, IndexTestsTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{objectiveQuery, participantsQuery}).SetOption(ProtocolOption, ObjectiveParticipants*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{objectiveQuery, indexTestsQuery}).SetOption(ProtocolOption, ObjectiveIndexTests*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{objectiveQuery, targetConditionsQuery}).SetOption(ProtocolOption, ObjectiveTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{participantsQuery, indexTestsQuery}).SetOption(ProtocolOption, ParticipantsIndexTests*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{participantsQuery, targetConditionsQuery}).SetOption(ProtocolOption, ParticipantsTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{indexTestsQuery, targetConditionsQuery}).SetOption(ProtocolOption, IndexTestsTargetConditions*offset))
 	// Queries with three of the clauses.
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{objectiveQuery, participantsQuery, indexTestsQuery}).SetOption(ProtocolOption, ObjectiveParticipantsIndexTests*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{objectiveQuery, participantsQuery, targetConditionsQuery}).SetOption(ProtocolOption, ObjectiveParticipantsTargetConditions*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{objectiveQuery, indexTestsQuery, targetConditionsQuery}).SetOption(ProtocolOption, ObjectiveIndexTestsTargetConditions*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{participantsQuery, indexTestsQuery, targetConditionsQuery}).SetOption(ProtocolOption, ParticipantsIndexTestsTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{objectiveQuery, participantsQuery, indexTestsQuery}).SetOption(ProtocolOption, ObjectiveParticipantsIndexTests*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{objectiveQuery, participantsQuery, targetConditionsQuery}).SetOption(ProtocolOption, ObjectiveParticipantsTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{objectiveQuery, indexTestsQuery, targetConditionsQuery}).SetOption(ProtocolOption, ObjectiveIndexTestsTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{participantsQuery, indexTestsQuery, targetConditionsQuery}).SetOption(ProtocolOption, ParticipantsIndexTestsTargetConditions*offset))
 	// Final query with all four of the clauses.
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{objectiveQuery, participantsQuery, indexTestsQuery, targetConditionsQuery}).SetOption(ProtocolOption, ObjectiveParticipantsIndexTestsTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{objectiveQuery, participantsQuery, indexTestsQuery, targetConditionsQuery}).SetOption(ProtocolOption, ObjectiveParticipantsIndexTestsTargetConditions*offset))
 	// Next, generate a number of new queries all with the redundant keywords removed.
 	var overlap []string
 	for _, objectiveKeyword := range objectiveKeywords {
@@ -178,19 +178,19 @@ func (p ProtocolConstructor) extractQueries(objectiveKeywords []cqr.CommonQueryR
 	queries = append(queries, indexTestsQuery)
 	queries = append(queries, targetConditionsQuery)
 	// Queries with two of the clauses.
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueParticipantsQuery}).SetOption(ProtocolOption, UniqueObjectiveParticipants*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueIndexTestsQuery}).SetOption(ProtocolOption, UniqueObjectiveIndexTests*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueObjectiveTargetConditions*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{uniqueParticipantsQuery, uniqueIndexTestsQuery}).SetOption(ProtocolOption, UniqueParticipantsIndexTests*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{uniqueParticipantsQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueParticipantsTargetConditions*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{uniqueIndexTestsQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueIndexTestsTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueParticipantsQuery}).SetOption(ProtocolOption, UniqueObjectiveParticipants*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueIndexTestsQuery}).SetOption(ProtocolOption, UniqueObjectiveIndexTests*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueObjectiveTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{uniqueParticipantsQuery, uniqueIndexTestsQuery}).SetOption(ProtocolOption, UniqueParticipantsIndexTests*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{uniqueParticipantsQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueParticipantsTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{uniqueIndexTestsQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueIndexTestsTargetConditions*offset))
 	// Queries with three of the clauses.
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueParticipantsQuery, uniqueIndexTestsQuery}).SetOption(ProtocolOption, UniqueObjectiveParticipantsIndexTests*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueParticipantsQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueObjectiveParticipantsTargetConditions*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueIndexTestsQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueObjectiveIndexTestsTargetConditions*offset))
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{uniqueParticipantsQuery, uniqueIndexTestsQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueParticipantsIndexTestsTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueParticipantsQuery, uniqueIndexTestsQuery}).SetOption(ProtocolOption, UniqueObjectiveParticipantsIndexTests*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueParticipantsQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueObjectiveParticipantsTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueIndexTestsQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueObjectiveIndexTestsTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{uniqueParticipantsQuery, uniqueIndexTestsQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueParticipantsIndexTestsTargetConditions*offset))
 	// Final query with all four of the clauses.
-	queries = append(queries, cqr.NewBooleanQuery("and", []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueParticipantsQuery, uniqueIndexTestsQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueObjectiveParticipantsIndexTestsTargetConditions*offset))
+	queries = append(queries, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{uniqueObjectiveQuery, uniqueParticipantsQuery, uniqueIndexTestsQuery, uniqueTargetConditionsQuery}).SetOption(ProtocolOption, UniqueObjectiveParticipantsIndexTestsTargetConditions*offset))
 	// Add the sensitivity-maximising rct filter:
 	f1 := make([]cqr.CommonQueryRepresentation, len(queries))
 	for i, q := range queries {
