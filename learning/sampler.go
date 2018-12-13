@@ -1,6 +1,7 @@
 package learning
 
 import (
+	"github.com/bugra/kmeans"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
@@ -315,6 +316,7 @@ func NegativeBiasScoredStrategy(candidates []ScoredCandidateQuery, scores map[st
 // functions commonly employ a notion of sim(d,q) where d is a document and q is a query. In this case
 // (diversifying queries), this is replaced with the evaluation score of a query (for a particular
 // evaluation measure). The sim(q1,q2) - i.e., the similarity between two queries, remains the same.
+// Queries are sampled according to Maximal Marginal Relevance (Carbonell '98).
 func MaximalMarginalRelevanceScoredStrategy(lambda float64, similarity func(x, y []float64) (float64, error)) ScoredStrategy {
 	return func(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery {
 		// Sort all of the candidates based on Score.
@@ -501,27 +503,69 @@ func NewGreedySampler(n int, delta float64, measure eval.Evaluator, qrels trecre
 	}
 }
 
-//type DiversitySampler struct {
-//	n     int
-//	delta float64
-//	DiversityStrategy
-//}
-//
-//type DiversityStrategy func(candidates []ScoredCandidateQuery, N int) []CandidateQuery
-//
-//// MaximalMarginalRelevanceStrategy samples candidates according to Maximal Marginal Relevance (Carbonell '98).
-//func MaximalMarginalRelevanceStrategy(candidates []ScoredCandidateQuery, N int) []CandidateQuery {
-//	return nil
-//}
-//
-//func (DiversitySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
-//
-//}
-//
-//func NewDiversitySampler(n int, delta float64, strategy DiversityStrategy) DiversitySampler {
-//	return DiversitySampler{
-//		n:                 n,
-//		delta:             delta,
-//		DiversityStrategy: strategy,
-//	}
-//}
+type ClusterSampler struct {
+	n     int
+	delta float64
+	k     int
+}
+
+func (s ClusterSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
+	// Compute the number of candidates to sample.
+	N := int(s.delta * float64(len(candidates)))
+
+	// If there are not at least n candidates, set the number of candidates to sample to n.
+	// If there are not enough candidates in n, set the number of candidates to sample
+	// as the total number of candidates.
+	if N < s.n {
+		N = s.n
+	}
+
+	if len(candidates) <= N {
+		// We can return early here because there are not enough candidates to satisfy
+		// the sampling conditions.
+		return candidates, nil
+	}
+
+	// Create a two-dimensional matrix to store the feature vectors of the queries.
+	data := make([][]float64, len(candidates))
+	for i, candidate := range candidates {
+		data[i] = candidate.Features.Scores(ChainFeatures)
+	}
+
+	// Perform k-means++ to cluster the queries.
+	labels, err := kmeans.Kmeans(data, s.k, kmeans.EuclideanDistance, 10)
+	if err != nil {
+		return nil, err
+	}
+
+	// Round-robin from the clusters, sampling a query from each cluster.
+	var (
+		prevLabel int
+		c         []CandidateQuery
+	)
+	seen := make(map[int]bool)
+	for len(c) < N {
+		for i := 0; i < len(candidates); i++ {
+			if len(c) >= N {
+				return c, nil
+			}
+			if _, ok := seen[i]; !ok {
+				if labels[i] != prevLabel {
+					seen[i] = true
+					prevLabel = labels[i]
+					c = append(c, candidates[i])
+				}
+			}
+		}
+	}
+
+	return c, nil
+}
+
+func NewClusterSampler(n int, delta float64, k int) ClusterSampler {
+	return ClusterSampler{
+		n:     n,
+		delta: delta,
+		k:     k,
+	}
+}
