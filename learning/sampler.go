@@ -15,7 +15,8 @@ type Sampler interface {
 	Sample(candidates []CandidateQuery) ([]CandidateQuery, error)
 }
 
-type Strategy func(candidates []CandidateQuery, N int) []CandidateQuery
+// TransformationStrategy samples candidates using a transformation strategy.
+type TransformationStrategy func(candidates []CandidateQuery, N int) []CandidateQuery
 
 // TransformationSampler samples candidate queries based on the transformation that was applied.
 // It uses stratified sampling by ensuring a minimum of n candidates are sampled, plus an
@@ -23,7 +24,7 @@ type Strategy func(candidates []CandidateQuery, N int) []CandidateQuery
 type TransformationSampler struct {
 	n     int
 	delta float64
-	Strategy
+	TransformationStrategy
 }
 
 func BalancedTransformationStrategy(candidates []CandidateQuery, N int) []CandidateQuery {
@@ -132,16 +133,16 @@ func (s TransformationSampler) Sample(candidates []CandidateQuery) ([]CandidateQ
 		return candidates, nil
 	}
 
-	c := s.Strategy(candidates, N)
+	c := s.TransformationStrategy(candidates, N)
 
 	return c, nil
 }
 
-func NewTransformationSampler(n int, delta float64, strategy Strategy) TransformationSampler {
+func NewTransformationSampler(n int, delta float64, strategy TransformationStrategy) TransformationSampler {
 	return TransformationSampler{
-		n:        n,
-		delta:    delta,
-		Strategy: strategy,
+		n:                      n,
+		delta:                  delta,
+		TransformationStrategy: strategy,
 	}
 }
 
@@ -187,10 +188,127 @@ func NewRandomSampler(n int, delta float64) RandomSampler {
 type EvaluationSampler struct {
 	n       int
 	delta   float64
+	scores  map[string]float64
 	measure eval.Evaluator
 	qrels   trecresults.QrelsFile
 	cache   combinator.QueryCacher
 	ss      stats.StatisticsSource
+	ScoredStrategy
+}
+
+// ScoredCandidateQuery contains a candidate query and some Score.
+type ScoredCandidateQuery struct {
+	CandidateQuery
+	Score float64
+}
+
+// ScoredStrategy samples scored candidates.
+type ScoredStrategy func(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery
+
+func BalancedScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery {
+	// Sort all of the candidates based on Score.
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Score > candidates[j].Score
+	})
+	// Compute the step size for stratified sampling.
+	stepSize := int(math.Ceil(float64(len(candidates)) / float64(N)))
+	// Perform stratified sampling over the scored candidates.
+	x := make([]CandidateQuery, N)
+	var (
+		j int // Index of the sampled candidates.
+		k int // Index of the candidates (increased using step size).
+		l int // Number of times the step count has "wrapped".
+	)
+	for j < len(x) {
+		if k >= len(candidates) {
+			l++
+			k = l
+		}
+		x[j] = candidates[k].CandidateQuery
+		k += stepSize
+		j++
+	}
+	return x
+}
+
+func StratifiedScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery {
+	var (
+		better, worse []ScoredCandidateQuery
+		c             []CandidateQuery
+	)
+
+	// Identify which candidates score higher and lower than the comparison scores in `scores`.
+	for _, candidate := range candidates {
+		if score, ok := scores[candidate.Topic]; ok {
+			if candidate.Score >= score {
+				better = append(better, candidate)
+			} else {
+				worse = append(worse, candidate)
+			}
+		}
+	}
+
+	// Compute just how many candidates should be sampled from each set of better or worse candidates.
+	betterNum := math.Ceil(float64(len(better)) / float64(len(candidates)) * float64(N))
+	worseNum := math.Ceil(float64(len(worse)) / float64(len(candidates)) * float64(N))
+
+	// Otherwise, add candidates from the better sample.
+	for i, j := 0.0, 0; i < betterNum; i, j = i+1, j+1 {
+		if len(c) >= N {
+			return c
+		}
+		c = append(c, better[j].CandidateQuery)
+	}
+
+	// And from the worse sample.
+	for i, j := 0.0, 0; i < worseNum; i, j = i+1, j+1 {
+		if len(c) >= N {
+			return c
+		}
+		c = append(c, worse[j].CandidateQuery)
+	}
+
+	return c
+}
+
+// PositiveBiasScoredStrategy samples up to N candidates that improve over the comparison score in `scores`.
+func PositiveBiasScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery {
+	var (
+		c []CandidateQuery
+	)
+
+	for _, candidate := range candidates {
+		if score, ok := scores[candidate.Topic]; ok {
+			if candidate.Score >= score {
+				if len(c) > N {
+					return c
+				}
+				c = append(c, candidate.CandidateQuery)
+			}
+		}
+	}
+
+	return c
+}
+
+// NegativeBiasScoredStrategy samples up to N candidates that are worse than the comparison score in `scores`.
+func NegativeBiasScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery {
+	var (
+		c []CandidateQuery
+	)
+
+	for _, candidate := range candidates {
+		if score, ok := scores[candidate.Topic]; ok {
+			if candidate.Score < score {
+				if len(c) > N {
+					return c
+				}
+				c = append(c, candidate.CandidateQuery)
+			}
+		}
+	}
+
+	return c
 }
 
 func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
@@ -210,12 +328,6 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 		return candidates, nil
 	}
 
-	// ScoredCandidateQuery contains a candidate query and some score.
-	type ScoredCandidateQuery struct {
-		CandidateQuery
-		score float64
-	}
-
 	// Score all of the candidates.
 	c := make([]ScoredCandidateQuery, len(candidates))
 	for i, child := range candidates {
@@ -228,46 +340,23 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 		v := s.measure.Score(&results, s.qrels.Qrels[child.Topic])
 		c[i] = ScoredCandidateQuery{
 			CandidateQuery: child,
-			score:          v,
+			Score:          v,
 		}
 	}
 
-	// Sort all of the candidates based on score.
-	sort.Slice(c, func(i, j int) bool {
-		return c[i].score > c[j].score
-	})
-
-	// Compute the step size for stratified sampling.
-	stepSize := int(math.Ceil(float64(len(candidates)) / float64(N)))
-
-	// Perform stratified sampling over the scored candidates.
-	x := make([]CandidateQuery, N)
-	var (
-		j int // Index of the sampled candidates.
-		k int // Index of the candidates (increased using step size).
-		l int // Number of times the step count has "wrapped".
-	)
-	for j < len(x) {
-		if k >= len(c) {
-			l++
-			k = l
-		}
-		x[j] = c[k].CandidateQuery
-		k += stepSize
-		j++
-	}
-
-	return x, nil
+	return s.ScoredStrategy(c, s.scores, N), nil
 }
 
-func NewEvaluationSampler(n int, delta float64, measure eval.Evaluator, qrels trecresults.QrelsFile, cache combinator.QueryCacher, ss stats.StatisticsSource) EvaluationSampler {
+func NewEvaluationSampler(n int, delta float64, measure eval.Evaluator, qrels trecresults.QrelsFile, cache combinator.QueryCacher, ss stats.StatisticsSource, scores map[string]float64, strategy ScoredStrategy) EvaluationSampler {
 	return EvaluationSampler{
-		n:       n,
-		delta:   delta,
-		measure: measure,
-		qrels:   qrels,
-		cache:   cache,
-		ss:      ss,
+		n:              n,
+		delta:          delta,
+		measure:        measure,
+		qrels:          qrels,
+		cache:          cache,
+		ss:             ss,
+		scores:         scores,
+		ScoredStrategy: strategy,
 	}
 }
 
@@ -300,7 +389,7 @@ func (s GreedySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, er
 		return candidates, nil
 	}
 
-	// ScoredCandidateQuery contains a candidate query and some score.
+	// ScoredCandidateQuery contains a candidate query and some Score.
 	type ScoredCandidateQuery struct {
 		CandidateQuery
 		score  float64
@@ -324,7 +413,7 @@ func (s GreedySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, er
 		}
 	}
 
-	// Sort all of the candidates based on numRet and score.
+	// Sort all of the candidates based on numRet and Score.
 	sort.Slice(c, func(i, j int) bool {
 		return c[i].numRet < c[j].numRet && c[i].score > c[j].score
 	})

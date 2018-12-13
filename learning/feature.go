@@ -23,7 +23,7 @@ type Feature struct {
 	Score float64
 }
 
-// Set sets the `score` of the feature.
+// Set sets the `Score` of the feature.
 func (f Feature) Set(score float64) Feature {
 	f.Score = score
 	return f
@@ -95,12 +95,12 @@ var MeasurementFeatureKeys = map[string]int{
 // Chain of transformations !!THIS MUST BE THE LAST FEATURE IN THE LIST!!
 var ChainFeatures = chainFeatures + len(MeasurementFeatureKeys)*2
 
-// NewFeature creates a new feature with the specified ID and `score`.
+// NewFeature creates a new feature with the specified ID and `Score`.
 func NewFeature(id int, score float64) Feature {
 	return Feature{id, score}
 }
 
-// Features is the group of Features used to learn or predict a score.
+// Features is the group of Features used to learn or predict a Score.
 type Features []Feature
 
 func (ff Features) Len() int           { return len(ff) }
@@ -115,7 +115,7 @@ func (ff Features) Scores(max int) []float64 {
 	return v
 }
 
-// LearntFeature contains the Features that were used to produce a particular score.
+// LearntFeature contains the Features that were used to produce a particular Score.
 type LearntFeature struct {
 	Features
 	Scores  []float64
@@ -155,7 +155,7 @@ func LoadFeatures(reader io.Reader) ([]LearntFeature, error) {
 			rest = l
 		}
 
-		// [score] qid:[topic] {features}
+		// [Score] qid:[topic] {features}
 		b := strings.Split(strings.TrimSpace(rest), " ")
 		s, err := strconv.ParseFloat(strings.TrimSpace(b[0]), 64)
 		if err != nil {
@@ -219,7 +219,7 @@ func LoadReinforcementFeatures(reader io.Reader) ([]LearntFeature, error) {
 		b := strings.Split(rest, "*")
 		topic = b[0]
 
-		// [score {scores}]
+		// [Score {scores}]
 		c := strings.Split(strings.TrimSpace(b[1]), " ")
 		scores = make([]float64, len(c))
 		for i, v := range c {
@@ -442,7 +442,7 @@ func (lf LearntFeature) WriteLibSVMRank(writer io.Writer) (int, error) {
 	return writer.Write([]byte(line + "\n"))
 }
 
-// AverageScore compute the average Feature score for a group of Features.
+// AverageScore compute the average Feature Score for a group of Features.
 func (ff Features) AverageScore() float64 {
 	if len(ff) == 0 {
 		return 0
@@ -460,7 +460,7 @@ func (ff Features) AverageScore() float64 {
 	return totalScore / float64(len(ff))
 }
 
-// NewLearntFeature creates a new learnt feature with a score and a set of Features.
+// NewLearntFeature creates a new learnt feature with a Score and a set of Features.
 func NewLearntFeature(features Features) LearntFeature {
 	return LearntFeature{
 		Features: features,

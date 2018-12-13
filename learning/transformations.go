@@ -640,14 +640,14 @@ func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []
 		//// Next, parse and sort the candidates from MetaMap.
 		//type concept struct {
 		//	cui   string
-		//	score float64
+		//	Score float64
 		//}
 		//cuis := make([]concept, len(candidates))
 		//for i, candidate := range candidates {
-		//	cuis[i] = concept{cui: candidate.CUI, score: candidate.Similarity}
+		//	cuis[i] = concept{cui: candidate.CUI, Score: candidate.Similarity}
 		//}
 		//sort.Slice(cuis, func(i, j int) bool {
-		//	return cuis[i].score < cuis[j].score
+		//	return cuis[i].Score < cuis[j].Score
 		//})
 
 		// Now we know the target cui that is most associated with the input term.
@@ -666,7 +666,7 @@ func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []
 			return []cqr.CommonQueryRepresentation{}, nil
 		}
 
-		// Only continue to expand keywords until the score is less than a tenth of a percent (0.001) similar.
+		// Only continue to expand keywords until the Score is less than a tenth of a percent (0.001) similar.
 		// Or to a maximum of 5 expansions.
 		maxScore := similar[0].Value
 		var expansions []string
