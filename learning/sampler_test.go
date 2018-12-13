@@ -2,6 +2,7 @@ package learning_test
 
 import (
 	"bytes"
+	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/learning"
 	"github.com/hscells/trecresults"
 	"io/ioutil"
@@ -132,6 +133,15 @@ func TestSamplerEvaluation(t *testing.T) {
 
 	t.Log(len(en))
 	for _, c := range en {
+		t.Log(c.TransformationID)
+	}
+
+	t.Log("----")
+
+	em := learning.NewEvaluationSampler(20, 0.1, nil, qrels, nil, nil, scores, learning.MaximalMarginalRelevanceScoredStrategy(0.5, cui2vec.Cosine)).ScoredStrategy(candidates, scores, 15)
+
+	t.Log(len(em))
+	for _, c := range em {
 		t.Log(c.TransformationID)
 	}
 

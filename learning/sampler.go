@@ -205,7 +205,7 @@ type ScoredCandidateQuery struct {
 // ScoredStrategy samples scored candidates.
 type ScoredStrategy func(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery
 
-func BalancedScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery {
+func BalancedScoredStrategy(candidates []ScoredCandidateQuery, _ map[string]float64, N int) []CandidateQuery {
 	// Sort all of the candidates based on Score.
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].Score > candidates[j].Score
@@ -309,6 +309,66 @@ func NegativeBiasScoredStrategy(candidates []ScoredCandidateQuery, scores map[st
 	}
 
 	return c
+}
+
+// MaximalMarginalRelevanceScoredStrategy samples candidates according to a diversity-based strategy. Diversity
+// functions commonly employ a notion of sim(d,q) where d is a document and q is a query. In this case
+// (diversifying queries), this is replaced with the evaluation score of a query (for a particular
+// evaluation measure). The sim(q1,q2) - i.e., the similarity between two queries, remains the same.
+func MaximalMarginalRelevanceScoredStrategy(lambda float64, similarity func(x, y []float64) (float64, error)) ScoredStrategy {
+	return func(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery {
+		// Sort all of the candidates based on Score.
+		sort.Slice(candidates, func(i, j int) bool {
+			return candidates[i].Score > candidates[j].Score
+		})
+
+		mmr := func(r float64, unranked, selected []ScoredCandidateQuery) (int, ScoredCandidateQuery) {
+			var (
+				pos   int
+				score float64
+				query ScoredCandidateQuery
+			)
+			for i, u := range unranked {
+				sim := 0.0
+				for _, s := range selected {
+					curr, err := similarity(u.Features.Scores(ChainFeatures), s.Features.Scores(ChainFeatures))
+					if err != nil {
+						panic(err)
+					}
+					if curr > sim {
+						sim = curr
+					}
+				}
+				curr := lambda*r - (1-lambda)*sim
+				if curr > score {
+					score = curr
+					query = u
+					pos = i
+				}
+			}
+			return pos, query
+		}
+
+		unranked := candidates[1:]
+		selected := []ScoredCandidateQuery{candidates[0]}
+		c := make([]CandidateQuery, N)
+
+		for i, q := range unranked {
+			if i >= N {
+				return c
+			}
+
+			pos, query := mmr(q.Score, unranked, selected)
+			// Add the query to selected.
+			selected = append(selected, query)
+			// Remove the query from unranked.
+			unranked = append(unranked[:pos], unranked[pos+1:]...)
+			// Add the query to the final list.
+			c[i] = query.CandidateQuery
+		}
+
+		return c
+	}
 }
 
 func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
@@ -440,3 +500,28 @@ func NewGreedySampler(n int, delta float64, measure eval.Evaluator, qrels trecre
 		ss:      ss,
 	}
 }
+
+//type DiversitySampler struct {
+//	n     int
+//	delta float64
+//	DiversityStrategy
+//}
+//
+//type DiversityStrategy func(candidates []ScoredCandidateQuery, N int) []CandidateQuery
+//
+//// MaximalMarginalRelevanceStrategy samples candidates according to Maximal Marginal Relevance (Carbonell '98).
+//func MaximalMarginalRelevanceStrategy(candidates []ScoredCandidateQuery, N int) []CandidateQuery {
+//	return nil
+//}
+//
+//func (DiversitySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
+//
+//}
+//
+//func NewDiversitySampler(n int, delta float64, strategy DiversityStrategy) DiversitySampler {
+//	return DiversitySampler{
+//		n:                 n,
+//		delta:             delta,
+//		DiversityStrategy: strategy,
+//	}
+//}
