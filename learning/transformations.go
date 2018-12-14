@@ -7,9 +7,11 @@ import (
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/quickumlsrest"
 	"github.com/hscells/transmute/fields"
 	"github.com/xtgo/set"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -66,10 +68,9 @@ type adjacencyReplacement struct{}
 type clauseRemoval struct{}
 
 type cui2vecExpansion struct {
-	vector         cui2vec.Embeddings
-	mapping        cui2vec.Mapping
-	reverseMapping map[string]string
-	//quickumls quickumlsrest.Client
+	vector  cui2vec.Embeddings
+	mapping cui2vec.Mapping
+	cache   quickumlsrest.Cache
 }
 
 type meshParent struct{}
@@ -106,17 +107,13 @@ func NewClauseRemovalTransformer() Transformation {
 }
 
 // NewClauseRemovalTransformer creates a clause removal transformer.
-func Newcui2vecExpansionTransformer(vector cui2vec.Embeddings, mapping cui2vec.Mapping) Transformation {
-	r := make(map[string]string)
-	for k, v := range mapping {
-		r[v] = k
-	}
+func Newcui2vecExpansionTransformer(vector cui2vec.Embeddings, mapping cui2vec.Mapping, cache quickumlsrest.Cache) Transformation {
 	return Transformation{
 		ID: Cui2vecExpansionTransformation,
 		Transformer: cui2vecExpansion{
-			vector:         vector,
-			mapping:        mapping,
-			reverseMapping: r,
+			vector:  vector,
+			mapping: mapping,
+			cache:   cache,
 		},
 	}
 }
@@ -622,76 +619,37 @@ func (clauseRemoval) Name() string {
 func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []cqr.CommonQueryRepresentation, err error) {
 	switch q := query.(type) {
 	case cqr.Keyword:
-		// If the string is truncated, then don't bother.
-		if strings.ContainsAny(q.QueryString, "*$") {
+		remRe := regexp.MustCompile(`[$*~"'?]*`)
+
+		keyword := string(remRe.ReplaceAll([]byte(q.QueryString), []byte("")))
+
+		var children []cqr.CommonQueryRepresentation
+		if candidates, ok := c.cache[keyword]; ok {
+			if len(candidates) == 0 {
+				return []cqr.CommonQueryRepresentation{}, nil
+			}
+
+			// Only continue to expand keywords until the Score is less than a tenth of a percent (0.001) similar.
+			// Or to a maximum of 5 expansions.
+			maxScore := candidates[0].Similarity
+			for _, candidate := range candidates {
+				if maxScore-candidate.Similarity > 0.001 {
+					break
+				}
+
+				if len(children) >= 5 {
+					break
+				}
+
+				if term, ok := c.mapping[candidate.CUI]; ok {
+					children = append(children, cqr.NewKeyword(term, q.Fields...))
+				}
+			}
+		} else {
 			return []cqr.CommonQueryRepresentation{}, nil
 		}
 
-		//// Use MetaMap to get the preferred cui.
-		//candidates, err := c.quickumls.Match(q.QueryString)
-		//if err != nil {
-		//	return nil, err
-		//}
-		//
-		//if len(candidates) == 0 {
-		//	return []cqr.CommonQueryRepresentation{}, nil
-		//}
-		//
-		//// Next, parse and sort the candidates from MetaMap.
-		//type concept struct {
-		//	cui   string
-		//	Score float64
-		//}
-		//cuis := make([]concept, len(candidates))
-		//for i, candidate := range candidates {
-		//	cuis[i] = concept{cui: candidate.CUI, Score: candidate.Similarity}
-		//}
-		//sort.Slice(cuis, func(i, j int) bool {
-		//	return cuis[i].Score < cuis[j].Score
-		//})
-
-		// Now we know the target cui that is most associated with the input term.
-		target, ok := c.reverseMapping[q.QueryString]
-		if !ok {
-			return []cqr.CommonQueryRepresentation{}, nil
-		}
-
-		// We can get cuis that are similar to each other from cui2vec.
-		similar, err := c.vector.Similar(target)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(similar) == 0 {
-			return []cqr.CommonQueryRepresentation{}, nil
-		}
-
-		// Only continue to expand keywords until the Score is less than a tenth of a percent (0.001) similar.
-		// Or to a maximum of 5 expansions.
-		maxScore := similar[0].Value
-		var expansions []string
-		for _, cui := range similar {
-			if maxScore-cui.Value > 0.001 {
-				break
-			}
-
-			if term, ok := c.mapping[cui.CUI]; ok {
-				expansions = append(expansions, term)
-			}
-
-			if len(expansions) >= 5 {
-				break
-			}
-		}
-
-		// Now create keywords from the expanded terms.
-		children := make([]cqr.CommonQueryRepresentation, len(expansions)+1)
-		for i, expansion := range expansions {
-			children[i] = cqr.NewKeyword(expansion, q.Fields...)
-		}
-		children[len(children)-1] = q
-
-		return []cqr.CommonQueryRepresentation{cqr.NewBooleanQuery("or", children)}, nil
+		return []cqr.CommonQueryRepresentation{cqr.NewBooleanQuery("or", append(children, q))}, nil
 	}
 	return nil, nil
 }
