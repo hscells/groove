@@ -119,14 +119,7 @@ func StratifiedTransformationStrategy(candidates []CandidateQuery, N int) []Cand
 
 func (s TransformationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
 	// Compute the number of candidates to sample.
-	N := int(s.delta * float64(len(candidates)))
-
-	// If there are not at least n candidates, set the number of candidates to sample to n.
-	// If there are not enough candidates in n, set the number of candidates to sample
-	// as the total number of candidates.
-	if N < s.n {
-		N = s.n
-	}
+	N := int(s.delta*float64(len(candidates))) + s.n
 
 	if len(candidates) <= N {
 		// We can return early here because there are not enough candidates to satisfy
@@ -155,18 +148,27 @@ type RandomSampler struct {
 }
 
 func (s RandomSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
+	// Compute the number of candidates to sample.
+	N := int(s.delta*float64(len(candidates))) + s.n
+
+	if len(candidates) <= N {
+		// We can return early here because there are not enough candidates to satisfy
+		// the sampling conditions.
+		return candidates, nil
+	}
+
 	// Shuffle the candidates to sample.
 	l := rand.Perm(len(candidates))
 
-	// Sample delta-% candidates from shuffled slice.
-	c := make([]CandidateQuery, int(s.delta*float64(len(candidates))))
+	// Sample candidates from shuffled slice.
+	c := make([]CandidateQuery, N)
 	for i := 0; i < len(c); i++ {
 		c[i] = candidates[l[i]]
 	}
 
-	// Continue to sample until there are at least n candidates sampled.
+	// Continue to sample until there are N candidates sampled.
 	i := len(c)
-	for len(c) < s.n {
+	for len(c) < N {
 		if i >= len(candidates) {
 			break
 		}
@@ -375,14 +377,7 @@ func MaximalMarginalRelevanceScoredStrategy(lambda float64, similarity func(x, y
 
 func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
 	// Compute the number of candidates to sample.
-	N := int(s.delta * float64(len(candidates)))
-
-	// If there are not at least n candidates, set the number of candidates to sample to n.
-	// If there are not enough candidates in n, set the number of candidates to sample
-	// as the total number of candidates.
-	if N < s.n {
-		N = s.n
-	}
+	N := int(s.delta*float64(len(candidates))) + s.n
 
 	if len(candidates) <= N {
 		// We can return early here because there are not enough candidates to satisfy
@@ -478,14 +473,7 @@ func MaximalMarginalRelevanceGreedyStrategy(scores map[string]float64, lambda fl
 
 func (s GreedySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
 	// Compute the number of candidates to sample.
-	N := int(s.delta * float64(len(candidates)))
-
-	// If there are not at least n candidates, set the number of candidates to sample to n.
-	// If there are not enough candidates in n, set the number of candidates to sample
-	// as the total number of candidates.
-	if N < s.n {
-		N = s.n
-	}
+	N := int(s.delta*float64(len(candidates))) + s.n
 
 	if len(candidates) <= N {
 		// We can return early here because there are not enough candidates to satisfy
@@ -533,14 +521,7 @@ type ClusterSampler struct {
 
 func (s ClusterSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
 	// Compute the number of candidates to sample.
-	N := int(s.delta * float64(len(candidates)))
-
-	// If there are not at least n candidates, set the number of candidates to sample to n.
-	// If there are not enough candidates in n, set the number of candidates to sample
-	// as the total number of candidates.
-	if N < s.n {
-		N = s.n
-	}
+	N := int(s.delta*float64(len(candidates))) + s.n
 
 	if len(candidates) <= N {
 		// We can return early here because there are not enough candidates to satisfy
