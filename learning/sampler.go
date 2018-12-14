@@ -432,6 +432,48 @@ type GreedySampler struct {
 	qrels   trecresults.QrelsFile
 	cache   combinator.QueryCacher
 	ss      stats.StatisticsSource
+	GreedyStrategy
+}
+
+type GreedyStrategy func(candidates []GreedyCandidateQuery, N int) []CandidateQuery
+
+// ScoredCandidateQuery contains a candidate query and some Score.
+type GreedyCandidateQuery struct {
+	CandidateQuery
+	score  float64
+	numRet int
+}
+
+func RankedGreedyStrategy(candidates []GreedyCandidateQuery, N int) []CandidateQuery {
+	// Sort all of the candidates based on numRet and Score.
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].numRet < candidates[j].numRet && candidates[i].score > candidates[j].score
+	})
+
+	// Sample the queries from lowest numRet to highest until N.
+	x := make([]CandidateQuery, N)
+	for i, child := range candidates {
+		if i >= len(x) {
+			break
+		}
+		if child.numRet == 0 {
+			continue
+		}
+		x[i] = child.CandidateQuery
+	}
+
+	return x
+}
+
+func MaximalMarginalRelevanceGreedyStrategy(scores map[string]float64, lambda float64, similarity func(x, y []float64) (float64, error)) GreedyStrategy {
+	return func(candidates []GreedyCandidateQuery, N int) []CandidateQuery {
+		scored := make([]ScoredCandidateQuery, len(candidates))
+		for i, candidate := range candidates {
+			scored[i] = ScoredCandidateQuery{Score: float64(candidate.numRet), CandidateQuery: candidate.CandidateQuery}
+		}
+
+		return MaximalMarginalRelevanceScoredStrategy(lambda, similarity)(scored, scores, N)
+	}
 }
 
 func (s GreedySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, error) {
@@ -451,15 +493,8 @@ func (s GreedySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, er
 		return candidates, nil
 	}
 
-	// ScoredCandidateQuery contains a candidate query and some Score.
-	type ScoredCandidateQuery struct {
-		CandidateQuery
-		score  float64
-		numRet int
-	}
-
 	// Score all of the candidates.
-	c := make([]ScoredCandidateQuery, len(candidates))
+	c := make([]GreedyCandidateQuery, len(candidates))
 	for i, child := range candidates {
 		pq := pipeline.NewQuery(child.Topic, child.Topic, child.Query)
 		t, _, err := combinator.NewLogicalTree(pq, s.ss, s.cache)
@@ -468,38 +503,25 @@ func (s GreedySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, er
 		}
 		results := t.Documents(s.cache).Results(pq, "")
 		v := s.measure.Score(&results, s.qrels.Qrels[child.Topic])
-		c[i] = ScoredCandidateQuery{
+		c[i] = GreedyCandidateQuery{
 			CandidateQuery: child,
 			score:          v,
 			numRet:         len(results),
 		}
 	}
 
-	// Sort all of the candidates based on numRet and Score.
-	sort.Slice(c, func(i, j int) bool {
-		return c[i].numRet < c[j].numRet && c[i].score > c[j].score
-	})
-
-	// Sample the queries from lowest numRet to highest until N.
-	x := make([]CandidateQuery, N)
-	for i, child := range c {
-		if i >= len(x) {
-			break
-		}
-		x[i] = child.CandidateQuery
-	}
-
-	return x, nil
+	return s.GreedyStrategy(c, N), nil
 }
 
-func NewGreedySampler(n int, delta float64, measure eval.Evaluator, qrels trecresults.QrelsFile, cache combinator.QueryCacher, ss stats.StatisticsSource) GreedySampler {
+func NewGreedySampler(n int, delta float64, measure eval.Evaluator, qrels trecresults.QrelsFile, cache combinator.QueryCacher, ss stats.StatisticsSource, strategy GreedyStrategy) GreedySampler {
 	return GreedySampler{
-		n:       n,
-		delta:   delta,
-		measure: measure,
-		qrels:   qrels,
-		cache:   cache,
-		ss:      ss,
+		n:              n,
+		delta:          delta,
+		measure:        measure,
+		qrels:          qrels,
+		cache:          cache,
+		ss:             ss,
+		GreedyStrategy: strategy,
 	}
 }
 
