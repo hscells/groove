@@ -36,11 +36,11 @@ type BreadthFirstExplorer struct {
 
 func NewBreadthFirstExplorer(ss stats.StatisticsSource, me analysis.MeasurementExecutor, measurements []analysis.Measurement, transformations []Transformation, sampler Sampler, condition BreadthFirstStoppingCondition) BreadthFirstExplorer {
 	return BreadthFirstExplorer{
-		ss:                            ss,
-		me:                            me,
-		measurements:                  measurements,
-		transformations:               transformations,
-		Sampler:                       sampler,
+		ss:              ss,
+		me:              me,
+		measurements:    measurements,
+		transformations: transformations,
+		Sampler:         sampler,
 		BreadthFirstStoppingCondition: condition,
 	}
 }
@@ -116,14 +116,25 @@ type DepthFirstExplorer struct {
 	measurements    []analysis.Measurement
 	transformations []Transformation
 	DepthFirstStoppingCriteria
-	ExplorationSamplingCriteria
+	DepthFirstSamplingCriteria
+}
+
+func NewDepthFirstExplorer(ss stats.StatisticsSource, me analysis.MeasurementExecutor, measurements []analysis.Measurement, transformations []Transformation, stopping DepthFirstStoppingCriteria, sampling DepthFirstSamplingCriteria) DepthFirstExplorer {
+	return DepthFirstExplorer{
+		ss:                         ss,
+		me:                         me,
+		measurements:               measurements,
+		transformations:            transformations,
+		DepthFirstStoppingCriteria: stopping,
+		DepthFirstSamplingCriteria: sampling,
+	}
 }
 
 // DepthFirstStoppingCriteria controls when the explorer should backtrack.
 type DepthFirstStoppingCriteria func(query CandidateQuery) bool
 
 // ExplorationSamplingCriteria controls when the explorer should sample a query.
-type ExplorationSamplingCriteria func(query CandidateQuery) bool
+type DepthFirstSamplingCriteria func(query CandidateQuery) bool
 
 // DepthStoppingCriteria ensures a query backtracks at a certain depth.
 func ProbabalisticDepthStoppingCriteria(prob float64) DepthFirstStoppingCriteria {
@@ -136,7 +147,7 @@ func ProbabalisticDepthStoppingCriteria(prob float64) DepthFirstStoppingCriteria
 
 // StratifiedTransformationSamplingCriteria ensures the candidate query potentially
 // being sampled has approximately equal transformations applied to it.
-func StratifiedTransformationSamplingCriteria(numTransformations int) DepthFirstStoppingCriteria {
+func StratifiedTransformationSamplingCriteria(numTransformations int) DepthFirstSamplingCriteria {
 	return func(query CandidateQuery) bool {
 		seen := make(map[int]bool)
 		for _, candidate := range query.Chain {
@@ -157,7 +168,7 @@ func StratifiedTransformationSamplingCriteria(numTransformations int) DepthFirst
 
 // BiasedTransformationSamplingCriteria samples candidate queries when all of the transformations
 // applied to a query are the same.
-func BiasedTransformationSamplingCriteria() DepthFirstStoppingCriteria {
+func BiasedTransformationSamplingCriteria() DepthFirstSamplingCriteria {
 	return func(query CandidateQuery) bool {
 		var id int
 		for i, candidate := range query.Chain {
@@ -174,7 +185,7 @@ func BiasedTransformationSamplingCriteria() DepthFirstStoppingCriteria {
 func (e DepthFirstExplorer) Traverse(query CandidateQuery, c chan GenerationResult) {
 	fmt.Println(strings.Repeat("-", len(query.Chain)) + "q")
 
-	if e.ExplorationSamplingCriteria(query) {
+	if e.DepthFirstSamplingCriteria(query) {
 		c <- GenerationResult{CandidateQuery: query}
 	}
 
