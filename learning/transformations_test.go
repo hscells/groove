@@ -1,12 +1,14 @@
 package learning_test
 
 import (
+	"encoding/gob"
 	"github.com/hscells/cqr"
 	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/learning"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/quickumlsrest"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
 	"github.com/hscells/transmute/parser"
@@ -86,7 +88,17 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	candidates, err := learning.Variations(learning.NewCandidateQuery(repr.(cqr.CommonQueryRepresentation), "1", nil), ss, analysis.NewDiskMeasurementExecutor(statisticsCache), []analysis.Measurement{analysis.BooleanClauses}, learning.Newcui2vecExpansionTransformer(v, m))
+	f, err = os.OpenFile("../analysis/quiche.cache", os.O_RDONLY, os.ModePerm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var quicheCache quickumlsrest.Cache
+	err = gob.NewDecoder(f).Decode(&quicheCache)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	candidates, err := learning.Variations(learning.NewCandidateQuery(repr.(cqr.CommonQueryRepresentation), "1", nil), ss, analysis.NewDiskMeasurementExecutor(statisticsCache), []analysis.Measurement{analysis.BooleanClauses}, learning.Newcui2vecExpansionTransformer(v, m, quicheCache))
 
 	//queries, err := LogicalOperatorReplacement.Apply(repr.(cqr.CommonQueryRepresentation))
 	//if err != nil {

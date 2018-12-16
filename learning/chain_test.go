@@ -2,6 +2,7 @@ package learning_test
 
 import (
 	"bytes"
+	"encoding/gob"
 	"github.com/hscells/cqr"
 	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/analysis"
@@ -11,6 +12,7 @@ import (
 	"github.com/hscells/groove/learning"
 	pipeline2 "github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/quickumlsrest"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/transmute/lexer"
 	"github.com/hscells/transmute/parser"
@@ -96,6 +98,16 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	f, err = os.OpenFile("../analysis/quiche.cache", os.O_RDONLY, os.ModePerm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var quicheCache quickumlsrest.Cache
+	err = gob.NewDecoder(f).Decode(&quicheCache)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	chain := learning.NewQueryChain(
 		selector,
 		ss,
@@ -122,7 +134,7 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		learning.NewMeSHExplosionTransformer(),
 		learning.NewMeshParentTransformer(),
 		learning.NewFieldRestrictionsTransformer(),
-		learning.Newcui2vecExpansionTransformer(p, m),
+		learning.Newcui2vecExpansionTransformer(p, m, quicheCache),
 		learning.NewClauseRemovalTransformer(),
 	)
 	//chain.Sampler = learning.NewEvaluationSampler(10, 0.1, eval.PrecisionEvaluator, qrels, cache, ss)
@@ -131,7 +143,6 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 	//chain.GenerationFile = "../greedy.features"
 	//chain.Sampler = learning.NewTransformationSampler(10, 0.1)
 	//chain.GenerationFile = "../transformation.features"
-	chain.Sampler = learning.NewRandomSampler(10, 0.1)
 	chain.GenerationFile = "../random.features"
 	chain.QueryCacher = cache
 	chain.QrelsFile = qrels
@@ -142,6 +153,7 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		eval.F1Measure,
 		eval.F3Measure,
 	}
+	chain.GenerationExplorer = learning.NewBreadthFirstExplorer(chain.StatisticsSource, chain.MeasurementExecutor, chain.Measurements, chain.Transformations, learning.NewRandomSampler(20, 0.1), learning.DepthStoppingCondition)
 	chain.Queries = []pipeline2.Query{pipeline2.NewQuery(topic, topic, repr.(cqr.CommonQueryRepresentation))}
 	log.Println(chain.Queries)
 	//fmt.Printf("Rewriting query with %v possible transformations\n", len(chain.Transformations))

@@ -34,16 +34,27 @@ type BreadthFirstExplorer struct {
 	BreadthFirstStoppingCondition
 }
 
+func NewBreadthFirstExplorer(ss stats.StatisticsSource, me analysis.MeasurementExecutor, measurements []analysis.Measurement, transformations []Transformation, sampler Sampler, condition BreadthFirstStoppingCondition) BreadthFirstExplorer {
+	return BreadthFirstExplorer{
+		ss:                            ss,
+		me:                            me,
+		measurements:                  measurements,
+		transformations:               transformations,
+		Sampler:                       sampler,
+		BreadthFirstStoppingCondition: condition,
+	}
+}
+
 // BreadthFirstStoppingCondition controls at what depth in the chain the
 // breadth-first explorer should stop.
 type BreadthFirstStoppingCondition func(depth int, candidates []CandidateQuery) bool
 
 // DepthStoppingCondition uses the depth of the chain to determine when to stop.
 func DepthStoppingCondition(depth int, candidates []CandidateQuery) bool {
-	if len(candidates) == 0 {
-		return false
+	if len(candidates) == 0 || len(candidates[0].Chain) == 0 {
+		return true
 	}
-	return depth < len(candidates[0].Chain)
+	return !(depth < len(candidates[0].Chain))
 }
 
 // DriftStoppingCondition TODO
@@ -51,8 +62,10 @@ func DriftStoppingCondition(depth int, candidates []CandidateQuery) bool {
 	return false
 }
 
-func (e BreadthFirstExplorer) Traverse(candidates []CandidateQuery, c chan GenerationResult) {
+func (e BreadthFirstExplorer) Traverse(candidate CandidateQuery, c chan GenerationResult) {
 	var nextCandidates []CandidateQuery
+	candidates := []CandidateQuery{candidate}
+	log.Println("hello")
 	for e.BreadthFirstStoppingCondition(e.depth, candidates) {
 		log.Printf("loop #%v with %v candidate(s)", e.depth, len(candidates))
 
@@ -84,7 +97,9 @@ func (e BreadthFirstExplorer) Traverse(candidates []CandidateQuery, c chan Gener
 			return
 		}
 		log.Println("sampled down to", len(c), "candidates")
+		candidates = []CandidateQuery{}
 		for _, candidate := range sampled {
+			candidates = append(candidates, candidate)
 			c <- GenerationResult{CandidateQuery: candidate}
 		}
 		e.depth++

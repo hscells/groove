@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/go-errors/errors"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
@@ -40,7 +39,6 @@ type QueryChain struct {
 	Evaluators          []eval.Evaluator
 	QueryCacher         combinator.QueryCacher
 	QrelsFile           trecresults.QrelsFile
-	Sampler             Sampler
 	GenerationExplorer  QueryChainGenerationExplorer
 }
 
@@ -72,9 +70,6 @@ func (qc *QueryChain) Generate() error {
 	}
 
 	for _, cq := range qc.Queries {
-		var candidates []CandidateQuery
-		candidates = append(candidates, )
-
 		c := make(chan GenerationResult)
 
 		go qc.GenerationExplorer.Traverse(NewCandidateQuery(cq.Query, cq.Topic, nil), c)
@@ -89,51 +84,27 @@ func (qc *QueryChain) Generate() error {
 
 			log.Printf("evaluating candidate at depth %d...\n", len(candidate.Chain))
 
-			var (
-				errOnce sync.Once
-				e       error
-			)
-
 			s1, err := transmute.CompileCqr2PubMed(candidate.Query)
 			if err != nil {
-				errOnce.Do(func() {
-					fmt.Println(err)
-					fmt.Println(errors.Wrap(err, 0).ErrorStack())
-					e = err
-					return
-				})
+				return err
 			}
 
 			s2, err := transmute.Pubmed2Cqr.Execute(s1)
 			if err != nil {
-				errOnce.Do(func() {
-					fmt.Println(err)
-					fmt.Println(errors.Wrap(err, 0).ErrorStack())
-					e = err
-					return
-				})
+				return err
+
 			}
 
 			s3, err := s2.Representation()
 			if err != nil {
-				errOnce.Do(func() {
-					fmt.Println(err)
-					fmt.Println(errors.Wrap(err, 0).ErrorStack())
-					e = err
-					return
-				})
+				return err
 			}
 
 			gq := pipeline.NewQuery(cq.Name, cq.Topic, s3.(cqr.CommonQueryRepresentation))
 
 			tree, _, err := combinator.NewLogicalTree(gq, qc.StatisticsSource, qc.QueryCacher)
 			if err != nil {
-				errOnce.Do(func() {
-					fmt.Println(err)
-					fmt.Println(errors.Wrap(err, 0).ErrorStack())
-					e = err
-					return
-				})
+				return err
 			}
 			r := tree.Documents(qc.QueryCacher).Results(gq, "Features")
 
@@ -148,12 +119,7 @@ func (qc *QueryChain) Generate() error {
 				bytes.NewBufferString(s).Bytes(),
 				0644)
 			if err != nil {
-				errOnce.Do(func() {
-					fmt.Println(err)
-					fmt.Println(errors.Wrap(err, 0).ErrorStack())
-					e = err
-					return
-				})
+				return err
 			}
 
 			// Lock and write the results for each evaluation metric to file.
@@ -166,15 +132,10 @@ func (qc *QueryChain) Generate() error {
 			}
 			mu.Lock()
 			err = qc.CandidateSelector.Output(lf, w)
-			if err != nil {
-				errOnce.Do(func() {
-					fmt.Println(err)
-					fmt.Println(errors.Wrap(err, 0).ErrorStack())
-					e = err
-					return
-				})
-			}
 			mu.Unlock()
+			if err != nil {
+				return err
+			}
 		}
 		log.Println("finished processing variations")
 	}
