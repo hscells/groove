@@ -137,6 +137,8 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		learning.Newcui2vecExpansionTransformer(p, m, quicheCache),
 		learning.NewClauseRemovalTransformer(),
 	)
+	chain.GenerationExplorer = learning.NewBreadthFirstExplorer(chain, learning.NewRandomSampler(20, 0.1), learning.DepthStoppingCondition)
+
 	//chain.Sampler = learning.NewEvaluationSampler(10, 0.1, eval.PrecisionEvaluator, qrels, cache, ss)
 	//chain.GenerationFile = "../evaluation.features"
 	//chain.Sampler = learning.NewGreedySampler(10, 0.1, eval.PrecisionEvaluator, qrels, cache, ss)
@@ -153,7 +155,6 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 		eval.F1Measure,
 		eval.F3Measure,
 	}
-	chain.GenerationExplorer = learning.NewBreadthFirstExplorer(chain.StatisticsSource, chain.MeasurementExecutor, chain.Measurements, chain.Transformations, learning.NewRandomSampler(20, 0.1), learning.DepthStoppingCondition)
 	chain.Queries = []pipeline2.Query{pipeline2.NewQuery(topic, topic, repr.(cqr.CommonQueryRepresentation))}
 	log.Println(chain.Queries)
 	//fmt.Printf("Rewriting query with %v possible transformations\n", len(chain.Transformations))

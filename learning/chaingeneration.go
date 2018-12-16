@@ -2,8 +2,6 @@ package learning
 
 import (
 	"fmt"
-	"github.com/hscells/groove/analysis"
-	"github.com/hscells/groove/stats"
 	"log"
 	"math/rand"
 	"strings"
@@ -25,22 +23,16 @@ type QueryChainGenerationExplorer interface {
 // BreadthFirstExplorer explores the space of candidates breadth-first. It generates a set of
 // variations for each candidate query, and pools these together to be sampled.
 type BreadthFirstExplorer struct {
-	depth           int
-	ss              stats.StatisticsSource
-	me              analysis.MeasurementExecutor
-	measurements    []analysis.Measurement
-	transformations []Transformation
+	depth int
+	chain *QueryChain
 	Sampler
 	BreadthFirstStoppingCondition
 }
 
-func NewBreadthFirstExplorer(ss stats.StatisticsSource, me analysis.MeasurementExecutor, measurements []analysis.Measurement, transformations []Transformation, sampler Sampler, condition BreadthFirstStoppingCondition) BreadthFirstExplorer {
+func NewBreadthFirstExplorer(chain *QueryChain, sampler Sampler, condition BreadthFirstStoppingCondition) BreadthFirstExplorer {
 	return BreadthFirstExplorer{
-		ss:              ss,
-		me:              me,
-		measurements:    measurements,
-		transformations: transformations,
-		Sampler:         sampler,
+		chain:                         chain,
+		Sampler:                       sampler,
 		BreadthFirstStoppingCondition: condition,
 	}
 }
@@ -65,7 +57,6 @@ func DriftStoppingCondition(depth int, candidates []CandidateQuery) bool {
 func (e BreadthFirstExplorer) Traverse(candidate CandidateQuery, c chan GenerationResult) {
 	var nextCandidates []CandidateQuery
 	candidates := []CandidateQuery{candidate}
-	log.Println("hello")
 	for e.BreadthFirstStoppingCondition(e.depth, candidates) {
 		log.Printf("loop #%v with %v candidate(s)", e.depth, len(candidates))
 
@@ -78,7 +69,7 @@ func (e BreadthFirstExplorer) Traverse(candidate CandidateQuery, c chan Generati
 			log.Println(len(q.Chain), "long chain")
 			log.Println("generating variations...")
 
-			vars, err := Variations(q, e.ss, e.me, e.measurements, e.transformations...)
+			vars, err := Variations(q, e.chain.StatisticsSource, e.chain.MeasurementExecutor, e.chain.Measurements, e.chain.Transformations...)
 			if err != nil {
 				c <- GenerationResult{error: err}
 				return
@@ -111,20 +102,14 @@ func (e BreadthFirstExplorer) Traverse(candidate CandidateQuery, c chan Generati
 // backtracking further if necessary. The breadth-first approach uses two conditions to control
 // (1) when the explorer should stop and backtrack, and (2) when a query should be sampled.
 type DepthFirstExplorer struct {
-	ss              stats.StatisticsSource
-	me              analysis.MeasurementExecutor
-	measurements    []analysis.Measurement
-	transformations []Transformation
+	chain *QueryChain
 	DepthFirstStoppingCriteria
 	DepthFirstSamplingCriteria
 }
 
-func NewDepthFirstExplorer(ss stats.StatisticsSource, me analysis.MeasurementExecutor, measurements []analysis.Measurement, transformations []Transformation, stopping DepthFirstStoppingCriteria, sampling DepthFirstSamplingCriteria) DepthFirstExplorer {
+func NewDepthFirstExplorer(chain *QueryChain, stopping DepthFirstStoppingCriteria, sampling DepthFirstSamplingCriteria) DepthFirstExplorer {
 	return DepthFirstExplorer{
-		ss:                         ss,
-		me:                         me,
-		measurements:               measurements,
-		transformations:            transformations,
+		chain:                      chain,
 		DepthFirstStoppingCriteria: stopping,
 		DepthFirstSamplingCriteria: sampling,
 	}
@@ -193,7 +178,7 @@ func (e DepthFirstExplorer) Traverse(query CandidateQuery, c chan GenerationResu
 		return
 	}
 
-	vars, err := Variations(query, e.ss, e.me, e.measurements, e.transformations...)
+	vars, err := Variations(query, e.chain.StatisticsSource, e.chain.MeasurementExecutor, e.chain.Measurements, e.chain.Transformations...)
 	if err != nil {
 		c <- GenerationResult{error: err}
 		close(c)
