@@ -42,11 +42,13 @@ func NewBreadthFirstExplorer(chain *QueryChain, sampler Sampler, condition Bread
 type BreadthFirstStoppingCondition func(depth int, candidates []CandidateQuery) bool
 
 // DepthStoppingCondition uses the depth of the chain to determine when to stop.
-func DepthStoppingCondition(depth int, candidates []CandidateQuery) bool {
-	if len(candidates) == 0 || len(candidates[0].Chain) == 0 {
-		return true
+func DepthStoppingCondition(d int) BreadthFirstStoppingCondition {
+	return func(depth int, candidates []CandidateQuery) bool {
+		if len(candidates) == 0 || len(candidates[0].Chain) == 0 {
+			return true
+		}
+		return depth < d
 	}
-	return !(depth < len(candidates[0].Chain))
 }
 
 // DriftStoppingCondition TODO
