@@ -13,7 +13,6 @@ import (
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/trecresults"
 	"gopkg.in/neurosnap/sentences.v1"
-	"io"
 	"log"
 	"regexp"
 	"strconv"
@@ -468,11 +467,6 @@ func (e EntrezStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentatio
 
 	s, err := entrez.DoSearch("pubmed", q, &entrez.Parameters{RetType: "xml", APIKey: e.key}, nil, e.tool, e.email)
 	if err != nil {
-		log.Println(q)
-		if err == io.EOF {
-			return 0, nil
-		}
-		panic(err)
 		return 0, err
 	}
 	return float64(s.Count), nil

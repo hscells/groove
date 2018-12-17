@@ -89,7 +89,7 @@ func (e BreadthFirstExplorer) Traverse(candidate CandidateQuery, c chan Generati
 			close(c)
 			return
 		}
-		log.Println("sampled down to", len(c), "candidates")
+		log.Println("sampled down to", len(sampled), "candidates")
 		candidates = []CandidateQuery{}
 		for _, candidate := range sampled {
 			candidates = append(candidates, candidate)
