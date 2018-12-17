@@ -59,11 +59,12 @@ func DriftStoppingCondition(depth int, candidates []CandidateQuery) bool {
 func (e BreadthFirstExplorer) Traverse(candidate CandidateQuery, c chan GenerationResult) {
 	var nextCandidates []CandidateQuery
 	candidates := []CandidateQuery{candidate}
+
 	for e.BreadthFirstStoppingCondition(e.depth, candidates) {
+		nextCandidates = []CandidateQuery{}
 		log.Printf("loop #%v with %v candidate(s)", e.depth, len(candidates))
 
 		for i, q := range candidates {
-
 			log.Println("this is topic", q.Topic)
 
 			// Generate variations.
@@ -74,6 +75,7 @@ func (e BreadthFirstExplorer) Traverse(candidate CandidateQuery, c chan Generati
 			vars, err := Variations(q, e.chain.StatisticsSource, e.chain.MeasurementExecutor, e.chain.Measurements, e.chain.Transformations...)
 			if err != nil {
 				c <- GenerationResult{error: err}
+				close(c)
 				return
 			}
 
@@ -89,6 +91,7 @@ func (e BreadthFirstExplorer) Traverse(candidate CandidateQuery, c chan Generati
 			close(c)
 			return
 		}
+
 		log.Println("sampled down to", len(sampled), "candidates")
 		candidates = []CandidateQuery{}
 		for _, candidate := range sampled {
