@@ -7,6 +7,7 @@ import (
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/trecresults"
+	"log"
 	"math"
 	"math/rand"
 	"sort"
@@ -566,6 +567,10 @@ func (s ClusterSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, e
 }
 
 func NewClusterSampler(n int, delta float64, k int) ClusterSampler {
+	if k <= 0 {
+		log.Println("k was less than 1, setting to default k=5")
+		k = 5
+	}
 	return ClusterSampler{
 		n:     n,
 		delta: delta,
