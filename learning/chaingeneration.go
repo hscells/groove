@@ -45,6 +45,9 @@ type BreadthFirstStoppingCondition func(depth int, candidates []CandidateQuery) 
 // DepthStoppingCondition uses the depth of the chain to determine when to stop.
 func DepthStoppingCondition(d int) BreadthFirstStoppingCondition {
 	return func(depth int, candidates []CandidateQuery) bool {
+		if depth > 0 && len(candidates) == 0 {
+			return false
+		}
 		if len(candidates) == 0 || len(candidates[0].Chain) == 0 {
 			return true
 		}
@@ -172,7 +175,6 @@ func BiasedTransformationSamplingCriteria() DepthFirstSamplingCriteria {
 		return true
 	}
 }
-
 
 // PositiveBiasedEvaluationSamplingCriteria samples using an evaluation measure to determine
 // if the candidate query improves over the seed query for that measure.
