@@ -163,16 +163,8 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	}
 	p.APIKey = e.key
 
-	fails := 20
-retry:
 	s, err := entrez.DoSearch("pubmed", query, p, nil, e.tool, e.email)
 	if err != nil {
-		if fails > 0 {
-			log.Printf("error: %v, retrying %d more times", err, fails)
-			fails--
-			time.Sleep(5 * time.Second)
-			goto retry
-		}
 		return nil, err
 	}
 	pmids = s.IdList
@@ -516,8 +508,16 @@ func (e EntrezStatisticsSource) Execute(query pipeline.Query, options SearchOpti
 		return nil, err
 	}
 
+	fails := 20
+execute:
 	pmids, err := e.Search(q)
 	if err != nil {
+		if fails > 0 {
+			log.Printf("error: %v, retrying %d more times", err, fails)
+			fails--
+			time.Sleep(5 * time.Second)
+			goto execute
+		}
 		return nil, err
 	}
 
