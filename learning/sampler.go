@@ -335,7 +335,7 @@ func MaximalMarginalRelevanceScoredStrategy(lambda float64, similarity func(x, y
 			for i, u := range unranked {
 				sim := 0.0
 				for _, s := range selected {
-					curr, err := similarity(u.Features.Scores(ChainFeatures), s.Features.Scores(ChainFeatures))
+					curr, err := similarity(u.Features.Scores(ChainFeatures+len(s.Chain)), s.Features.Scores(ChainFeatures+len(s.Chain)))
 					if err != nil {
 						panic(err)
 					}
@@ -532,7 +532,7 @@ func (s ClusterSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, e
 	// Create a two-dimensional matrix to store the feature vectors of the queries.
 	data := make([][]float64, len(candidates))
 	for i, candidate := range candidates {
-		data[i] = candidate.Features.Scores(ChainFeatures)
+		data[i] = candidate.Features.Scores(ChainFeatures + len(candidate.Chain))
 	}
 
 	// Perform k-means++ to cluster the queries.
