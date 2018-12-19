@@ -1,10 +1,11 @@
 package learning
 
 import (
-	"fmt"
+	"github.com/hscells/groove/combinator"
+	"github.com/hscells/groove/eval"
+	"github.com/hscells/groove/pipeline"
 	"log"
 	"math/rand"
-	"strings"
 )
 
 type GenerationResult struct {
@@ -107,38 +108,38 @@ func (e BreadthFirstExplorer) Traverse(candidate CandidateQuery, c chan Generati
 // backtracking further if necessary. The breadth-first approach uses two conditions to control
 // (1) when the explorer should stop and backtrack, and (2) when a query should be sampled.
 type DepthFirstExplorer struct {
-	chain *QueryChain
-	DepthFirstStoppingCriteria
+	chain  *QueryChain
+	budget *int
+	n      int
 	DepthFirstSamplingCriteria
 }
 
-func NewDepthFirstExplorer(chain *QueryChain, stopping DepthFirstStoppingCriteria, sampling DepthFirstSamplingCriteria) DepthFirstExplorer {
+func NewDepthFirstExplorer(chain *QueryChain, sampling DepthFirstSamplingCriteria, budget int) DepthFirstExplorer {
 	return DepthFirstExplorer{
+		n:                          budget,
+		budget:                     &budget,
 		chain:                      chain,
-		DepthFirstStoppingCriteria: stopping,
 		DepthFirstSamplingCriteria: sampling,
 	}
 }
 
-// DepthFirstStoppingCriteria controls when the explorer should backtrack.
-type DepthFirstStoppingCriteria func(query CandidateQuery) bool
-
 // ExplorationSamplingCriteria controls when the explorer should sample a query.
 type DepthFirstSamplingCriteria func(query CandidateQuery) bool
 
-// DepthStoppingCriteria ensures a query backtracks at a certain depth.
-func ProbabalisticDepthStoppingCriteria(prob float64) DepthFirstStoppingCriteria {
+// ProbabilisticSamplingCriteria samples queries using a likelihood.
+func ProbabilisticSamplingCriteria(likelihood float64) DepthFirstSamplingCriteria {
 	return func(query CandidateQuery) bool {
-		depth := float64(len(query.Chain))
-		likelihood := (1 - (1 / depth)) * prob
 		return rand.Float64() < likelihood
 	}
 }
 
-// StratifiedTransformationSamplingCriteria ensures the candidate query potentially
+// BalancedTransformationSamplingCriteria ensures the candidate query potentially
 // being sampled has approximately equal transformations applied to it.
-func StratifiedTransformationSamplingCriteria(numTransformations int) DepthFirstSamplingCriteria {
+func BalancedTransformationSamplingCriteria(numTransformations int) DepthFirstSamplingCriteria {
 	return func(query CandidateQuery) bool {
+		if len(query.Chain) > numTransformations {
+			return false
+		}
 		seen := make(map[int]bool)
 		for _, candidate := range query.Chain {
 			seen[candidate.TransformationID] = true
@@ -172,25 +173,85 @@ func BiasedTransformationSamplingCriteria() DepthFirstSamplingCriteria {
 	}
 }
 
-func (e DepthFirstExplorer) Traverse(query CandidateQuery, c chan GenerationResult) {
-	fmt.Println(strings.Repeat("-", len(query.Chain)) + "q")
 
-	if e.DepthFirstSamplingCriteria(query) {
-		c <- GenerationResult{CandidateQuery: query}
+// PositiveBiasedEvaluationSamplingCriteria samples using an evaluation measure to determine
+// if the candidate query improves over the seed query for that measure.
+func BalancedEvaluationSamplingCriteria(measure eval.Evaluator, scores map[string]float64, chain *QueryChain) DepthFirstSamplingCriteria {
+	return func(query CandidateQuery) bool {
+		pq := pipeline.NewQuery(query.Topic, query.Topic, query.Query)
+		t, _, err := combinator.NewLogicalTree(pq, chain.StatisticsSource, chain.QueryCacher)
+		if err != nil {
+			panic(err)
+		}
+		results := t.Documents(chain.QueryCacher).Results(pq, "")
+		v := measure.Score(&results, chain.QrelsFile.Qrels[query.Topic])
+		return v >= scores[query.Topic]
 	}
+}
 
-	if e.DepthFirstStoppingCriteria(query) {
+// PositiveBiasedEvaluationSamplingCriteria samples using an evaluation measure to determine
+// if the candidate query improves over the seed query for that measure.
+func PositiveBiasedEvaluationSamplingCriteria(measure eval.Evaluator, scores map[string]float64, chain *QueryChain) DepthFirstSamplingCriteria {
+	return func(query CandidateQuery) bool {
+		pq := pipeline.NewQuery(query.Topic, query.Topic, query.Query)
+		t, _, err := combinator.NewLogicalTree(pq, chain.StatisticsSource, chain.QueryCacher)
+		if err != nil {
+			panic(err)
+		}
+		results := t.Documents(chain.QueryCacher).Results(pq, "")
+		v := measure.Score(&results, chain.QrelsFile.Qrels[query.Topic])
+		return v >= scores[query.Topic]
+	}
+}
+
+// NegativeBiasedEvaluationSamplingCriteria samples using an evaluation measure to determine
+// if the candidate query is worse than the seed query for that measure.
+func NegativeBiasedEvaluationSamplingCriteria(measure eval.Evaluator, scores map[string]float64, chain *QueryChain) DepthFirstSamplingCriteria {
+	return func(query CandidateQuery) bool {
+		pq := pipeline.NewQuery(query.Topic, query.Topic, query.Query)
+		t, _, err := combinator.NewLogicalTree(pq, chain.StatisticsSource, chain.QueryCacher)
+		if err != nil {
+			panic(err)
+		}
+		results := t.Documents(chain.QueryCacher).Results(pq, "")
+		v := measure.Score(&results, chain.QrelsFile.Qrels[query.Topic])
+		return v < scores[query.Topic]
+	}
+}
+
+func (e DepthFirstExplorer) Traverse(query CandidateQuery, c chan GenerationResult) {
+	if *e.budget <= 0 {
 		return
 	}
 
+	if e.DepthFirstSamplingCriteria(query) {
+		*e.budget--
+		log.Printf("sampled query from topic %s at depth %d (budget %d/%d)\n", query.Topic, len(query.Chain), *e.budget, e.n)
+		c <- GenerationResult{CandidateQuery: query}
+	} else {
+		return
+	}
+
+	log.Println("generating variations...")
 	vars, err := Variations(query, e.chain.StatisticsSource, e.chain.MeasurementExecutor, e.chain.Measurements, e.chain.Transformations...)
 	if err != nil {
 		c <- GenerationResult{error: err}
 		close(c)
 		return
 	}
+	rand.Shuffle(len(vars), func(i, j int) {
+		vars[i], vars[j] = vars[j], vars[i]
+	})
+	log.Println("generated and shuffled", len(vars), "candidates")
 
 	for _, q := range vars {
 		e.Traverse(q, c)
+	}
+
+	log.Printf("completed depth %d\n", len(query.Chain))
+	if len(query.Chain) == 0 {
+		*e.budget = e.n
+		close(c)
+		return
 	}
 }
