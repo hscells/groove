@@ -5,8 +5,6 @@ import (
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
-	"github.com/hscells/groove/stats"
-	"github.com/hscells/trecresults"
 	"log"
 	"math"
 	"math/rand"
@@ -194,9 +192,7 @@ type EvaluationSampler struct {
 	delta   float64
 	scores  map[string]float64
 	measure eval.Evaluator
-	qrels   trecresults.QrelsFile
-	cache   combinator.QueryCacher
-	ss      stats.StatisticsSource
+	chain   *QueryChain
 	ScoredStrategy
 }
 
@@ -390,12 +386,12 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 	c := make([]ScoredCandidateQuery, len(candidates))
 	for i, child := range candidates {
 		pq := pipeline.NewQuery(child.Topic, child.Topic, child.Query)
-		t, _, err := combinator.NewLogicalTree(pq, s.ss, s.cache)
+		t, _, err := combinator.NewLogicalTree(pq, s.chain.StatisticsSource, s.chain.QueryCacher)
 		if err != nil {
 			return nil, err
 		}
-		results := t.Documents(s.cache).Results(pq, "")
-		v := s.measure.Score(&results, s.qrels.Qrels[child.Topic])
+		results := t.Documents(s.chain.QueryCacher).Results(pq, "")
+		v := s.measure.Score(&results, s.chain.QrelsFile.Qrels[child.Topic])
 		c[i] = ScoredCandidateQuery{
 			CandidateQuery: child,
 			Score:          v,
@@ -405,14 +401,12 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 	return s.ScoredStrategy(c, s.scores, N), nil
 }
 
-func NewEvaluationSampler(n int, delta float64, measure eval.Evaluator, qrels trecresults.QrelsFile, cache combinator.QueryCacher, ss stats.StatisticsSource, scores map[string]float64, strategy ScoredStrategy) EvaluationSampler {
+func NewEvaluationSampler(n int, delta float64, measure eval.Evaluator, chain *QueryChain, scores map[string]float64, strategy ScoredStrategy) EvaluationSampler {
 	return EvaluationSampler{
 		n:              n,
 		delta:          delta,
 		measure:        measure,
-		qrels:          qrels,
-		cache:          cache,
-		ss:             ss,
+		chain:          chain,
 		scores:         scores,
 		ScoredStrategy: strategy,
 	}
@@ -425,9 +419,7 @@ type GreedySampler struct {
 	n       int
 	delta   float64
 	measure eval.Evaluator
-	qrels   trecresults.QrelsFile
-	cache   combinator.QueryCacher
-	ss      stats.StatisticsSource
+	chain   *QueryChain
 	GreedyStrategy
 }
 
@@ -486,12 +478,12 @@ func (s GreedySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, er
 	c := make([]GreedyCandidateQuery, len(candidates))
 	for i, child := range candidates {
 		pq := pipeline.NewQuery(child.Topic, child.Topic, child.Query)
-		t, _, err := combinator.NewLogicalTree(pq, s.ss, s.cache)
+		t, _, err := combinator.NewLogicalTree(pq, s.chain.StatisticsSource, s.chain.QueryCacher)
 		if err != nil {
 			return nil, err
 		}
-		results := t.Documents(s.cache).Results(pq, "")
-		v := s.measure.Score(&results, s.qrels.Qrels[child.Topic])
+		results := t.Documents(s.chain.QueryCacher).Results(pq, "")
+		v := s.measure.Score(&results, s.chain.QrelsFile.Qrels[child.Topic])
 		c[i] = GreedyCandidateQuery{
 			CandidateQuery: child,
 			score:          v,
@@ -502,14 +494,12 @@ func (s GreedySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, er
 	return s.GreedyStrategy(c, N), nil
 }
 
-func NewGreedySampler(n int, delta float64, measure eval.Evaluator, qrels trecresults.QrelsFile, cache combinator.QueryCacher, ss stats.StatisticsSource, strategy GreedyStrategy) GreedySampler {
+func NewGreedySampler(n int, delta float64, measure eval.Evaluator, chain *QueryChain, strategy GreedyStrategy) GreedySampler {
 	return GreedySampler{
 		n:              n,
 		delta:          delta,
 		measure:        measure,
-		qrels:          qrels,
-		cache:          cache,
-		ss:             ss,
+		chain:          chain,
 		GreedyStrategy: strategy,
 	}
 }
@@ -569,7 +559,7 @@ func (s ClusterSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, e
 func NewClusterSampler(n int, delta float64, k int) ClusterSampler {
 	if k <= 0 {
 		log.Println("k was less than 1, setting to default k=5")
-		k = 5
+		k = 3
 	}
 	return ClusterSampler{
 		n:     n,
