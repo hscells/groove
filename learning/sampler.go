@@ -1,10 +1,12 @@
 package learning
 
 import (
+	"context"
 	"github.com/bugra/kmeans"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
+	"golang.org/x/sync/errgroup"
 	"log"
 	"math"
 	"math/rand"
@@ -384,18 +386,35 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 
 	// Score all of the candidates.
 	c := make([]ScoredCandidateQuery, len(candidates))
-	for i, child := range candidates {
-		pq := pipeline.NewQuery(child.Topic, child.Topic, child.Query)
-		t, _, err := combinator.NewLogicalTree(pq, s.chain.StatisticsSource, s.chain.QueryCacher)
-		if err != nil {
-			return nil, err
-		}
-		results := t.Documents(s.chain.QueryCacher).Results(pq, "")
-		v := s.measure.Score(&results, s.chain.QrelsFile.Qrels[child.Topic])
-		c[i] = ScoredCandidateQuery{
-			CandidateQuery: child,
-			Score:          v,
-		}
+	var i int
+	samples := make(chan ScoredCandidateQuery)
+	g, _ := errgroup.WithContext(context.Background())
+	for _, child := range candidates {
+		g.Go(func() error {
+			log.Printf("evaluating %d\n", combinator.HashCQR(child.Query))
+			pq := pipeline.NewQuery(child.Topic, child.Topic, child.Query)
+			t, _, err := combinator.NewLogicalTree(pq, s.chain.StatisticsSource, s.chain.QueryCacher)
+			if err != nil {
+				return err
+			}
+			results := t.Documents(s.chain.QueryCacher).Results(pq, "")
+			v := s.measure.Score(&results, s.chain.QrelsFile.Qrels[child.Topic])
+			samples <- ScoredCandidateQuery{
+				CandidateQuery: child,
+				Score:          v,
+			}
+			return nil
+		})
+	}
+
+	for sample := range samples {
+		c[i] = sample
+		i++
+	}
+
+	err := g.Wait()
+	if err != nil {
+		return nil, err
 	}
 
 	return s.ScoredStrategy(c, s.scores, N), nil
