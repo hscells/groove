@@ -395,7 +395,6 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 		go func(query CandidateQuery, j int) {
 			defer wg.Done()
 			log.Printf("evaluating %d (%d/%d)\n", combinator.HashCQR(query.Query), j, len(candidates))
-			log.Println(child.Query)
 			pq := pipeline.NewQuery(query.Topic, query.Topic, query.Query)
 			t, _, err := combinator.NewLogicalTree(pq, s.chain.StatisticsSource, s.chain.QueryCacher)
 			if err != nil {
