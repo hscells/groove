@@ -392,6 +392,7 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 	for _, child := range candidates {
 		g.Go(func() error {
 			log.Printf("evaluating %s\n", combinator.HashCQR(child.Query))
+			log.Println(child.Query)
 			pq := pipeline.NewQuery(child.Topic, child.Topic, child.Query)
 			t, _, err := combinator.NewLogicalTree(pq, s.chain.StatisticsSource, s.chain.QueryCacher)
 			if err != nil {
@@ -415,7 +416,8 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 	for sample := range samples {
 		c[i] = sample
 		i++
-		if i == len(c) {
+		log.Printf("%d/%d\n", i, len(c))
+		if i >= len(c) {
 			close(samples)
 		}
 	}
