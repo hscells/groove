@@ -206,7 +206,7 @@ type ScoredCandidateQuery struct {
 // ScoredStrategy samples scored candidates.
 type ScoredStrategy func(candidates []ScoredCandidateQuery, scores map[string]map[string]float64, N int, measurement eval.Evaluator) []CandidateQuery
 
-func BalancedScoredStrategy(candidates []ScoredCandidateQuery, _ map[string]float64, N int, _ eval.Evaluator) []CandidateQuery {
+func BalancedScoredStrategy(candidates []ScoredCandidateQuery, _ map[string]map[string]float64, N int, _ eval.Evaluator) []CandidateQuery {
 	// Sort all of the candidates based on Score.
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].Score > candidates[j].Score
@@ -232,7 +232,7 @@ func BalancedScoredStrategy(candidates []ScoredCandidateQuery, _ map[string]floa
 	return x
 }
 
-func StratifiedScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]float64, N int, _ eval.Evaluator) []CandidateQuery {
+func StratifiedScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]map[string]float64, N int, _ eval.Evaluator) []CandidateQuery {
 	var (
 		better, worse []ScoredCandidateQuery
 		c             []CandidateQuery
