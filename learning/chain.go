@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/hscells/cqr"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
@@ -95,20 +94,17 @@ func (qc *QueryChain) Generate() error {
 
 			}
 
-			s3, err := s2.Representation()
-			if err != nil {
-				return err
-			}
-
-			gq := pipeline.NewQuery(cq.Name, cq.Topic, s3.(cqr.CommonQueryRepresentation))
+			gq := pipeline.NewQuery(cq.Name, cq.Topic, candidate.Query)
 
 			tree, _, err := combinator.NewLogicalTree(gq, qc.StatisticsSource, qc.QueryCacher)
 			if err != nil {
 				return err
 			}
-			r := tree.Documents(qc.QueryCacher).Results(gq, "Features")
+			r := tree.Documents(qc.QueryCacher).Results(gq, "features")
 
 			evaluation := eval.Evaluate(qc.Evaluators, &r, qc.QrelsFile, gq.Topic)
+
+			log.Println(len(r), evaluation)
 
 			fn := strconv.Itoa(int(combinator.HashCQR(candidate.Query)))
 
