@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"runtime"
 	"sort"
 	"sync"
 )
@@ -389,7 +390,7 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 	var errOnce sync.Once
 	var errConc error
 	samples := make(chan ScoredCandidateQuery)
-	sem := make(chan bool, 100)
+	sem := make(chan bool, runtime.NumCPU())
 	for i, child := range candidates {
 		sem <- true
 		go func(query CandidateQuery, j int) {
