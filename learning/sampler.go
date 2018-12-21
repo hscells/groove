@@ -191,7 +191,7 @@ func NewRandomSampler(n int, delta float64) RandomSampler {
 type EvaluationSampler struct {
 	n       int
 	delta   float64
-	scores  map[string]float64
+	scores  map[string]map[string]float64
 	measure eval.Evaluator
 	chain   *QueryChain
 	ScoredStrategy
@@ -204,9 +204,9 @@ type ScoredCandidateQuery struct {
 }
 
 // ScoredStrategy samples scored candidates.
-type ScoredStrategy func(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery
+type ScoredStrategy func(candidates []ScoredCandidateQuery, scores map[string]map[string]float64, N int, measurement eval.Evaluator) []CandidateQuery
 
-func BalancedScoredStrategy(candidates []ScoredCandidateQuery, _ map[string]float64, N int) []CandidateQuery {
+func BalancedScoredStrategy(candidates []ScoredCandidateQuery, _ map[string]float64, N int, _ eval.Evaluator) []CandidateQuery {
 	// Sort all of the candidates based on Score.
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].Score > candidates[j].Score
@@ -232,7 +232,7 @@ func BalancedScoredStrategy(candidates []ScoredCandidateQuery, _ map[string]floa
 	return x
 }
 
-func StratifiedScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery {
+func StratifiedScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]float64, N int, _ eval.Evaluator) []CandidateQuery {
 	var (
 		better, worse []ScoredCandidateQuery
 		c             []CandidateQuery
@@ -273,13 +273,13 @@ func StratifiedScoredStrategy(candidates []ScoredCandidateQuery, scores map[stri
 }
 
 // PositiveBiasScoredStrategy samples up to N candidates that improve over the comparison score in `scores`.
-func PositiveBiasScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery {
+func PositiveBiasScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]map[string]float64, N int, measurement eval.Evaluator) []CandidateQuery {
 	var (
 		c []CandidateQuery
 	)
 
 	for _, candidate := range candidates {
-		if score, ok := scores[candidate.Topic]; ok {
+		if score, ok := scores[candidate.Topic][measurement.Name()]; ok {
 			if candidate.Score >= score {
 				if len(c) > N {
 					return c
@@ -293,13 +293,13 @@ func PositiveBiasScoredStrategy(candidates []ScoredCandidateQuery, scores map[st
 }
 
 // NegativeBiasScoredStrategy samples up to N candidates that are worse than the comparison score in `scores`.
-func NegativeBiasScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery {
+func NegativeBiasScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]map[string]float64, N int, measurement eval.Evaluator) []CandidateQuery {
 	var (
 		c []CandidateQuery
 	)
 
 	for _, candidate := range candidates {
-		if score, ok := scores[candidate.Topic]; ok {
+		if score, ok := scores[candidate.Topic][measurement.Name()]; ok {
 			if candidate.Score < score {
 				if len(c) > N {
 					return c
@@ -318,7 +318,7 @@ func NegativeBiasScoredStrategy(candidates []ScoredCandidateQuery, scores map[st
 // evaluation measure). The sim(q1,q2) - i.e., the similarity between two queries, remains the same.
 // Queries are sampled according to Maximal Marginal Relevance (Carbonell '98).
 func MaximalMarginalRelevanceScoredStrategy(lambda float64, similarity func(x, y []float64) (float64, error)) ScoredStrategy {
-	return func(candidates []ScoredCandidateQuery, scores map[string]float64, N int) []CandidateQuery {
+	return func(candidates []ScoredCandidateQuery, scores map[string]map[string]float64, N int, measurement eval.Evaluator) []CandidateQuery {
 		// Sort all of the candidates based on Score.
 		sort.Slice(candidates, func(i, j int) bool {
 			return candidates[i].Score > candidates[j].Score
@@ -426,10 +426,10 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 		return nil, errConc
 	}
 
-	return s.ScoredStrategy(c, s.scores, N), nil
+	return s.ScoredStrategy(c, s.scores, N, s.measure), nil
 }
 
-func NewEvaluationSampler(n int, delta float64, measure eval.Evaluator, chain *QueryChain, scores map[string]float64, strategy ScoredStrategy) EvaluationSampler {
+func NewEvaluationSampler(n int, delta float64, measure eval.Evaluator, chain *QueryChain, scores map[string]map[string]float64, strategy ScoredStrategy) EvaluationSampler {
 	return EvaluationSampler{
 		n:              n,
 		delta:          delta,
@@ -481,14 +481,14 @@ func RankedGreedyStrategy(candidates []GreedyCandidateQuery, N int) []CandidateQ
 	return x
 }
 
-func MaximalMarginalRelevanceGreedyStrategy(scores map[string]float64, lambda float64, similarity func(x, y []float64) (float64, error)) GreedyStrategy {
+func MaximalMarginalRelevanceGreedyStrategy(scores map[string]map[string]float64, lambda float64, similarity func(x, y []float64) (float64, error), measurement eval.Evaluator) GreedyStrategy {
 	return func(candidates []GreedyCandidateQuery, N int) []CandidateQuery {
 		scored := make([]ScoredCandidateQuery, len(candidates))
 		for i, candidate := range candidates {
 			scored[i] = ScoredCandidateQuery{Score: float64(candidate.numRet), CandidateQuery: candidate.CandidateQuery}
 		}
 
-		return MaximalMarginalRelevanceScoredStrategy(lambda, similarity)(scored, scores, N)
+		return MaximalMarginalRelevanceScoredStrategy(lambda, similarity)(scored, scores, N, measurement)
 	}
 }
 
