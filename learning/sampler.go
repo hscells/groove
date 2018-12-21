@@ -391,7 +391,7 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 	g, _ := errgroup.WithContext(context.Background())
 	for _, child := range candidates {
 		g.Go(func() error {
-			log.Printf("evaluating %d\n", combinator.HashCQR(child.Query))
+			log.Printf("evaluating %s\n", combinator.HashCQR(child.Query))
 			pq := pipeline.NewQuery(child.Topic, child.Topic, child.Query)
 			t, _, err := combinator.NewLogicalTree(pq, s.chain.StatisticsSource, s.chain.QueryCacher)
 			if err != nil {
@@ -407,14 +407,17 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 		})
 	}
 
-	for sample := range samples {
-		c[i] = sample
-		i++
-	}
-
 	err := g.Wait()
 	if err != nil {
 		return nil, err
+	}
+
+	for sample := range samples {
+		c[i] = sample
+		i++
+		if i == len(c) {
+			close(samples)
+		}
 	}
 
 	return s.ScoredStrategy(c, s.scores, N), nil
