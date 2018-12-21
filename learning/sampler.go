@@ -232,7 +232,7 @@ func BalancedScoredStrategy(candidates []ScoredCandidateQuery, _ map[string]map[
 	return x
 }
 
-func StratifiedScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]map[string]float64, N int, _ eval.Evaluator) []CandidateQuery {
+func StratifiedScoredStrategy(candidates []ScoredCandidateQuery, scores map[string]map[string]float64, N int, measurement eval.Evaluator) []CandidateQuery {
 	var (
 		better, worse []ScoredCandidateQuery
 		c             []CandidateQuery
@@ -240,7 +240,7 @@ func StratifiedScoredStrategy(candidates []ScoredCandidateQuery, scores map[stri
 
 	// Identify which candidates score higher and lower than the comparison scores in `scores`.
 	for _, candidate := range candidates {
-		if score, ok := scores[candidate.Topic]; ok {
+		if score, ok := scores[candidate.Topic][measurement.Name()]; ok {
 			if candidate.Score >= score {
 				better = append(better, candidate)
 			} else {
