@@ -104,7 +104,7 @@ func (qc *QueryChain) Generate() error {
 
 			evaluation := eval.Evaluate(qc.Evaluators, &r, qc.QrelsFile, gq.Topic)
 
-			log.Println(len(r), evaluation)
+			log.Println("evaluated sampled query:", len(r), evaluation)
 
 			fn := strconv.Itoa(int(combinator.HashCQR(candidate.Query)))
 
