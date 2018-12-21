@@ -391,6 +391,13 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 	var errConc error
 	samples := make(chan ScoredCandidateQuery)
 	sem := make(chan bool, runtime.NumCPU())
+	go func() {
+		for sample := range samples {
+			c[i] = sample
+			i++
+			log.Printf("%d/%d\n", i, len(c))
+		}
+	}()
 	for i, child := range candidates {
 		sem <- true
 		go func(query CandidateQuery, j int) {
@@ -413,22 +420,14 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 		}(child, i)
 	}
 
-	go func() {
-		for sample := range samples {
-			c[i] = sample
-			i++
-			log.Printf("%d/%d\n", i, len(c))
-		}
-	}()
-
 	// Wait until the last goroutine has read from the semaphore.
 	for i := 0; i < cap(sem); i++ {
 		sem <- true
 	}
-	close(samples)
 	if errConc != nil {
 		return nil, errConc
 	}
+	close(samples)
 
 	return s.ScoredStrategy(c, s.scores, N, s.measure), nil
 }
