@@ -386,14 +386,14 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 	// Score all of the candidates.
 	c := make([]ScoredCandidateQuery, len(candidates))
 	var i int
-	var wg sync.WaitGroup
 	var errOnce sync.Once
 	var errConc error
 	samples := make(chan ScoredCandidateQuery)
+	sem := make(chan bool, 100)
 	for i, child := range candidates {
-		wg.Add(1)
+		sem <- true
 		go func(query CandidateQuery, j int) {
-			defer wg.Done()
+			defer func() { <-sem }()
 			log.Printf("evaluating %d (%d/%d)\n", combinator.HashCQR(query.Query), j, len(candidates))
 			pq := pipeline.NewQuery(query.Topic, query.Topic, query.Query)
 			t, _, err := combinator.NewLogicalTree(pq, s.chain.StatisticsSource, s.chain.QueryCacher)
@@ -420,7 +420,10 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 		}
 	}()
 
-	wg.Wait()
+	// Wait until the last goroutine has read from the semaphore.
+	for i := 0; i < cap(sem); i++ {
+		sem <- true
+	}
 	close(samples)
 	if errConc != nil {
 		return nil, errConc
