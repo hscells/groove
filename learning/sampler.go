@@ -1,16 +1,15 @@
 package learning
 
 import (
-	"context"
 	"github.com/bugra/kmeans"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
-	"golang.org/x/sync/errgroup"
 	"log"
 	"math"
 	"math/rand"
 	"sort"
+	"sync"
 )
 
 type Sampler interface {
@@ -387,40 +386,45 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 	// Score all of the candidates.
 	c := make([]ScoredCandidateQuery, len(candidates))
 	var i int
+	var wg sync.WaitGroup
+	var errOnce sync.Once
+	var errConc error
 	samples := make(chan ScoredCandidateQuery)
-	g, _ := errgroup.WithContext(context.Background())
 	for i, child := range candidates {
-		g.Go(func() error {
-			log.Printf("evaluating %d (%d/%d)\n", combinator.HashCQR(child.Query), i, len(candidates))
+		wg.Add(1)
+		go func(query CandidateQuery, j int) {
+			defer wg.Done()
+			log.Printf("evaluating %d (%d/%d)\n", combinator.HashCQR(query.Query), j, len(candidates))
 			log.Println(child.Query)
-			pq := pipeline.NewQuery(child.Topic, child.Topic, child.Query)
+			pq := pipeline.NewQuery(query.Topic, query.Topic, query.Query)
 			t, _, err := combinator.NewLogicalTree(pq, s.chain.StatisticsSource, s.chain.QueryCacher)
 			if err != nil {
-				return err
+				errOnce.Do(func() {
+					errConc = err
+				})
 			}
 			results := t.Documents(s.chain.QueryCacher).Results(pq, "")
-			v := s.measure.Score(&results, s.chain.QrelsFile.Qrels[child.Topic])
+			v := s.measure.Score(&results, s.chain.QrelsFile.Qrels[query.Topic])
 			samples <- ScoredCandidateQuery{
-				CandidateQuery: child,
+				CandidateQuery: query,
 				Score:          v,
 			}
-			log.Printf("evaluated %d (%d/%d)\n", combinator.HashCQR(child.Query), i, len(candidates))
-			return nil
-		})
+			log.Printf("evaluated %d (%d/%d)\n", combinator.HashCQR(query.Query), j, len(candidates))
+		}(child, i)
 	}
 
-	err := g.Wait()
-	if err != nil {
-		return nil, err
-	}
-
-	for sample := range samples {
-		c[i] = sample
-		i++
-		log.Printf("%d/%d\n", i, len(c))
-		if i >= len(c) {
-			close(samples)
+	go func() {
+		for sample := range samples {
+			c[i] = sample
+			i++
+			log.Printf("%d/%d\n", i, len(c))
 		}
+	}()
+
+	wg.Wait()
+	close(samples)
+	if errConc != nil {
+		return nil, errConc
 	}
 
 	return s.ScoredStrategy(c, s.scores, N), nil
