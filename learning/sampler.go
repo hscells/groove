@@ -5,6 +5,7 @@ import (
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
+	"github.com/hscells/trecresults"
 	"log"
 	"math"
 	"math/rand"
@@ -282,7 +283,7 @@ func PositiveBiasScoredStrategy(candidates []ScoredCandidateQuery, scores map[st
 	for _, candidate := range candidates {
 		if score, ok := scores[candidate.Topic][measurement.Name()]; ok {
 			if candidate.Score >= score {
-				if len(c) > N {
+				if len(c) >= N {
 					return c
 				}
 				c = append(c, candidate.CandidateQuery)
@@ -302,7 +303,7 @@ func NegativeBiasScoredStrategy(candidates []ScoredCandidateQuery, scores map[st
 	for _, candidate := range candidates {
 		if score, ok := scores[candidate.Topic][measurement.Name()]; ok {
 			if candidate.Score < score {
-				if len(c) > N {
+				if len(c) >= N {
 					return c
 				}
 				c = append(c, candidate.CandidateQuery)
@@ -389,9 +390,11 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 	var i int
 	var errOnce sync.Once
 	var errConc error
+	var mu sync.Mutex
 	samples := make(chan ScoredCandidateQuery)
 	sem := make(chan bool, runtime.NumCPU())
 	go func() {
+		defer mu.Unlock()
 		for sample := range samples {
 			c[i] = sample
 			i++
@@ -404,13 +407,18 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 			defer func() { <-sem }()
 			log.Printf("evaluating %d (%d/%d)\n", combinator.HashCQR(query.Query), j, len(candidates))
 			pq := pipeline.NewQuery(query.Topic, query.Topic, query.Query)
-			t, _, err := combinator.NewLogicalTree(pq, s.chain.StatisticsSource, s.chain.QueryCacher)
-			if err != nil {
-				errOnce.Do(func() {
-					errConc = err
-				})
+			var results trecresults.ResultList
+			if docs, err := s.chain.QueryCacher.Get(query.Query); err == nil {
+				results = docs.Results(pq, "")
+			} else {
+				t, _, err := combinator.NewLogicalTree(pq, s.chain.StatisticsSource, s.chain.QueryCacher)
+				if err != nil {
+					errOnce.Do(func() {
+						errConc = err
+					})
+				}
+				results = t.Documents(s.chain.QueryCacher).Results(pq, "")
 			}
-			results := t.Documents(s.chain.QueryCacher).Results(pq, "")
 			v := s.measure.Score(&results, s.chain.QrelsFile.Qrels[query.Topic])
 			samples <- ScoredCandidateQuery{
 				CandidateQuery: query,
@@ -428,6 +436,7 @@ func (s EvaluationSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery
 		return nil, errConc
 	}
 	close(samples)
+	mu.Lock()
 
 	return s.ScoredStrategy(c, s.scores, N, s.measure), nil
 }
