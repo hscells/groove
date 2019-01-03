@@ -5,6 +5,7 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/stats"
 	"gopkg.in/jdkato/prose.v2"
+	"strings"
 )
 
 type PseudoRelevanceFeedbackQueryConstructor struct {
@@ -30,4 +31,18 @@ func NewPseudoRelevanceFeedbackQueryConstructor(clinicalQuestion string) PseudoR
 	return PseudoRelevanceFeedbackQueryConstructor{
 		clinicalQuestion: clinicalQuestion,
 	}
+}
+
+func ngram(text []string, n int) (grams []string) {
+	var curr []string
+	var j int
+	for j <= len(text)-n {
+		for i := j; i < j+n; i++ {
+			curr = append(curr, text[i])
+		}
+		grams = append(grams, strings.Join(curr, " "))
+		curr = []string{}
+		j++
+	}
+	return
 }

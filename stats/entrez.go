@@ -2,19 +2,22 @@ package stats
 
 import (
 	"bytes"
-	"encoding/xml"
 	"fmt"
 	"github.com/biogo/ncbi"
 	"github.com/biogo/ncbi/entrez"
 	"github.com/biogo/ncbi/entrez/search"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/pipeline"
+	"github.com/hscells/guru"
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/trecresults"
-	"gopkg.in/neurosnap/sentences.v1"
+	"github.com/mailru/easyjson"
+	"gopkg.in/jdkato/prose.v2"
+	"io/ioutil"
 	"log"
-	"regexp"
+	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -30,68 +33,16 @@ type EntrezStatisticsSource struct {
 	n float64
 }
 
-type pubmedArticleSet struct {
-	PubmedArticle []pubmedArticle `xml:"PubmedArticle"`
-}
-
-type pubmedArticle struct {
-	MedlineCitation medlineCitation `xml:"MedlineCitation"`
-}
-
-type medlineCitation struct {
-	PMID            string          `xml:"PMID"`
-	Article         article         `xml:"Article"`
-	MeshHeadingList meshHeadingList `xml:"MeshHeadingList"`
-}
-
-type publicationType struct {
-	PublicationType string `xml:"PublicationType"`
-}
-
-type meshHeadingList struct {
-	MeshHeading []meshHeading `xml:"MeshHeading"`
-}
-
-type meshHeading struct {
-	DescriptorName string `xml:"DescriptorName"`
-}
-
-type article struct {
-	ArticleTitle        string            `xml:"ArticleTitle"`
-	Abstract            abstract          `xml:"Abstract"`
-	PublicationTypeList []publicationType `xml:"PublicationTypeList"`
-	AuthorList          authorList        `xml:"AuthorList"`
-}
-
-type authorList struct {
-	Author []author `xml:"Author"`
-}
-type author struct {
-	LastName string `xml:"LastName"`
-	ForeName string `xml:"ForeName"`
-	Initials string `xml:"Initials"`
-}
-
-type abstract struct {
-	AbstractText string `xml:"AbstractText"`
-}
-
 type term struct {
 	count int
 	token string
 }
 
 type EntrezDocument struct {
-	ID               string
-	Title            string
-	Text             string
-	Authors          []string
-	PublicationTypes []string
-	MeSHHeadings     []string
-}
-
-func (a author) String() string {
-	return fmt.Sprintf("%s %s.", a.LastName, a.Initials)
+	ID           string
+	Title        string
+	Text         string
+	MeSHHeadings []string
 }
 
 func formatTerm(term string) string {
@@ -132,7 +83,10 @@ type Search struct {
 
 func (e EntrezStatisticsSource) Count(term, field string) float64 {
 	var s Search
-	entrez.SearchURL.GetXML(map[string][]string{"field": {field}, "api_key": {e.key}, "term": {term}}, e.tool, e.email, entrez.Limit, &s)
+	err := entrez.SearchURL.GetXML(map[string][]string{"field": {field}, "api_key": {e.key}, "term": {term}}, e.tool, e.email, entrez.Limit, &s)
+	if err != nil {
+		panic(err)
+	}
 	return float64(s.Count)
 }
 
@@ -148,10 +102,52 @@ func (e EntrezStatisticsSource) SearchSize(n int) func(p *entrez.Parameters) {
 	}
 }
 
+// fillParams adds elements to v based on the "param" tag of p if the value is not the
+// zero value for that type.
+func fillParams(p *entrez.Parameters, v url.Values) {
+	if p == nil {
+		return
+	}
+	pv := reflect.ValueOf(p).Elem()
+	n := pv.NumField()
+	t := pv.Type()
+	for i := 0; i < n; i++ {
+		tf := t.Field(i)
+		if tf.PkgPath != "" && !tf.Anonymous {
+			continue
+		}
+		tag := tf.Tag.Get("param")
+		if tag != "" {
+			in := pv.Field(i).Interface()
+			switch cv := in.(type) {
+			case int:
+				if cv != 0 {
+					v[tag] = []string{fmt.Sprint(cv)}
+				}
+			case string:
+				if cv != "" {
+					v[tag] = []string{cv}
+				}
+			default:
+				panic("cannot reach")
+			}
+		}
+	}
+}
+
+type esearch struct {
+	EsearchResult esearchresult `json:"esearchresult"`
+}
+
+type esearchresult struct {
+	RetStart string   `json:"retstart"`
+	Count    string   `json:"count"`
+	Idlist   []string `json:"idlist"`
+}
+
 // Search uses the entrez eutils to get the pmids for a given query.
 func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.Parameters)) ([]int, error) {
-	log.Println(query)
-	var pmids []int
+	fmt.Printf("%s", query)
 	p := &entrez.Parameters{}
 	p.RetMax = e.options.Size
 	for _, option := range options {
@@ -162,41 +158,49 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 		p.RetMax = e.options.Size
 	}
 	p.APIKey = e.key
+	p.RetMode = "json"
 
-	s, err := entrez.DoSearch("pubmed", query, p, nil, e.tool, e.email)
+	//entrez.Limit.Wait()
+	v := url.Values{}
+	v["db"] = []string{"pubmed"}
+	v["term"] = []string{query}
+	fillParams(p, v)
+	fmt.Print(".")
+	r, err := entrez.SearchURL.Get(v, e.tool, e.email, entrez.Limit)
 	if err != nil {
 		return nil, err
 	}
-	pmids = s.IdList
-	log.Printf("%d/%d\n", s.RetStart+len(pmids), s.Count)
+	defer r.Close()
+	fmt.Print(".")
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	var s esearch
+	fmt.Print(".")
+	err = easyjson.Unmarshal(b, &s)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Print(".\n")
+
+	pmids := make([]int, len(s.EsearchResult.Idlist))
+	for i, pmid := range s.EsearchResult.Idlist {
+		pmids[i], err = strconv.Atoi(pmid)
+		if err != nil {
+			return nil, err
+		}
+	}
+	retstart, err := strconv.Atoi(s.EsearchResult.RetStart)
+	if err != nil {
+		return nil, err
+	}
+
+	//pmids = s.EsearchResult.Idlist
+	log.Printf("%d/%s\n", retstart+len(pmids), s.EsearchResult.Count)
 	//log.Println(len(pmids) == e.options.Size, len(pmids), e.options.Size)
 	// If the number of pmids equals the execute size, there might be more to come.
 	if len(pmids) == e.options.Size {
-		/*
-	type resp struct {
-		ids []int
-		err error
-	}
-	c := make(chan resp)
-	go func(c chan resp) {
-		l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)), e.SearchSize(e.SearchOptions().Size))
-		if err != nil {
-			c <- resp{
-				ids: nil,
-				err: err,
-			}
-		}
-		c <- resp{
-			ids: l,
-			err: nil,
-		}
-	}(c)
-
-	v := <-c
-	if v.err != nil {
-		return nil, err
-	}
-		 */
 		l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)), e.SearchSize(e.SearchOptions().Size))
 		if err != nil {
 			return nil, err
@@ -206,14 +210,15 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	return pmids, nil
 }
 
-// Fetch uses the entrez eutils to fetch the pubmed article given a set of pubmed identifiers.
+// Fetch uses the entrez eutils to fetch the pubmed Article given a set of pubmed identifiers.
 func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Parameters)) ([]EntrezDocument, error) {
 	p := &entrez.Parameters{}
 	for _, option := range options {
 		option(p)
 	}
 	p.RetMax = e.options.Size
-	p.RetType = "xml"
+	p.RetMode = "text"
+	p.RetType = "medline"
 	p.APIKey = e.key
 
 	r, err := entrez.Fetch("pubmed", p, e.tool, e.email, nil, pmids...)
@@ -222,36 +227,15 @@ func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Par
 	}
 	defer r.Close()
 
-	buff := new(bytes.Buffer)
-	buff.ReadFrom(r)
+	s := guru.UnmarshallMedline(r)
 
-	var s pubmedArticleSet
-	err = xml.Unmarshal(buff.Bytes(), &s)
-	if err != nil {
-		return nil, err
-	}
-
-	docs := make([]EntrezDocument, len(s.PubmedArticle))
-	for i, article := range s.PubmedArticle {
-		authors := make([]string, len(article.MedlineCitation.Article.AuthorList.Author))
-		for j, a := range article.MedlineCitation.Article.AuthorList.Author {
-			authors[j] = a.String()
-		}
-		mesh := make([]string, len(article.MedlineCitation.MeshHeadingList.MeshHeading))
-		for j, m := range article.MedlineCitation.MeshHeadingList.MeshHeading {
-			mesh[j] = m.DescriptorName
-		}
-		pubtype := make([]string, len(article.MedlineCitation.Article.PublicationTypeList))
-		for j, p := range article.MedlineCitation.Article.PublicationTypeList {
-			pubtype[j] = p.PublicationType
-		}
+	docs := make([]EntrezDocument, len(s))
+	for i, doc := range s {
 		docs[i] = EntrezDocument{
-			ID:               article.MedlineCitation.PMID,
-			Title:            article.MedlineCitation.Article.ArticleTitle,
-			Text:             article.MedlineCitation.Article.Abstract.AbstractText,
-			Authors:          authors,
-			MeSHHeadings:     mesh,
-			PublicationTypes: pubtype,
+			ID:           doc.PMID,
+			Title:        doc.TI,
+			Text:         doc.AB,
+			MeSHHeadings: doc.MH,
 		}
 	}
 	return docs, nil
@@ -276,22 +260,15 @@ func (e EntrezStatisticsSource) TermFrequency(term, field, document string) (flo
 	}
 	defer r.Close()
 
-	buff := new(bytes.Buffer)
-	buff.ReadFrom(r)
+	docs := guru.UnmarshallMedline(r)
 
-	var p pubmedArticleSet
-	xml.Unmarshal(buff.Bytes(), &p)
-	if len(p.PubmedArticle) == 0 {
-		return 0, nil
-	}
-
-	if len(p.PubmedArticle) == 0 {
+	if len(docs) == 0 {
 		return 0, nil
 	}
 
 	var n int
-	t := p.PubmedArticle[0].MedlineCitation.Article.ArticleTitle
-	a := p.PubmedArticle[0].MedlineCitation.Article.Abstract.AbstractText
+	t := docs[0].TI
+	a := docs[0].AB
 	n += strings.Count(fmt.Sprintf("%s %s", t, a), term)
 
 	return float64(n), nil
@@ -304,105 +281,57 @@ func (e EntrezStatisticsSource) TermVector(document string) (TermVector, error) 
 		return nil, err
 	}
 
-	// Fetch the document for computing the term statistics.
-	r, err := entrez.Fetch("pubmed", &entrez.Parameters{RetMode: "xml", APIKey: e.key}, e.tool, e.email, nil, int(d))
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-
-	buff := new(bytes.Buffer)
-	buff.ReadFrom(r)
-
-	var p pubmedArticleSet
-	err = xml.Unmarshal(buff.Bytes(), &p)
+	docs, err := e.Fetch([]int{int(d)})
 	if err != nil {
 		return nil, err
 	}
 
 	// Do not continue if we did not retrieve anything.
-	if len(p.PubmedArticle) == 0 {
-		return TermVector{}, nil
+	if len(docs) == 0 {
+		return nil, nil
 	}
 
-	// Extract the title and the abstract.
-	t := p.PubmedArticle[0].MedlineCitation.Article.ArticleTitle
-	a := p.PubmedArticle[0].MedlineCitation.Article.Abstract.AbstractText
-
-	reg, err := regexp.Compile("[^a-zA-Z0-9 -]+")
+	// Extract the title and the Abstract.
+	doc, err := prose.NewDocument(strings.ToLower(strings.Join([]string{docs[0].Title, docs[0].Text}, ". ")))
 	if err != nil {
 		return nil, err
 	}
 
-	// Format the title and abstract sentences.
-	t = reg.ReplaceAllString(strings.ToLower(t), "")
-	a = reg.ReplaceAllString(strings.ToLower(a), "")
-
-	// Compute term frequencies within the document.
-	tm := make(map[string]int)
-	for _, token := range sentences.NewWordTokenizer(sentences.NewPunctStrings()).Tokenize(t, false) {
-		tm[token.Tok]++
+	var terms []string
+	for _, tok := range doc.Tokens() {
+		switch tok.Tag {
+		case "JJ", "JJR", "JJS", "NN", "NNP", "NNPS", "NNS",
+			"RB", "RBR", "RBS", "RP", "VB", "VBD", "VBG",
+			"VBN", "VPP", "VPZ", "VBP":
+			terms = append(terms, tok.Text)
+		default:
+			continue
+		}
 	}
-
-	am := make(map[string]int)
-	for _, token := range sentences.NewWordTokenizer(sentences.NewPunctStrings()).Tokenize(a, false) {
-		am[token.Tok]++
-	}
-
-	// Create the strings that get submitted to pubmed.
-	ts := make([]string, len(tm))
-	as := make([]string, len(am))
-	var i int
-	for term := range tm {
-		ts[i] = term
-		i++
-	}
-	i = 0
-	for term := range am {
-		as[i] = term
-		i++
-	}
-
-	// Get the document frequencies for each term.
-	tf, err := entrez.DoSearch("pubmed", strings.Join(ts, " "), &entrez.Parameters{Field: "title", APIKey: e.key}, nil, e.tool, e.email)
-	if err != nil {
-		return nil, err
-	}
-	af, err := entrez.DoSearch("pubmed", strings.Join(as, " "), &entrez.Parameters{Field: "text", APIKey: e.key}, nil, e.tool, e.email)
-	if err != nil {
-		return nil, err
-	}
-
-	ast, err := tf.TranslationStack.AST()
-	if err != nil {
-		return nil, err
-	}
-	tt := mapTerms(extractTerms(ast))
-
-	ast, err = af.TranslationStack.AST()
-	if err != nil {
-		return nil, err
-	}
-	at := mapTerms(extractTerms(ast))
 
 	// Create the term vector and populate it with all the statistics.
-	// TODO: total term frequency, term frequency.
-	var tv TermVector
-	for term, df := range tt {
-		tv = append(tv, TermVectorTerm{
-			DocumentFrequency: df,
-			Field:             "title",
-			Term:              term,
-		})
-	}
-	for term, df := range at {
-		tv = append(tv, TermVectorTerm{
-			DocumentFrequency: df,
-			Field:             "text",
-			Term:              term,
-		})
+	unique := make(map[string]float64)
+	for _, term := range terms {
+		for _, t := range terms {
+			if t == term {
+				unique[t]++
+			}
+		}
 	}
 
+	var tv TermVector
+	for term, tf := range unique {
+		log.Println(term)
+		s := e.Count(term, "tiab")
+
+		tv = append(tv, TermVectorTerm{
+			DocumentFrequency:  s,
+			TotalTermFrequency: s,
+			TermFrequency:      tf,
+			Field:              "tiab",
+			Term:               term,
+		})
+	}
 	return tv, nil
 }
 
@@ -415,30 +344,22 @@ func (e EntrezStatisticsSource) DocumentFrequency(term, field string) (float64, 
 }
 
 func (e EntrezStatisticsSource) TotalTermFrequency(term, field string) (float64, error) {
-	pmids, err := e.Search(term)
+	pmids, err := e.Search(term, func(p *entrez.Parameters) {
+		p.Field = field
+	})
 	if err != nil {
 		return 0, err
 	}
 
-	r, err := entrez.Fetch("pubmed", &entrez.Parameters{Field: field, RetType: "xml", APIKey: e.key}, e.tool, e.email, nil, pmids...)
+	docs, err := e.Fetch(pmids)
 	if err != nil {
 		return 0, err
-	}
-	defer r.Close()
-
-	buff := new(bytes.Buffer)
-	buff.ReadFrom(r)
-
-	var p pubmedArticleSet
-	xml.Unmarshal(buff.Bytes(), &p)
-	if len(p.PubmedArticle) == 0 {
-		return 0, nil
 	}
 
 	var n int
-	for _, article := range p.PubmedArticle {
-		t := strings.ToLower(article.MedlineCitation.Article.ArticleTitle)
-		a := strings.ToLower(article.MedlineCitation.Article.Abstract.AbstractText)
+	for _, doc := range docs {
+		t := strings.ToLower(doc.Title)
+		a := strings.ToLower(doc.Text)
 		n += strings.Count(fmt.Sprintf("%s %s", t, a), term)
 	}
 

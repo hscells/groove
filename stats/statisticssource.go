@@ -126,7 +126,7 @@ func LanguageModelWeights(weights []float64) func(*LanguageModel) {
 // NewLanguageModel creates a new language model from a statistics source using the specified documents and scores for
 // those documents. Optionally, the language model can use weights that can be configured through the functional
 // arguments.
-func NewLanguageModel(source StatisticsSource, docIds []string, scores []float64, options ...func(model *LanguageModel)) (*LanguageModel, error) {
+func NewLanguageModel(source StatisticsSource, docIds []string, scores []float64, field string, options ...func(model *LanguageModel)) (*LanguageModel, error) {
 	// Create the language model with default values.
 	weights := new([]float64)
 	lm := &LanguageModel{
@@ -140,7 +140,7 @@ func NewLanguageModel(source StatisticsSource, docIds []string, scores []float64
 	}
 
 	// Pre-calculate the vocabulary size.
-	vocab, err := lm.StatisticsSource.VocabularySize("text")
+	vocab, err := lm.StatisticsSource.VocabularySize(field)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func (lm *LanguageModel) DocumentTermProbability(term string) float64 {
 	return 0.0
 }
 
-// KLDivergence computes the KLDivergence between the background collection and the
+// KLDivergence computes the KLDivergence between the background collection and the document language model.
 func (lm *LanguageModel) KLDivergence(lambda float64, probability TermProbability) (float64, error) {
 	div := 0.0
 	for term := range lm.TermCount {
