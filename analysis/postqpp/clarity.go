@@ -42,7 +42,7 @@ func (clarityScore) Execute(q pipeline.Query, s stats.StatisticsSource) (float64
 		weights[i] = (score / avgScore) / float64(N)
 	}
 
-	lm, err := stats.NewLanguageModel(s, docIds, scores, stats.LanguageModelWeights(weights))
+	lm, err := stats.NewLanguageModel(s, docIds, scores, "tiab", stats.LanguageModelWeights(weights))
 	if err != nil {
 		return 0.0, err
 	}
