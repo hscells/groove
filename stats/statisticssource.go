@@ -227,7 +227,7 @@ func (lm *LanguageModel) KLDivergence(lambda float64, probability TermProbabilit
 // JelinekMercerTermProbability computes Jelinek-Mercer probability for term in a language model.
 func JelinekMercerTermProbability(lambda float64) TermProbability {
 	return func(lm LanguageModel, term string) float64 {
-		return (lambda * lm.DocumentTermProbability(term)) + (1-lambda)*lm.CollectionTermProbability(term)
+		return (lambda * lm.DocumentTermProbability(term)) + ((1 - lambda) * lm.CollectionTermProbability(term))
 	}
 }
 

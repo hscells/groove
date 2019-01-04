@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -83,9 +84,11 @@ type Search struct {
 
 func (e EntrezStatisticsSource) Count(term, field string) float64 {
 	var s Search
+count:
 	err := entrez.SearchURL.GetXML(map[string][]string{"field": {field}, "api_key": {e.key}, "term": {term}}, e.tool, e.email, entrez.Limit, &s)
 	if err != nil {
-		panic(err)
+		log.Println(err)
+		goto count
 	}
 	return float64(s.Count)
 }
@@ -300,9 +303,7 @@ func (e EntrezStatisticsSource) TermVector(document string) (TermVector, error) 
 	var terms []string
 	for _, tok := range doc.Tokens() {
 		switch tok.Tag {
-		case "JJ", "JJR", "JJS", "NN", "NNP", "NNPS", "NNS",
-			"RB", "RBR", "RBS", "RP", "VB", "VBD", "VBG",
-			"VBN", "VPP", "VPZ", "VBP":
+		case "JJ", "JJR", "JJS", "NN", "NNP", "NNPS", "NNS":
 			terms = append(terms, tok.Text)
 		default:
 			continue
@@ -310,29 +311,44 @@ func (e EntrezStatisticsSource) TermVector(document string) (TermVector, error) 
 	}
 
 	// Create the term vector and populate it with all the statistics.
-	unique := make(map[string]float64)
+	termFrequencies := make(map[string]float64)
 	for _, term := range terms {
 		for _, t := range terms {
 			if t == term {
-				unique[t]++
+				termFrequencies[t]++
 			}
 		}
 	}
 
-	var tv TermVector
-	for term, tf := range unique {
+	ch := make(chan TermVectorTerm)
+	var vec TermVector
+	var wg sync.WaitGroup
+	go func() {
+		for tv := range ch {
+			vec = append(vec, tv)
+		}
+	}()
+	for term, tf := range termFrequencies {
+		wg.Add(1)
+		//go func(x string, y float64) {
 		log.Println(term)
 		s := e.Count(term, "tiab")
-
-		tv = append(tv, TermVectorTerm{
+		ch <- TermVectorTerm{
 			DocumentFrequency:  s,
 			TotalTermFrequency: s,
 			TermFrequency:      tf,
 			Field:              "tiab",
 			Term:               term,
-		})
+		}
+		wg.Done()
+
+		//}(term, tf)
 	}
-	return tv, nil
+
+	wg.Wait()
+	close(ch)
+
+	return vec, nil
 }
 
 func (e EntrezStatisticsSource) DocumentFrequency(term, field string) (float64, error) {

@@ -2,7 +2,6 @@ package seed
 
 import (
 	"github.com/hscells/cqr"
-	"github.com/hscells/transmute/fields"
 	"gopkg.in/neurosnap/sentences.v1"
 	"log"
 )
@@ -52,66 +51,6 @@ const (
 )
 
 const last = UniqueObjectiveParticipantsIndexTestsTargetConditions
-
-var (
-	/*
-	#1 randomized controlled trial [pt]
-	#2 controlled clinical trial [pt]
-	#3 randomized [tiab]
-	#4 placebo [tiab]
-	#5 drug therapy [sh]
-	#6 randomly [tiab]
-	#7 trial [tiab]
-	#8 groups [tiab]
-	#9 #1 OR #2 OR #3 OR #4 OR #5 OR #6 OR #7 OR #8
-	#10 animals [mh] NOT humans [mh]
-	#11 #9 NOT #10
-	 */
-	sensitivityFilter = cqr.NewBooleanQuery(cqr.NOT, []cqr.CommonQueryRepresentation{
-		cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{
-			cqr.NewKeyword("randomized controlled trial", fields.PublicationType),
-			cqr.NewKeyword("controlled clinical trial", fields.PublicationType),
-			cqr.NewKeyword("randomized", fields.TitleAbstract),
-			cqr.NewKeyword("placebo", fields.TitleAbstract),
-			cqr.NewKeyword("drug therapy", fields.FloatingMeshHeadings),
-			cqr.NewKeyword("randomly", fields.TitleAbstract),
-			cqr.NewKeyword("trial", fields.TitleAbstract),
-			cqr.NewKeyword("groups", fields.TitleAbstract),
-		}),
-		cqr.NewBooleanQuery(cqr.NOT, []cqr.CommonQueryRepresentation{
-			cqr.NewKeyword("animals", fields.MeshHeadings),
-			cqr.NewKeyword("humans", fields.MeshHeadings),
-		}),
-	})
-
-	/*
-	#1 randomized controlled trial [pt]
-	#2 controlled clinical trial [pt]
-	#3 randomized [tiab]
-	#4 placebo [tiab]
-	#5 clinical trials as topic [mesh: noexp]
-	#6 randomly [tiab]
-	#7 trial [ti]
-	#8 #1 OR #2 OR #3 OR #4 OR #5 OR #6 OR #7
-	#9 animals [mh] NOT humans [mh]
-	#10 #8 NOT #9
-	 */
-	precisionSensitivityFilter = cqr.NewBooleanQuery(cqr.NOT, []cqr.CommonQueryRepresentation{
-		cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{
-			cqr.NewKeyword("randomized controlled trial", fields.PublicationType),
-			cqr.NewKeyword("controlled clinical trial", fields.PublicationType),
-			cqr.NewKeyword("randomized", fields.TitleAbstract),
-			cqr.NewKeyword("placebo", fields.TitleAbstract),
-			cqr.NewKeyword("clinical trials as topic", fields.MeshHeadings).SetOption(cqr.ExplodedString, false),
-			cqr.NewKeyword("randomly", fields.TitleAbstract),
-			cqr.NewKeyword("trial", fields.Title),
-		}),
-		cqr.NewBooleanQuery(cqr.NOT, []cqr.CommonQueryRepresentation{
-			cqr.NewKeyword("animals", fields.MeshHeadings),
-			cqr.NewKeyword("humans", fields.MeshHeadings),
-		}),
-	})
-)
 
 func (p ProtocolConstructor) Construct() ([]cqr.CommonQueryRepresentation, error) {
 	// Extract cqr keywords from the protocol text.
@@ -195,7 +134,7 @@ func (p ProtocolConstructor) extractQueries(objectiveKeywords []cqr.CommonQueryR
 	f1 := make([]cqr.CommonQueryRepresentation, len(queries))
 	for i, q := range queries {
 		f1[i] = cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{
-			sensitivityFilter,
+			SensitivityFilter,
 			q,
 		}).SetOption(ProtocolOption, int(last*offset)+i)
 	}
@@ -203,7 +142,7 @@ func (p ProtocolConstructor) extractQueries(objectiveKeywords []cqr.CommonQueryR
 	f2 := make([]cqr.CommonQueryRepresentation, len(queries))
 	for i, q := range queries {
 		f2[i] = cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{
-			precisionSensitivityFilter,
+			PrecisionSensitivityFilter,
 			q,
 		}).SetOption(ProtocolOption, int(last*offset*2)+i)
 	}
