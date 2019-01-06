@@ -466,7 +466,7 @@ func constructTree(query pipeline.Query, ss stats.StatisticsSource, seen QueryCa
 		c := NewCombinator(q, operator, clauses...)
 		return c, seen, nil
 	}
-	return nil, nil, errors.New("supplied query is not supported")
+	return nil, nil, errors.New(fmt.Sprintf("supplied query is not supported: %s", query.Query))
 }
 
 // NewLogicalTree creates a new logical tree.  If the operator of the query is unknown
