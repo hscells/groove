@@ -168,6 +168,9 @@ func (orOperator) Combine(nodes []LogicalTreeNode, cache QueryCacher) Documents 
 		return Documents{}
 	}
 	if len(nodes) == 1 {
+		if nodes[0] == nil {
+			return Documents{}
+		}
 		return nodes[0].Documents(cache)
 	}
 
