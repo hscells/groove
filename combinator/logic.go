@@ -381,6 +381,9 @@ func constructTree(query pipeline.Query, ss stats.StatisticsSource, seen QueryCa
 	if seen == nil {
 		seen = NewMapQueryCache()
 	}
+	if query.Query == nil {
+		return NewCombinator(cqr.NewBooleanQuery(cqr.OR, nil), OrOperator, nil), nil, nil
+	}
 	switch q := query.Query.(type) {
 	case cqr.Keyword:
 		// Return a seen clause.
