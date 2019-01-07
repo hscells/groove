@@ -516,20 +516,56 @@ func (s GreedySampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, er
 
 	// Score all of the candidates.
 	c := make([]GreedyCandidateQuery, len(candidates))
+	var i int
+	var errOnce sync.Once
+	var errConc error
+	var mu sync.Mutex
+	samples := make(chan GreedyCandidateQuery)
+	sem := make(chan bool, runtime.NumCPU())
+	go func() {
+		defer mu.Unlock()
+		for sample := range samples {
+			c[i] = sample
+			i++
+			log.Printf("%d/%d\n", i, len(c))
+		}
+	}()
 	for i, child := range candidates {
-		pq := pipeline.NewQuery(child.Topic, child.Topic, child.Query)
-		t, _, err := combinator.NewLogicalTree(pq, s.chain.StatisticsSource, s.chain.QueryCacher)
-		if err != nil {
-			return nil, err
-		}
-		results := t.Documents(s.chain.QueryCacher).Results(pq, "")
-		v := s.measure.Score(&results, s.chain.QrelsFile.Qrels[child.Topic])
-		c[i] = GreedyCandidateQuery{
-			CandidateQuery: child,
-			score:          v,
-			numRet:         len(results),
-		}
+		sem <- true
+		go func(query CandidateQuery, j int) {
+			defer func() { <-sem }()
+			log.Printf("evaluating %d (%d/%d)\n", combinator.HashCQR(query.Query), j, len(candidates))
+			pq := pipeline.NewQuery(query.Topic, query.Topic, query.Query)
+			var results trecresults.ResultList
+			if docs, err := s.chain.QueryCacher.Get(query.Query); err == nil {
+				results = docs.Results(pq, "")
+			} else {
+				t, _, err := combinator.NewLogicalTree(pq, s.chain.StatisticsSource, s.chain.QueryCacher)
+				if err != nil {
+					errOnce.Do(func() {
+						errConc = err
+					})
+				}
+				results = t.Documents(s.chain.QueryCacher).Results(pq, "")
+			}
+			v := s.measure.Score(&results, s.chain.QrelsFile.Qrels[query.Topic])
+			samples <- GreedyCandidateQuery{
+				CandidateQuery: child,
+				score:          v,
+				numRet:         len(results),
+			}
+			log.Printf("evaluated %d (%d/%d)\n", combinator.HashCQR(query.Query), j, len(candidates))
+		}(child, i)
 	}
+	// Wait until the last goroutine has read from the semaphore.
+	for i := 0; i < cap(sem); i++ {
+		sem <- true
+	}
+	if errConc != nil {
+		return nil, errConc
+	}
+	close(samples)
+	mu.Lock()
 
 	return s.GreedyStrategy(c, N), nil
 }
