@@ -634,7 +634,7 @@ func (s ClusterSampler) Sample(candidates []CandidateQuery) ([]CandidateQuery, e
 
 func NewClusterSampler(n int, delta float64, k int) ClusterSampler {
 	if k <= 0 {
-		log.Println("k was less than 1, setting to default k=5")
+		log.Println("k was less than 1, setting to default k=3")
 		k = 3
 	}
 	return ClusterSampler{

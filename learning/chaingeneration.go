@@ -178,7 +178,7 @@ func BiasedTransformationSamplingCriteria() DepthFirstSamplingCriteria {
 
 // PositiveBiasedEvaluationSamplingCriteria samples using an evaluation measure to determine
 // if the candidate query improves over the seed query for that measure.
-func BalancedEvaluationSamplingCriteria(measure eval.Evaluator, scores map[string]float64, chain *QueryChain) DepthFirstSamplingCriteria {
+func BalancedEvaluationSamplingCriteria(measure eval.Evaluator, scores map[string]map[string]float64, chain *QueryChain) DepthFirstSamplingCriteria {
 	return func(query CandidateQuery) bool {
 		pq := pipeline.NewQuery(query.Topic, query.Topic, query.Query)
 		t, _, err := combinator.NewLogicalTree(pq, chain.StatisticsSource, chain.QueryCacher)
@@ -187,13 +187,13 @@ func BalancedEvaluationSamplingCriteria(measure eval.Evaluator, scores map[strin
 		}
 		results := t.Documents(chain.QueryCacher).Results(pq, "")
 		v := measure.Score(&results, chain.QrelsFile.Qrels[query.Topic])
-		return v >= scores[query.Topic]
+		return v >= scores[query.Topic][measure.Name()]
 	}
 }
 
 // PositiveBiasedEvaluationSamplingCriteria samples using an evaluation measure to determine
 // if the candidate query improves over the seed query for that measure.
-func PositiveBiasedEvaluationSamplingCriteria(measure eval.Evaluator, scores map[string]float64, chain *QueryChain) DepthFirstSamplingCriteria {
+func PositiveBiasedEvaluationSamplingCriteria(measure eval.Evaluator, scores map[string]map[string]float64, chain *QueryChain) DepthFirstSamplingCriteria {
 	return func(query CandidateQuery) bool {
 		pq := pipeline.NewQuery(query.Topic, query.Topic, query.Query)
 		t, _, err := combinator.NewLogicalTree(pq, chain.StatisticsSource, chain.QueryCacher)
@@ -202,13 +202,13 @@ func PositiveBiasedEvaluationSamplingCriteria(measure eval.Evaluator, scores map
 		}
 		results := t.Documents(chain.QueryCacher).Results(pq, "")
 		v := measure.Score(&results, chain.QrelsFile.Qrels[query.Topic])
-		return v >= scores[query.Topic]
+		return v >= scores[query.Topic][measure.Name()]
 	}
 }
 
 // NegativeBiasedEvaluationSamplingCriteria samples using an evaluation measure to determine
 // if the candidate query is worse than the seed query for that measure.
-func NegativeBiasedEvaluationSamplingCriteria(measure eval.Evaluator, scores map[string]float64, chain *QueryChain) DepthFirstSamplingCriteria {
+func NegativeBiasedEvaluationSamplingCriteria(measure eval.Evaluator, scores map[string]map[string]float64, chain *QueryChain) DepthFirstSamplingCriteria {
 	return func(query CandidateQuery) bool {
 		pq := pipeline.NewQuery(query.Topic, query.Topic, query.Query)
 		t, _, err := combinator.NewLogicalTree(pq, chain.StatisticsSource, chain.QueryCacher)
@@ -217,7 +217,7 @@ func NegativeBiasedEvaluationSamplingCriteria(measure eval.Evaluator, scores map
 		}
 		results := t.Documents(chain.QueryCacher).Results(pq, "")
 		v := measure.Score(&results, chain.QrelsFile.Qrels[query.Topic])
-		return v < scores[query.Topic]
+		return v < scores[query.Topic][measure.Name()]
 	}
 }
 
