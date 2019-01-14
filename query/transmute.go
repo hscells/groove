@@ -30,7 +30,8 @@ var (
 			LexOptions: lexer.LexOptions{
 				FormatParenthesis: true,
 			},
-			RequiresLexing: true,
+			AddRedundantParenthesis: true,
+			RequiresLexing:          false,
 		})
 	// PubMedTransmutePipeline is a default pipeline for cqr queries.
 	CQRTransmutePipeline = tpipeline.NewPipeline(
