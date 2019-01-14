@@ -10,11 +10,14 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/analysis"
+	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/query"
+	"github.com/hscells/groove/stats"
 	"github.com/hscells/metawrap"
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
+	"github.com/hscells/trecresults"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -32,7 +35,7 @@ const (
 	cui2vecUncompressedPath = "/Users/harryscells/Repositories/cui2vec/cui2vec_pretrained.csv"
 	cui2vecPretrainedPath   = "/Users/harryscells/Repositories/cui2vec/testdata/cui2vec_precomputed.bin"
 	cuisPath                = "/Users/harryscells/Repositories/cui2vec/cuis.csv"
-	qrelsPath               = "/Users/harryscells/Repositories/tar/training/qrels/train.abs.qrels"
+	qrelsPath               = "/Users/harryscells/Repositories/tar/2018-TAR/Task1/Training/qrel"
 	javaClassPath           = "/Users/harryscells/stanford-parser-full-2018-10-17"
 	dir                     = "/Users/harryscells/gocode/src/github.com/hscells/groove/scripts/query_protocol_reachability/test_data/"
 	queriesDir              = dir + "train_t2/"
@@ -55,6 +58,7 @@ var queryReg = regexp.MustCompile(`\(.*\)`)
 var mmClient = &http.Client{}
 var precomputedEmbeddings *cui2vec.PrecomputedEmbeddings
 var uncompressedEmbeddings *cui2vec.UncompressedEmbeddings
+var cuiMapping, _ = cui2vec.LoadCUIMapping(cuisPath)
 
 // protocol is a representation of a systematic review protocol in XML.
 type protocol struct {
@@ -134,7 +138,7 @@ func main() {
 
 	if DoQueryGeneration {
 		//fmt.Printf("! loading cuis...\n")
-		//f, err := os.OpenFile(cui2vecUnc-ompressedPath, os.O_RDONLY, 0644)
+		//f, err := os.OpenFile(cui2vecUncompressedPath, os.O_RDONLY, 0644)
 		//if err != nil {
 		//	panic(err)
 		//}
@@ -143,15 +147,15 @@ func main() {
 		//	panic(err)
 		//}
 		//f.Close()
-		//f, err = os.OpenFile(cui2vecPretrainedPath, os.O_RDONLY, 0644)
-		//if err != nil {
-		//	panic(err)
-		//}
-		//precomputedEmbeddings, err = cui2vec.NewPrecomputedEmbeddings(f)
-		//if err != nil {
-		//	panic(err)
-		//}
-		//f.Close()
+		f, err := os.OpenFile(cui2vecPretrainedPath, os.O_RDONLY, 0644)
+		if err != nil {
+			panic(err)
+		}
+		precomputedEmbeddings, err = cui2vec.NewPrecomputedEmbeddings(f)
+		if err != nil {
+			panic(err)
+		}
+		f.Close()
 		fmt.Printf("! generating queries\n")
 		generateQueries(queries, protocols, notFound)
 	}
@@ -191,7 +195,7 @@ func parseTree(text string) ast {
 
 	var parse func(l []string, a ast) ([]string, ast)
 	parse = func(l []string, a ast) ([]string, ast) {
-		if len(l) <= 1 {
+		if len(l) <= 2 {
 			return l, a
 		}
 		token := l[0]
@@ -212,6 +216,7 @@ func parseTree(text string) ast {
 		}
 		return parse(l[1:], a)
 	}
+	fmt.Println(tokens)
 	_, ast := parse(tokens, ast{})
 	return ast.children[0]
 }
@@ -229,7 +234,7 @@ func treeToQuery(a ast) cqr.CommonQueryRepresentation {
 		}
 
 		q := cqr.NewBooleanQuery(cqr.OR, nil)
-		if l <= 1 {
+		if l <= 2 {
 			q.Operator = cqr.AND
 		}
 		for _, child := range a.children {
@@ -245,6 +250,32 @@ func treeToQuery(a ast) cqr.CommonQueryRepresentation {
 	return c
 }
 
+func treeToSimpleQuery(a ast) cqr.CommonQueryRepresentation {
+	var tree func(a ast, l int) cqr.CommonQueryRepresentation
+	tree = func(a ast, l int) cqr.CommonQueryRepresentation {
+		if len(strings.TrimSpace(a.text)) > 0 {
+			switch a.tag {
+			case "NN", "NNP", "NNS", "JJ", "VB", "VBZ", "VBG", "RB":
+				return cqr.NewKeyword(a.text, fields.TitleAbstract)
+			default:
+				return nil
+			}
+		}
+
+		q := cqr.NewBooleanQuery(cqr.OR, nil)
+		for _, child := range a.children {
+			c := tree(child, l+1)
+			if c != nil {
+				q.Children = append(q.Children, c)
+			}
+		}
+		return q
+	}
+	s, _ := transmute.CompileCqr2Medline(tree(a, 0))
+	c, _ := transmute.CompileMedline2Cqr(s)
+	return simplify(c)
+}
+
 func simplify(r cqr.CommonQueryRepresentation) cqr.CommonQueryRepresentation {
 	switch q := r.(type) {
 	case cqr.Keyword:
@@ -254,19 +285,52 @@ func simplify(r cqr.CommonQueryRepresentation) cqr.CommonQueryRepresentation {
 		for _, child := range q.Children {
 			switch c := child.(type) {
 			case cqr.Keyword:
-				children = append(children, child)
+				if len(c.QueryString) > 0 {
+					children = append(children, child)
+				}
 			case cqr.BooleanQuery:
 				if c.Operator == q.Operator {
 					for _, child := range c.Children {
 						children = append(children, simplify(child))
 					}
 				} else {
-					children = append(children, child)
+					children = append(children, simplify(c))
 				}
 			}
 		}
 		q.Children = children
 		return q
+	}
+	return nil
+}
+
+func entityExpansion(query cqr.CommonQueryRepresentation) cqr.CommonQueryRepresentation {
+	switch q := query.(type) {
+	case cqr.Keyword:
+		bq := cqr.NewBooleanQuery(cqr.OR, nil)
+		cui := q.GetOption("cui").(string)
+		fmt.Println("+", cui)
+		concepts, err := precomputedEmbeddings.Similar(cui)
+		if err != nil {
+			panic(err)
+		}
+		for _, concept := range concepts {
+			if v, ok := cuiMapping[concept.CUI]; ok {
+				fmt.Println("|", v)
+				bq.Children = append(bq.Children, cqr.NewKeyword(v, fields.TitleAbstract))
+			}
+		}
+		if len(bq.Children) == 0 {
+			return q
+		}
+		bq.Children = append(bq.Children, q)
+		return bq
+	case cqr.BooleanQuery:
+		bq := cqr.NewBooleanQuery(q.Operator, nil)
+		for _, child := range q.Children {
+			bq.Children = append(bq.Children, entityExpansion(child))
+		}
+		return bq
 	}
 	return nil
 }
@@ -282,13 +346,16 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 	//}
 	//f.Close()
 	//
-	////mesh, _ := meshexp.Default()
-	//
 	//e, err := stats.NewEntrezStatisticsSource(
 	//	stats.EntrezAPIKey("22a11de46af145ce59bb288e0ede66721f09"),
 	//	stats.EntrezEmail("harryscells@gmail.com"),
 	//	stats.EntrezTool("groove"),
 	//	stats.EntrezOptions(stats.SearchOptions{Size: 100000}))
+	//if err != nil {
+	//	panic(err)
+	//}
+	//
+	//size, err := e.CollectionSize()
 	//if err != nil {
 	//	panic(err)
 	//}
@@ -380,7 +447,7 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 				} else if len(entities) == 1 {
 					return cqr.NewKeyword(entities[0].text, q.Fields...).SetOption("cui", entities[0].cui)
 				}
-				b := cqr.NewBooleanQuery(cqr.AND, nil)
+				b := cqr.NewBooleanQuery(cqr.OR, nil)
 				for _, concept := range entities {
 					fmt.Println(concept)
 					b.Children = append(b.Children, cqr.NewKeyword(concept.text, q.Fields...).SetOption("cui", concept.cui))
@@ -416,11 +483,34 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 			return
 		}
 
+		//r0 := evaluateQuery(e, pipeline.NewQuery(q.Name, q.Topic, treeToSimpleQuery(parseTree(buff.String()))), size, qrels)
+		//r0 := evaluateQuery(e, q, size, qrels)
 		m := mapQuery(p)
-
-		fmt.Println("----")
-		//fmt.Println(m)
-		fmt.Println(transmute.CompileCqr2PubMed(m))
+		//r1 := evaluateQuery(e, pipeline.NewQuery(q.Name, q.Topic, m), size, qrels)
+		ent := entityExpansion(m)
+		//r2 := evaluateQuery(e, pipeline.NewQuery(q.Name, q.Topic, ent), size, qrels)
+		//fmt.Println(r0["Precision"], r1["Precision"], r2["Precision"])
+		//fmt.Println(r0["Recall"], r1["Recall"], r2["Recall"])
+		q0, _ := transmute.CompileCqr2PubMed(q.Query)
+		q1, _ := transmute.CompileCqr2PubMed(treeToSimpleQuery(parseTree(buff.String())))
+		q2, _ := transmute.CompileCqr2PubMed(m)
+		q3, _ := transmute.CompileCqr2PubMed(ent)
+		err = ioutil.WriteFile(path.Join(queryOutputDir, "original/", q.Topic), []byte(q0), 0644)
+		if err != nil {
+			panic(err)
+		}
+		err = ioutil.WriteFile(path.Join(queryOutputDir, "simple/", q.Topic), []byte(q1), 0644)
+		if err != nil {
+			panic(err)
+		}
+		err = ioutil.WriteFile(path.Join(queryOutputDir, "entity/", q.Topic), []byte(q2), 0644)
+		if err != nil {
+			panic(err)
+		}
+		err = ioutil.WriteFile(path.Join(queryOutputDir, "cui2vec_expansion/", q.Topic), []byte(q3), 0644)
+		if err != nil {
+			panic(err)
+		}
 		/*
 				p := protocols[q.Topic]
 
@@ -504,45 +594,35 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 						//fmt.Printf("  | %s\n", x)
 					}
 				}
-				for _, v := range atoms {
-					//if len(v) <= 4 {
-					seen := make(map[string]bool)
-					ex := v
-					for _, a := range v {
-						fmt.Printf("expanding p %s...\n", a.String())
-						similar, err := precomputedEmbeddings.Similar(a.GetOption("cui").(string))
-						if err != nil {
-							panic(err)
-						}
-						var expansions []cqr.CommonQueryRepresentation
-						for _, cui := range similar {
-							if _, ok := seen[cui.CUI]; ok {
-								continue
-							}
-							if term, ok := cuiMapping[cui.CUI]; ok {
-								expansions = append(expansions, cqr.NewKeyword(term, fields.TitleAbstract))
-							}
-							seen[cui.CUI] = true
-						}
-						fmt.Printf("expanded %d new terms\n", len(expansions))
-						ex = append(ex, expansions...)
 
-					}
-					//}
-					bq.Children = append(bq.Children, cqr.NewBooleanQuery(cqr.OR, ex))
-				}
 
-				results, err := e.Execute(pipeline.NewQuery(q.Topic, q.Topic, bq), e.SearchOptions())
-				if err != nil {
-					panic(err)
-				}
 
-				precision := eval.PrecisionEvaluator.Score(&results, qrels.Qrels[q.Topic])
-				recall := eval.RecallEvaluator.Score(&results, qrels.Qrels[q.Topic])
-
-				fmt.Printf("* p: %f, r: %f\n", precision, recall)
 		*/
 	}
+}
+
+func evaluateQuery(e stats.EntrezStatisticsSource, q pipeline.Query, size float64, qrels trecresults.QrelsFile) map[string]float64 {
+	results, err := e.Execute(q, e.SearchOptions())
+	if err != nil {
+		panic(err)
+	}
+	eval.RelevanceGrade = 0
+	return eval.Evaluate([]eval.Evaluator{
+		eval.PrecisionEvaluator,
+		eval.RecallEvaluator,
+		eval.F1Measure,
+		eval.F05Measure,
+		eval.F3Measure,
+		eval.NumRel,
+		eval.NumRet,
+		eval.NumRelRet,
+		eval.NewWSSEvaluator(size),
+		eval.NewMaximumLikelihoodEvaluator(eval.PrecisionEvaluator),
+		eval.NewMaximumLikelihoodEvaluator(eval.RecallEvaluator),
+		eval.NewMaximumLikelihoodEvaluator(eval.F1Measure),
+		eval.NewMaximumLikelihoodEvaluator(eval.F05Measure),
+		eval.NewMaximumLikelihoodEvaluator(eval.F3Measure),
+	}, &results, qrels, q.Topic)
 }
 
 func mmScoreDistributions(queries []pipeline.Query, protocols protocols, notFound map[string]bool) {
