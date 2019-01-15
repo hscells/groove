@@ -111,7 +111,8 @@ func (ff Features) Scores(max int) []float64 {
 	v := make([]float64, max)
 	for _, f := range ff {
 		if f.ID >= len(v) {
-			panic(fmt.Errorf("%d is larger than feature size %d", f.ID, len(v)))
+			fmt.Printf("[!] %d is larger than feature size %d\n", f.ID, len(v))
+			continue
 		}
 		v[f.ID] = f.Score
 	}

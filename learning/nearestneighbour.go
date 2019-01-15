@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	NNFeaturesN = 60
+	NNFeaturesN = ChainFeatures
 )
 
 type NearestNeighbourQueryCandidateSelector struct {
