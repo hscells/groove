@@ -231,6 +231,10 @@ func (e DepthFirstExplorer) Traverse(query CandidateQuery, c chan GenerationResu
 		log.Printf("sampled query from topic %s at depth %d (budget %d/%d)\n", query.Topic, len(query.Chain), *e.budget, e.n)
 		c <- GenerationResult{CandidateQuery: query}
 	} else {
+		if len(query.Chain) == 0 {
+			e.Traverse(query, c)
+			return
+		}
 		return
 	}
 
