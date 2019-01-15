@@ -68,6 +68,12 @@ func (u NearestNeighbourQueryCandidateSelector) Select(query CandidateQuery, tra
 				return CandidateQuery{}, nil, err
 			}
 			j := u.closest(distance, f.Scores(NNFeaturesN))
+			if i >= len(u.model.Values) {
+				continue
+			}
+			if j >= len(u.model.Values[i]) {
+				continue
+			}
 			divergencePredict = u.model.Values[i][j].Divergence
 			if divergencePredict < minDivergence && u.model.Scores[i] > minScore {
 				minDivergence = divergencePredict
