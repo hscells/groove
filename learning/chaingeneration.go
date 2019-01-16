@@ -111,9 +111,11 @@ func (e BreadthFirstExplorer) Traverse(candidate CandidateQuery, c chan Generati
 // backtracking further if necessary. The breadth-first approach uses two conditions to control
 // (1) when the explorer should stop and backtrack, and (2) when a query should be sampled.
 type DepthFirstExplorer struct {
-	chain  *QueryChain
-	budget *int
-	n      int
+	chain    *QueryChain
+	budget   *int
+	tries    *int
+	maxTries int
+	n        int
 	DepthFirstSamplingCriteria
 }
 
@@ -123,6 +125,7 @@ func NewDepthFirstExplorer(chain *QueryChain, sampling DepthFirstSamplingCriteri
 		budget:                     &budget,
 		chain:                      chain,
 		DepthFirstSamplingCriteria: sampling,
+		maxTries:                   5,
 	}
 }
 
@@ -232,6 +235,11 @@ func (e DepthFirstExplorer) Traverse(query CandidateQuery, c chan GenerationResu
 		c <- GenerationResult{CandidateQuery: query}
 	} else {
 		if len(query.Chain) == 0 {
+			*e.tries++
+			if *e.tries == e.maxTries {
+				*e.tries = 0
+				return
+			}
 			e.Traverse(query, c)
 			return
 		}
