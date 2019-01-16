@@ -120,12 +120,14 @@ type DepthFirstExplorer struct {
 }
 
 func NewDepthFirstExplorer(chain *QueryChain, sampling DepthFirstSamplingCriteria, budget int) DepthFirstExplorer {
+	t := 0
 	return DepthFirstExplorer{
 		n:                          budget,
 		budget:                     &budget,
 		chain:                      chain,
 		DepthFirstSamplingCriteria: sampling,
 		maxTries:                   5,
+		tries:                      &t,
 	}
 }
 
