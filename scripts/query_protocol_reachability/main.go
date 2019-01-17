@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"github.com/chzyer/readline"
 	"github.com/hscells/cqr"
 	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/analysis"
@@ -32,25 +33,28 @@ import (
 )
 
 const (
-	cui2vecUncompressedPath = "/Users/harryscells/Repositories/cui2vec/cui2vec_pretrained.csv"
-	cui2vecPretrainedPath   = "/Users/harryscells/Repositories/cui2vec/testdata/cui2vec_precomputed.bin"
-	cuisPath                = "/Users/harryscells/Repositories/cui2vec/cuis.csv"
-	qrelsPath               = "/Users/harryscells/Repositories/tar/2018-TAR/Task1/Training/qrel"
-	javaClassPath           = "/Users/harryscells/stanford-parser-full-2018-10-17"
-	dir                     = "/Users/harryscells/gocode/src/github.com/hscells/groove/scripts/query_protocol_reachability/test_data/"
-	queriesDir              = dir + "train_t2/"
-	protocolsDir            = dir + "train_p2/"
+	cui2vecUncompressedPath = "/Users/s4558151/Repositories/cui2vec/cui2vec_pretrained.csv"
+	cui2vecPretrainedPath   = "/Users/s4558151/Repositories/cui2vec/testdata/cui2vec_precomputed.bin"
+	cuisPath                = "/Users/s4558151/Repositories/cui2vec/cuis.csv"
+	qrelsPath               = "/Users/s4558151/Repositories/tar/2018-TAR/Task2/Training/qrels/qrels_abs_task2"
+	javaClassPath           = "/Users/s4558151/stanford-parser-full-2018-10-17"
+	dir                     = "/Users/s4558151/go/src/github.com/hscells/groove/scripts/query_protocol_reachability/test_data/"
+	queriesDir              = "/Users/s4558151/Repositories/tar/2018-TAR/Task2/Training/titles"
+	protocolsDir            = "/Users/s4558151/Repositories/tar/2018-TAR/Task1/Training/protocols"
 	queryOutputDir          = dir + "queries/"
 	queriesBinFile          = dir + "queries.bin"
 	protocolsBinFile        = dir + "protocols.bin"
 	conceptsBinFile         = dir + "concepts.bin"
 
-	LoadQueries                = false
-	LoadProtocols              = false
+	LoadQueries                = true
+	LoadProtocols              = true
 	DoStringMatchReachability  = false
 	DoConceptMatchReachability = false
 	DoQueryGeneration          = true
 	DoMMScoreDistributions     = false
+
+	QueryLogicComposeNLP    = false
+	QueryLogicComposeManual = true
 )
 
 var textReg = regexp.MustCompile(`[*"]+`)
@@ -335,6 +339,7 @@ func entityExpansion(query cqr.CommonQueryRepresentation) cqr.CommonQueryReprese
 	return nil
 }
 
+//noinspection GoBoolExpressions
 func generateQueries(queries []pipeline.Query, protocols protocols, notFound map[string]bool) {
 	//f, err := os.OpenFile(qrelsPath, os.O_RDONLY, 0644)
 	//if err != nil {
@@ -361,35 +366,30 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 	//}
 
 	for _, q := range queries {
+		//if q.Topic != "CD009519" {
+		//	continue
+		//}
 		fmt.Printf("+ [%s] %s \n", q.Topic, q.Name)
 		// Stop if the p does not have a protocol.
 		if _, ok := notFound[q.Topic]; ok {
 			continue
 		}
 
-		// Parse title: "Query Logic Composition".
-		cmd := exec.Command("bash", "-c", fmt.Sprintf(`echo "%s" | java -cp "%s/*" edu.stanford.nlp.parser.lexparser.LexicalizedParser -retainTMPSubcategories -outputFormat "penn" %s/englishPCFG.ser.gz -`, q.Name, javaClassPath, javaClassPath))
-		r, err := cmd.StdoutPipe()
-		if err != nil {
-			panic(err)
-		}
-
-		cmd.Start()
-
-		var buff bytes.Buffer
-		s := bufio.NewScanner(bufio.NewReader(r))
-		for s.Scan() {
-			_, err = buff.Write(s.Bytes())
+		var p cqr.CommonQueryRepresentation
+		var err error
+		if QueryLogicComposeNLP {
+			p, err = nlpQueryLogicComposer(q)
 			if err != nil {
 				panic(err)
 			}
 		}
-		//fmt.Println("----")
-		//fmt.Println(buff.String())
-		//
-		p := simplify(treeToQuery(parseTree(buff.String()))) // The magic part.
-		//fmt.Println("----")
-		//fmt.Println(transmute.CompileCqr2PubMed(p))
+
+		if QueryLogicComposeManual {
+			p, err = manualQueryLogicComposer(q)
+			if err != nil {
+				panic(err)
+			}
+		}
 
 		type entity struct {
 			score int
@@ -404,6 +404,7 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 		mapQuery = func(r cqr.CommonQueryRepresentation) (v cqr.CommonQueryRepresentation) {
 			switch q := r.(type) {
 			case cqr.Keyword:
+				fmt.Println(q.QueryString)
 				if len(strings.TrimSpace(q.QueryString)) == 0 {
 					return nil
 				}
@@ -411,6 +412,7 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 				seen := make(map[string]bool)
 				candidates := metaMapCandidates(q.QueryString)
 				for _, c := range candidates {
+					fmt.Println(c.CandidateCUI, c.CandidateMatched)
 					score, _ := strconv.Atoi(c.CandidateScore)
 					matched := strings.ToLower(c.CandidateMatched)
 					if _, ok := seen[matched]; !ok {
@@ -422,26 +424,11 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 							}
 						}
 						entities = append(entities, entity{text: matched, score: score, cui: c.CandidateCUI})
+						fmt.Println(entities)
 					skipEntity:
 						seen[matched] = true
 					}
 				}
-				//sort.Slice(entities, func(i, j int) bool {
-				//	return entities[i].score < entities[j].score
-				//})
-				////fmt.Println(entities)
-				//if len(entities) == 0 {
-				//	return nil
-				//}
-				//var concepts []entity
-				////concepts = append(concepts, entities[0])
-				//for i := 0; i < len(entities)-1; i++ {
-				//	//	if entities[i].score == entities[i+1].score {
-				//	concepts = append(concepts, entities[i])
-				//	//} else {
-				//	//	break
-				//	//}
-				//}
 				if len(entities) == 0 {
 					return nil
 				} else if len(entities) == 1 {
@@ -456,7 +443,6 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 			case cqr.BooleanQuery:
 				b := cqr.NewBooleanQuery(q.Operator, nil)
 				var qs []string
-				//fmt.Println(q.Children)
 				for _, child := range q.Children {
 					switch v := child.(type) {
 					case cqr.Keyword:
@@ -471,6 +457,7 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 
 				k := cqr.NewKeyword(strings.Join(qs, " "), fields.TitleAbstract)
 				if len(qs) == len(q.Children) {
+					//b.Children = append(b.Children, cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{mapQuery(k)}))
 					return mapQuery(k)
 				} else if len(qs) > 0 {
 					v := mapQuery(k)
@@ -483,122 +470,102 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 			return
 		}
 
+		fmt.Println(transmute.CompileCqr2Medline(p))
 		//r0 := evaluateQuery(e, pipeline.NewQuery(q.Name, q.Topic, treeToSimpleQuery(parseTree(buff.String()))), size, qrels)
 		//r0 := evaluateQuery(e, q, size, qrels)
 		m := mapQuery(p)
-		//r1 := evaluateQuery(e, pipeline.NewQuery(q.Name, q.Topic, m), size, qrels)
+		fmt.Println(transmute.CompileCqr2Medline(m))
+
 		ent := entityExpansion(m)
-		//r2 := evaluateQuery(e, pipeline.NewQuery(q.Name, q.Topic, ent), size, qrels)
-		//fmt.Println(r0["Precision"], r1["Precision"], r2["Precision"])
-		//fmt.Println(r0["Recall"], r1["Recall"], r2["Recall"])
-		q0, _ := transmute.CompileCqr2PubMed(q.Query)
-		q1, _ := transmute.CompileCqr2PubMed(treeToSimpleQuery(parseTree(buff.String())))
-		q2, _ := transmute.CompileCqr2PubMed(m)
-		q3, _ := transmute.CompileCqr2PubMed(ent)
-		err = ioutil.WriteFile(path.Join(queryOutputDir, "original/", q.Topic), []byte(q0), 0644)
+
+		//q0, _ := transmute.CompileCqr2PubMed(q.Query)
+		//q1, _ := transmute.CompileCqr2PubMed(treeToSimpleQuery(parseTree(buff.String())))
+		q2, _ := transmute.CompileCqr2Medline(m)
+		q3, _ := transmute.CompileCqr2Medline(ent)
+		var outputDir string
+		if QueryLogicComposeNLP {
+			outputDir += "nlp_"
+		} else {
+			outputDir += "manual_"
+		}
+		outputDir += "entity"
+		err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir, q.Topic), []byte(q2), 0644)
 		if err != nil {
 			panic(err)
 		}
-		err = ioutil.WriteFile(path.Join(queryOutputDir, "simple/", q.Topic), []byte(q1), 0644)
+		err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir+"_c2v", q.Topic), []byte(q3), 0644)
 		if err != nil {
 			panic(err)
 		}
-		err = ioutil.WriteFile(path.Join(queryOutputDir, "entity/", q.Topic), []byte(q2), 0644)
-		if err != nil {
-			panic(err)
-		}
-		err = ioutil.WriteFile(path.Join(queryOutputDir, "cui2vec_expansion/", q.Topic), []byte(q3), 0644)
-		if err != nil {
-			panic(err)
-		}
-		/*
-				p := protocols[q.Topic]
-
-				title := metaMapCandidates(q.Name)
-				fmt.Print(".")
-				//objective := metaMapCandidates(p.Objective)
-				//fmt.Print(".")
-				//indexTests := metaMapCandidates(p.IndexTests)
-				//fmt.Print(".")
-				//targetConditions := metaMapCandidates(p.TargetConditions)
-				//fmt.Print(".")
-				//referenceStandards := metaMapCandidates(p.ReferenceStandards)
-				//fmt.Print(".")
-				//typeOfStudy := metaMapCandidates(p.TypeOfStudy)
-				//fmt.Print(".")
-
-				//cuis := append(title, objective...)
-				cuis := title
-				//cuis := append(append(title, objective...), indexTests...)
-				//cuis := append(append(append(append(append(title, objective...), indexTests...), targetConditions...), referenceStandards...), typeOfStudy...)
-				var vectors [][]float64
-				var concepts []metawrap.MappingCandidate
-				for _, cui := range cuis {
-					if v, ok := uncompressedEmbeddings.Embeddings[cui.CandidateCUI]; ok {
-						vectors = append(vectors, v)
-						concepts = append(concepts, cui)
-					}
-				}
-				fmt.Print(".")
-
-				if len(vectors) == 0 {
-					continue
-				}
-
-				k := 4
-				labels, err := kmeans.Kmeans(vectors, k, kmeans.EuclideanDistance, 10)
-				if err != nil {
-					panic(err)
-				}
-				fmt.Print(".")
-
-				keywords := make(map[int][]metawrap.MappingCandidate)
-				seen := make(map[string]bool)
-				for i := 0; i < len(vectors); i++ {
-					label := labels[i]
-					concept := concepts[i]
-					term := concept.CandidatePreferred
-					if _, ok := seen[term]; !ok {
-						//score, _ := strconv.Atoi(concept.CandidateScore)
-						//if math.Abs(float64(score)) >= 100 {
-						for _, semType := range concept.SemTypes {
-							switch semType {
-							case "bird", "clas", "cnce", "enty", "evnt",
-								"fish", "fndg", "ftcn", "gora", "grpa", "grup",
-								"geoa", "idcn", "inpr", "lang", "orgt", "pros",
-								"qlco", "qnco", "resa", "resd", "rnlw", "spco",
-								"popg", "lbpr", "tmco", "clna":
-								goto skipConcept
-							}
-						}
-						keywords[label] = append(keywords[label], concept)
-						//}
-					skipConcept:
-						seen[term] = true
-					}
-				}
-				fmt.Print(".\n")
-				bq := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{})
-				atoms := make(map[int][]cqr.CommonQueryRepresentation)
-				for k, v := range keywords {
-					//fmt.Printf("  + [%d]\n", k)
-					for _, x := range v {
-						kw := queryReg.ReplaceAllString(x.CandidatePreferred, "")
-						f := fields.TitleAbstract
-						if mesh.Contains(kw) && mesh.Depth(kw) > 4 {
-							f = fields.MeSHTerms
-						} else if strings.Contains(kw, " ") {
-							kw = fmt.Sprintf(`"%s"`, kw)
-						}
-						atoms[k] = append(atoms[k], cqr.NewKeyword(kw, f).SetOption("cui", x.CandidateCUI))
-						//fmt.Printf("  | %s\n", x)
-					}
-				}
-
-
-
-		*/
 	}
+}
+
+func manualQueryLogicComposer(q pipeline.Query) (cqr.CommonQueryRepresentation, error) {
+	p := cqr.NewBooleanQuery(cqr.AND, nil)
+
+	outputPath := path.Join(dir, "manual", q.Topic)
+	if _, err := os.Stat(outputPath); err == nil {
+		b, err := ioutil.ReadFile(outputPath)
+		if err != nil {
+			return nil, err
+		}
+		s := bufio.NewScanner(bytes.NewBuffer(b))
+		for s.Scan() {
+			line := s.Text()
+			fmt.Println(line)
+			p.Children = append(p.Children, cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{cqr.NewKeyword(line, fields.TitleAbstract)}))
+		}
+		return p, nil
+	}
+	var buff string
+	fmt.Println(q.Name)
+	l, err := readline.New("> ")
+	if err != nil {
+		return nil, err
+	}
+	defer l.Close()
+
+	for {
+		line, err := l.Readline()
+		if err != nil {
+			return nil, err
+		}
+		switch line {
+		case "q":
+			goto exit
+		default:
+			buff += fmt.Sprintln(line)
+			p.Children = append(p.Children, cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{cqr.NewKeyword(line, fields.TitleAbstract)}))
+		}
+	}
+exit:
+	err = ioutil.WriteFile(outputPath, []byte(buff), 0644)
+	return p, err
+}
+
+func nlpQueryLogicComposer(q pipeline.Query) (cqr.CommonQueryRepresentation, error) {
+	// Parse title: "Query Logic Composition".
+	cmd := exec.Command("bash", "-c", fmt.Sprintf(`echo "%s" | java -cp "%s/*" edu.stanford.nlp.parser.lexparser.LexicalizedParser -retainTMPSubcategories -outputFormat "penn" %s/englishPCFG.ser.gz -`, q.Name, javaClassPath, javaClassPath))
+	r, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	err = cmd.Start()
+	if err != nil {
+		return nil, err
+	}
+	var buff bytes.Buffer
+	s := bufio.NewScanner(bufio.NewReader(r))
+	for s.Scan() {
+		_, err = buff.Write(s.Bytes())
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// The magic part.
+	p := simplify(treeToQuery(parseTree(buff.String())))
+	return p, nil
 }
 
 func evaluateQuery(e stats.EntrezStatisticsSource, q pipeline.Query, size float64, qrels trecresults.QrelsFile) map[string]float64 {
@@ -1082,7 +1049,7 @@ func loadProtocols() protocols {
 }
 
 func readAndWriteQueries() []pipeline.Query {
-	qs := query.TARTask2QuerySource{}
+	qs := query.TARTask2QueriesSource{}
 	queries, err := qs.Load(queriesDir)
 	if err != nil {
 		panic(err)
