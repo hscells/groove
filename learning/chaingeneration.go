@@ -231,20 +231,14 @@ func (e DepthFirstExplorer) Traverse(query CandidateQuery, c chan GenerationResu
 		return
 	}
 
-	if e.DepthFirstSamplingCriteria(query) {
+	if e.DepthFirstSamplingCriteria(query) && len(query.Chain) <= 5 {
 		*e.budget--
 		log.Printf("sampled query from topic %s at depth %d (budget %d/%d)\n", query.Topic, len(query.Chain), *e.budget, e.n)
 		c <- GenerationResult{CandidateQuery: query}
-	} else {
-		if len(query.Chain) == 0 {
-			*e.tries++
-			if *e.tries == e.maxTries {
-				*e.tries = 0
-				return
-			}
-			e.Traverse(query, c)
+		if len(query.Chain) == 5 {
 			return
 		}
+	} else if len(query.Chain) > 0 {
 		return
 	}
 
@@ -267,6 +261,7 @@ func (e DepthFirstExplorer) Traverse(query CandidateQuery, c chan GenerationResu
 	log.Printf("completed depth %d\n", len(query.Chain))
 	if len(query.Chain) == 0 {
 		*e.budget = e.n
+		*e.tries = 0
 		close(c)
 		return
 	}
