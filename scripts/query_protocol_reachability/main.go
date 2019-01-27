@@ -21,6 +21,7 @@ import (
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
 	"github.com/hscells/trecresults"
+	"gopkg.in/danieldk/go2vec.v1"
 	"io/ioutil"
 	"log"
 	"math"
@@ -40,21 +41,22 @@ const (
 	cui2vecUncompressedPath = "/Users/s4558151/Repositories/cui2vec/cui2vec_pretrained.csv"
 	cui2vecPretrainedPath   = "/Users/s4558151/Repositories/cui2vec/testdata/cui2vec_precomputed.bin"
 	cuisFreqPath            = "/Users/s4558151/Repositories/cui2vec/ICUI_STR_Frequency.csv"
-	qrelsPath               = "/Users/s4558151/Repositories/tar/2018-TAR/Task2/qrel_abs"
+	qrelsPath               = "/Users/s4558151/Repositories/tar/2018-TAR/Task2/qrel_abs_combined"
 	javaClassPath           = "/Users/s4558151/stanford-parser-full-2018-10-17"
 	dir                     = "/Users/s4558151/go/src/github.com/hscells/groove/scripts/query_protocol_reachability/test_data/"
 	queriesDir              = "/Users/s4558151/Repositories/tar/2018-TAR/Task2/Combined"
 	protocolsDir            = "/Users/s4558151/Repositories/tar/2018-TAR/Task1/Training/protocols"
+	word2vecLoc             = "/Users/harryscells/Downloads/PubMed-and-PMC-w2v.bin"
 	queryOutputDir          = dir + "queries/"
 	queriesBinFile          = dir + "queries.bin"
 	protocolsBinFile        = dir + "protocols.bin"
 	conceptsBinFile         = dir + "concepts.bin"
 
-	LoadQueries                = true
+	LoadQueries                = false
 	LoadProtocols              = false
 	DoStringMatchReachability  = false
 	DoConceptMatchReachability = false
-	DoQueryGeneration          = false
+	DoQueryGeneration          = true
 	DoMMScoreDistributions     = false
 )
 
@@ -63,6 +65,7 @@ var queryReg = regexp.MustCompile(`\(.*\)`)
 var mmClient = &http.Client{}
 var precomputedEmbeddings *cui2vec.PrecomputedEmbeddings
 var uncompressedEmbeddings *cui2vec.UncompressedEmbeddings
+var pubmedEmbeddings *go2vec.Embeddings
 var cuiMapping cui2vec.Mapping
 var cuiAliases cui2vec.AliasMapping
 
@@ -152,6 +155,14 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		f, err := os.OpenFile(word2vecLoc, os.O_RDONLY, 0644)
+		if err != nil {
+			panic(err)
+		}
+		pubmedEmbeddings, err = go2vec.ReadWord2VecBinary(bufio.NewReader(f), true)
+		if err != nil {
+			panic(err)
+		}
 		//fmt.Printf("! loading cuis...\n")
 		//f, err := os.OpenFile(cui2vecUncompressedPath, os.O_RDONLY, 0644)
 		//if err != nil {
@@ -162,7 +173,7 @@ func main() {
 		//	panic(err)
 		//}
 		//f.Close()
-		f, err := os.OpenFile(cui2vecPretrainedPath, os.O_RDONLY, 0644)
+		f, err = os.OpenFile(cui2vecPretrainedPath, os.O_RDONLY, 0644)
 		if err != nil {
 			panic(err)
 		}
@@ -572,11 +583,11 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 	for _, q := range queries {
 		switch q.Topic {
 		case "CD008782", "CD009593", "CD009925", "CD010386", "CD010632", "CD010705", "CD011975", "CD011984", "CD012216", "CD012599":
+			continue
+		default:
 			q.Name = strings.Replace(q.Name, "®", "", -1)
 			q.Name = strings.Replace(q.Name, "’", "", -1)
 			q.Name = strings.Replace(q.Name, "'", "", -1)
-		default:
-			continue
 		}
 		//if q.Topic != "CD009519" {
 		//	continue
@@ -692,15 +703,15 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 				seen[strings.ToLower(c.CandidateMatched)] = true
 			}
 		}
-		s1, _ := transmute.CompileCqr2Medline(simple)
-		err = os.MkdirAll(path.Join(queryOutputDir, "simple"), 0777)
-		if err != nil {
-			panic(err)
-		}
-		err = ioutil.WriteFile(path.Join(queryOutputDir, "simple", q.Topic), []byte(s1), 0644)
-		if err != nil {
-			panic(err)
-		}
+		//s1, _ := transmute.CompileCqr2Medline(simple)
+		//err = os.MkdirAll(path.Join(queryOutputDir, "simple"), 0777)
+		//if err != nil {
+		//	panic(err)
+		//}
+		//err = ioutil.WriteFile(path.Join(queryOutputDir, "simple", q.Topic), []byte(s1), 0644)
+		//if err != nil {
+		//	panic(err)
+		//}
 
 		psr := pseudoRelevanceFeedbackExpansion(simple, rels.Qrels[q.Topic])
 
@@ -730,27 +741,27 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 				// Create the 'Match' query.
 				outputDir1 := outputDir0 + mappingMethod
 				m := mapQuery(p, j)
-				q1, _ := transmute.CompileCqr2Medline(m)
-				err = os.MkdirAll(path.Join(queryOutputDir, outputDir1), 0777)
-				if err != nil {
-					panic(err)
-				}
-				err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir1, q.Topic), []byte(q1), 0644)
-				if err != nil {
-					panic(err)
-				}
+				//q1, _ := transmute.CompileCqr2Medline(m)
+				//err = os.MkdirAll(path.Join(queryOutputDir, outputDir1), 0777)
+				//if err != nil {
+				//	panic(err)
+				//}
+				//err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir1, q.Topic), []byte(q1), 0644)
+				//if err != nil {
+				//	panic(err)
+				//}
 
 				// Stem the 'Match' query.
-				qS, _ := transmute.CompileCqr2Medline(stemQuery(m, stemDict))
-				err = os.MkdirAll(path.Join(queryOutputDir, outputDir1+"_stem"), 0777)
-				if err != nil {
-					panic(err)
-				}
-				err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir1+"_stem", q.Topic), []byte(qS), 0644)
-				if err != nil {
-					panic(err)
-				}
-				log.Println(outputDir1 + "_stem")
+				//qS, _ := transmute.CompileCqr2Medline(stemQuery(m, stemDict))
+				//err = os.MkdirAll(path.Join(queryOutputDir, outputDir1+"_stem"), 0777)
+				//if err != nil {
+				//	panic(err)
+				//}
+				//err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir1+"_stem", q.Topic), []byte(qS), 0644)
+				//if err != nil {
+				//	panic(err)
+				//}
+				//log.Println(outputDir1 + "_stem")
 
 				rct10 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{m, seed.SensitivityFilter})
 				rct11 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{m, seed.PrecisionSensitivityFilter})
@@ -762,16 +773,26 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 					case 1:
 						outputDir3 = "rctp_" + outputDir1
 					}
-					q3, _ := transmute.CompileCqr2Medline(rct)
-					err = os.MkdirAll(path.Join(queryOutputDir, outputDir3), 0777)
+					//q3, _ := transmute.CompileCqr2Medline(rct)
+					//err = os.MkdirAll(path.Join(queryOutputDir, outputDir3), 0777)
+					//if err != nil {
+					//	panic(err)
+					//}
+					//err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir3, q.Topic), []byte(q3), 0644)
+					//if err != nil {
+					//	panic(err)
+					//}
+
+					qS, _ := transmute.CompileCqr2Medline(stemQuery(rct, stemDict))
+					err = os.MkdirAll(path.Join(queryOutputDir, outputDir3+"_stem"), 0777)
 					if err != nil {
 						panic(err)
 					}
-					err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir3, q.Topic), []byte(q3), 0644)
+					err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir3+"_stem", q.Topic), []byte(qS), 0644)
 					if err != nil {
 						panic(err)
 					}
-					log.Println(outputDir3)
+					log.Println(outputDir3 + "_stem")
 				}
 
 				log.Println(outputDir1)
@@ -787,28 +808,28 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 					case 2:
 						exp = cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{m, psr})
 					}
-					q2, _ := transmute.CompileCqr2Medline(exp)
-					err = os.MkdirAll(path.Join(queryOutputDir, outputDir2), 0777)
-					if err != nil {
-						panic(err)
-					}
-					err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir2, q.Topic), []byte(q2), 0664)
-					if err != nil {
-						panic(err)
-					}
-					log.Println(outputDir2)
+					//q2, _ := transmute.CompileCqr2Medline(exp)
+					//err = os.MkdirAll(path.Join(queryOutputDir, outputDir2), 0777)
+					//if err != nil {
+					//	panic(err)
+					//}
+					//err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir2, q.Topic), []byte(q2), 0664)
+					//if err != nil {
+					//	panic(err)
+					//}
+					//log.Println(outputDir2)
 
 					// Stem the expanded query.
-					qS, _ := transmute.CompileCqr2Medline(stemQuery(m, stemDict))
-					err = os.MkdirAll(path.Join(queryOutputDir, outputDir1+"_stem"), 0777)
-					if err != nil {
-						panic(err)
-					}
-					err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir1+"_stem", q.Topic), []byte(qS), 0644)
-					if err != nil {
-						panic(err)
-					}
-					log.Println(outputDir2 + "_stem")
+					//qS, _ := transmute.CompileCqr2Medline(stemQuery(m, stemDict))
+					//err = os.MkdirAll(path.Join(queryOutputDir, outputDir1+"_stem"), 0777)
+					//if err != nil {
+					//	panic(err)
+					//}
+					//err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir1+"_stem", q.Topic), []byte(qS), 0644)
+					//if err != nil {
+					//	panic(err)
+					//}
+					//log.Println(outputDir2 + "_stem")
 
 					rct20 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{exp, seed.SensitivityFilter})
 					rct21 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{exp, seed.PrecisionSensitivityFilter})
@@ -821,16 +842,28 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 						case 1:
 							outputDir3 = "rctp_" + outputDir2
 						}
-						q3, _ := transmute.CompileCqr2Medline(rct)
-						err = os.MkdirAll(path.Join(queryOutputDir, outputDir3), 0777)
+						//q3, _ := transmute.CompileCqr2Medline(rct)
+						//err = os.MkdirAll(path.Join(queryOutputDir, outputDir3), 0777)
+						//if err != nil {
+						//	panic(err)
+						//}
+						//err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir3, q.Topic), []byte(q3), 0664)
+						//if err != nil {
+						//	panic(err)
+						//}
+						//log.Println(outputDir3)
+
+						qS, _ := transmute.CompileCqr2Medline(stemQuery(rct, stemDict))
+						err = os.MkdirAll(path.Join(queryOutputDir, outputDir3+"_stem"), 0777)
 						if err != nil {
 							panic(err)
 						}
-						err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir3, q.Topic), []byte(q3), 0664)
+						err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir3+"_stem", q.Topic), []byte(qS), 0644)
 						if err != nil {
 							panic(err)
 						}
-						log.Println(outputDir3)
+						log.Println(outputDir3 + "_stem")
+
 					}
 				}
 			}
@@ -1418,26 +1451,26 @@ func readAndWriteQueries() []pipeline.Query {
 	if err != nil {
 		panic(err)
 	}
-	for _, q := range queries {
-		q1, _ := transmute.CompileCqr2Medline(q.Query)
-		err = os.MkdirAll(path.Join(queryOutputDir, "original"), 0777)
-		if err != nil {
-			panic(err)
-		}
-		err = ioutil.WriteFile(path.Join(queryOutputDir, "original", q.Topic), []byte(q1), 0644)
-		if err != nil {
-			panic(err)
-		}
-		q2, _ := transmute.CompileCqr2Medline(simplifyOriginal(q.Query))
-		err = os.MkdirAll(path.Join(queryOutputDir, "original_simplified"), 0777)
-		if err != nil {
-			panic(err)
-		}
-		err = ioutil.WriteFile(path.Join(queryOutputDir, "original_simplified", q.Topic), []byte(q2), 0644)
-		if err != nil {
-			panic(err)
-		}
-	}
+	//for _, q := range queries {
+	//	//q1, _ := transmute.CompileCqr2Medline(q.Query)
+	//	//err = os.MkdirAll(path.Join(queryOutputDir, "original"), 0777)
+	//	//if err != nil {
+	//	//	panic(err)
+	//	//}
+	//	//err = ioutil.WriteFile(path.Join(queryOutputDir, "original", q.Topic), []byte(q1), 0644)
+	//	//if err != nil {
+	//	//	panic(err)
+	//	//}
+	//	//q2, _ := transmute.CompileCqr2Medline(simplifyOriginal(q.Query))
+	//	//err = os.MkdirAll(path.Join(queryOutputDir, "original_simplified"), 0777)
+	//	//if err != nil {
+	//	//	panic(err)
+	//	//}
+	//	//err = ioutil.WriteFile(path.Join(queryOutputDir, "original_simplified", q.Topic), []byte(q2), 0644)
+	//	//if err != nil {
+	//	//	panic(err)
+	//	//}
+	//}
 	f, err := os.OpenFile(queriesBinFile, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		panic(err)
