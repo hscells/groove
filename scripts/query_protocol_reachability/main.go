@@ -21,8 +21,8 @@ import (
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
 	"github.com/hscells/trecresults"
+	"gopkg.in/danieldk/go2vec.v1"
 	"io/ioutil"
-	"log"
 	"math"
 	"net/http"
 	"os"
@@ -45,6 +45,7 @@ const (
 	dir                     = "/Users/s4558151/go/src/github.com/hscells/groove/scripts/query_protocol_reachability/test_data/"
 	queriesDir              = "/Users/s4558151/Repositories/tar/2018-TAR/Task2/Combined"
 	protocolsDir            = "/Users/s4558151/Repositories/tar/2018-TAR/Task1/Training/protocols"
+	word2vecLoc             = "/Users/harryscells/Downloads/word2vec.bin"
 	queryOutputDir          = dir + "queries/"
 	queriesBinFile          = dir + "queries.bin"
 	protocolsBinFile        = dir + "protocols.bin"
@@ -63,6 +64,7 @@ var queryReg = regexp.MustCompile(`\(.*\)`)
 var mmClient = &http.Client{}
 var precomputedEmbeddings *cui2vec.PrecomputedEmbeddings
 var uncompressedEmbeddings *cui2vec.UncompressedEmbeddings
+var pubmedEmbeddings *go2vec.Embeddings
 var cuiMapping cui2vec.Mapping
 var cuiAliases cui2vec.AliasMapping
 
@@ -152,6 +154,14 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		f, err := os.OpenFile(word2vecLoc, os.O_RDONLY, 0644)
+		if err != nil {
+			panic(err)
+		}
+		pubmedEmbeddings, err = go2vec.ReadWord2VecBinary(bufio.NewReader(f), true)
+		if err != nil {
+			panic(err)
+		}
 		//fmt.Printf("! loading cuis...\n")
 		//f, err := os.OpenFile(cui2vecUncompressedPath, os.O_RDONLY, 0644)
 		//if err != nil {
@@ -162,7 +172,7 @@ func main() {
 		//	panic(err)
 		//}
 		//f.Close()
-		f, err := os.OpenFile(cui2vecPretrainedPath, os.O_RDONLY, 0644)
+		f, err = os.OpenFile(cui2vecPretrainedPath, os.O_RDONLY, 0644)
 		if err != nil {
 			panic(err)
 		}
@@ -318,7 +328,50 @@ func simplify(r cqr.CommonQueryRepresentation) cqr.CommonQueryRepresentation {
 	return nil
 }
 
-func cui2vecExpansion(query cqr.CommonQueryRepresentation) cqr.CommonQueryRepresentation {
+func cui2vecExpansion(query cqr.CommonQueryRepresentation, kind int) cqr.CommonQueryRepresentation {
+	switch q := query.(type) {
+	case cqr.Keyword:
+		bq := cqr.NewBooleanQuery(cqr.OR, nil)
+		cui := q.GetOption("cui").(string)
+		concepts, err := precomputedEmbeddings.Similar(cui)
+		if err != nil {
+			panic(err)
+		}
+		for _, concept := range concepts {
+			if kind == 0 {
+				//map using UMLS
+				matched = strings.ToLower(c.CandidateMatched)
+			} else if kind == 1 {
+				//map using UMLS
+				matched = strings.ToLower(c.CandidatePreferred)
+			} else if kind == 2 {
+				if v, ok := cuiMapping[concept.CUI]; ok {
+					matched := strings.ToLower(v)
+					if strings.Contains(matched, "year") || strings.ContainsAny(v, "()[].^*+/<>") {
+						continue
+					}
+					bq.Children = append(bq.Children, cqr.NewKeyword(v, fields.TitleAbstract))
+				}
+			} else {
+				bq.Children = append(bq.Children, aliasExpansion(q))
+			}
+		}
+		if len(bq.Children) == 0 {
+			return q
+		}
+		bq.Children = append(bq.Children, q)
+		return bq
+	case cqr.BooleanQuery:
+		bq := cqr.NewBooleanQuery(q.Operator, nil)
+		for _, child := range q.Children {
+			bq.Children = append(bq.Children, cui2vecExpansion(child))
+		}
+		return bq
+	}
+	return nil
+}
+
+func word2vecExpansion(query cqr.CommonQueryRepresentation) cqr.CommonQueryRepresentation {
 	switch q := query.(type) {
 	case cqr.Keyword:
 		bq := cqr.NewBooleanQuery(cqr.OR, nil)
@@ -613,7 +666,7 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 						matched = strings.ToLower(c.CandidateMatched)
 					} else if kind == 1 {
 						matched = strings.ToLower(c.CandidatePreferred)
-					} else {
+					} else if kind == 2 {
 						if v, ok := cuiMapping[c.CandidateCUI]; ok {
 							matched = strings.ToLower(v)
 							if strings.Contains(matched, "year") || strings.ContainsAny(v, "()[].^*+/<>") {
@@ -622,6 +675,8 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 						} else {
 							matched = strings.ToLower(c.CandidateMatched)
 						}
+					} else {
+						return aliasExpansion(q)
 					}
 					if _, ok := seen[matched]; !ok {
 						for _, semtype := range c.SemTypes {
@@ -702,12 +757,18 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 			panic(err)
 		}
 
-		psr := pseudoRelevanceFeedbackExpansion(simple, rels.Qrels[q.Topic])
-
 		//q1, _ := transmute.CompileCqr2PubMed(treeToSimpleQuery(parseTree(buff.String())))
 		//q0, _ := transmute.CompileCqr2PubMed(q.Query)
 		//r0 := evaluateQuery(e, pipeline.NewQuery(q.Name, q.Topic, treeToSimpleQuery(parseTree(buff.String()))), size, qrels)
 		//r0 := evaluateQuery(e, q, size, qrels)
+
+		type fquery struct {
+			query  cqr.CommonQueryRepresentation
+			output string
+		}
+
+		var queries []fquery
+		// Entity mapping.
 		for i, logicMethod := range []string{"nlp_", "manual_"} {
 			outputDir0 := logicMethod
 			var p cqr.CommonQueryRepresentation
@@ -726,112 +787,56 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 				}
 			}
 			fmt.Sprintln(outputDir0, p, rels)
-			for j, mappingMethod := range []string{"match", "preferred", "frequency"} {
+			//
+			for j, mappingMethod := range []string{"match", "preferred", "frequency", "alias"} {
 				// Create the 'Match' query.
 				outputDir1 := outputDir0 + mappingMethod
 				m := mapQuery(p, j)
-				q1, _ := transmute.CompileCqr2Medline(m)
-				err = os.MkdirAll(path.Join(queryOutputDir, outputDir1), 0777)
-				if err != nil {
-					panic(err)
-				}
-				err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir1, q.Topic), []byte(q1), 0644)
-				if err != nil {
-					panic(err)
-				}
+				queries = append(queries, fquery{query: m, output: outputDir1})
 
-				// Stem the 'Match' query.
-				qS, _ := transmute.CompileCqr2Medline(stemQuery(m, stemDict))
-				err = os.MkdirAll(path.Join(queryOutputDir, outputDir1+"_stem"), 0777)
-				if err != nil {
-					panic(err)
-				}
-				err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir1+"_stem", q.Topic), []byte(qS), 0644)
-				if err != nil {
-					panic(err)
-				}
-				log.Println(outputDir1 + "_stem")
-
-				rct10 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{m, seed.SensitivityFilter})
-				rct11 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{m, seed.PrecisionSensitivityFilter})
-				for l, rct := range []cqr.CommonQueryRepresentation{rct10, rct11} {
-					var outputDir3 string
-					switch l {
-					case 0:
-						outputDir3 = "rcts_" + outputDir1
-					case 1:
-						outputDir3 = "rctp_" + outputDir1
-					}
-					q3, _ := transmute.CompileCqr2Medline(rct)
-					err = os.MkdirAll(path.Join(queryOutputDir, outputDir3), 0777)
-					if err != nil {
-						panic(err)
-					}
-					err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir3, q.Topic), []byte(q3), 0644)
-					if err != nil {
-						panic(err)
-					}
-					log.Println(outputDir3)
-				}
-
-				log.Println(outputDir1)
-				for k, expansionMethod := range []string{"_c2v", "_alias", "_psr"} {
+				for k, expansionMethod := range []string{"_c2v", "_psr"} {
 					// Expand the 'Match' query.
 					outputDir2 := outputDir1 + expansionMethod
 					var exp cqr.CommonQueryRepresentation
 					switch k {
 					case 0:
-						exp = cui2vecExpansion(m)
-					case 1:
-						exp = aliasExpansion(m)
+						exp = cui2vecExpansion(m, j)
 					case 2:
-						exp = cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{m, psr})
+						exp := pseudoRelevanceFeedbackExpansion(simple, rels.Qrels[q.Topic], j)
 					}
-					q2, _ := transmute.CompileCqr2Medline(exp)
-					err = os.MkdirAll(path.Join(queryOutputDir, outputDir2), 0777)
-					if err != nil {
-						panic(err)
-					}
-					err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir2, q.Topic), []byte(q2), 0664)
-					if err != nil {
-						panic(err)
-					}
-					log.Println(outputDir2)
+					queries = append(queries, fquery{query: exp, output: outputDir2})
+				}
+			}
 
-					// Stem the expanded query.
-					qS, _ := transmute.CompileCqr2Medline(stemQuery(m, stemDict))
-					err = os.MkdirAll(path.Join(queryOutputDir, outputDir1+"_stem"), 0777)
-					if err != nil {
-						panic(err)
-					}
-					err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir1+"_stem", q.Topic), []byte(qS), 0644)
-					if err != nil {
-						panic(err)
-					}
-					log.Println(outputDir2 + "_stem")
+			var squeries []fquery
+			for _, f := range queries {
+				rct20 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{f.query, seed.SensitivityFilter})
+				rct21 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{f.query, seed.PrecisionSensitivityFilter})
 
-					rct20 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{exp, seed.SensitivityFilter})
-					rct21 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{exp, seed.PrecisionSensitivityFilter})
-
-					for l, rct := range []cqr.CommonQueryRepresentation{rct20, rct21} {
-						var outputDir3 string
-						switch l {
-						case 0:
-							outputDir3 = "rcts_" + outputDir2
-						case 1:
-							outputDir3 = "rctp_" + outputDir2
-						}
-						q3, _ := transmute.CompileCqr2Medline(rct)
-						err = os.MkdirAll(path.Join(queryOutputDir, outputDir3), 0777)
-						if err != nil {
-							panic(err)
-						}
-						err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir3, q.Topic), []byte(q3), 0664)
-						if err != nil {
-							panic(err)
-						}
-						log.Println(outputDir3)
+				for l, rct := range []cqr.CommonQueryRepresentation{rct20, rct21} {
+					var outputDir3 string
+					switch l {
+					case 0:
+						outputDir3 = "rcts_" + f.output
+					case 1:
+						outputDir3 = "rctp_" + f.output
 					}
+					squeries = append(squeries, fquery{query: rct, output: outputDir3})
+				}
+
+				squeries = append(squeries, fquery{query: stemQuery(f.query, stemDict), output: "stem_" + f.output})
+			}
+
+			queries = append(queries, squeries...)
+			for _, s := range queries {
+				tq, _ := transmute.CompileCqr2Medline(s.query)
+				err = os.MkdirAll(path.Join(queryOutputDir, s.output), 0777)
+				if err != nil {
+					panic(err)
+				}
+				err = ioutil.WriteFile(path.Join(queryOutputDir, s.output, q.Topic), []byte(tq), 0644)
+				if err != nil {
+					panic(err)
 				}
 			}
 		}
@@ -1413,7 +1418,7 @@ func simplifyOriginal(query cqr.CommonQueryRepresentation) cqr.CommonQueryRepres
 }
 
 func readAndWriteQueries() []pipeline.Query {
-	qs := query.TARTask2QueriesSource{}
+	qs := query.TARTask2QuerySource{}
 	queries, err := qs.Load(queriesDir)
 	if err != nil {
 		panic(err)
