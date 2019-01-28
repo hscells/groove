@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"github.com/biogo/ncbi/entrez"
 	"github.com/chzyer/readline"
 	"github.com/hscells/cqr"
 	"github.com/hscells/cui2vec"
@@ -21,9 +20,8 @@ import (
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
 	"github.com/hscells/trecresults"
-	"gopkg.in/danieldk/go2vec.v1"
+	"github.com/yizha/go/w2v"
 	"io/ioutil"
-	"log"
 	"math"
 	"net/http"
 	"os"
@@ -34,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 )
 
@@ -46,17 +45,20 @@ const (
 	dir                     = "/Users/s4558151/go/src/github.com/hscells/groove/scripts/query_protocol_reachability/test_data/"
 	queriesDir              = "/Users/s4558151/Repositories/tar/2018-TAR/Task2/Combined"
 	protocolsDir            = "/Users/s4558151/Repositories/tar/2018-TAR/Task1/Training/protocols"
-	word2vecLoc             = "/Users/harryscells/Downloads/PubMed-and-PMC-w2v.bin"
-	queryOutputDir          = dir + "queries/"
-	queriesBinFile          = dir + "queries.bin"
-	protocolsBinFile        = dir + "protocols.bin"
-	conceptsBinFile         = dir + "concepts.bin"
+	word2vecLoc             = "/Users/s4558151/Downloads/PubMed-and-PMC-w2v.bin"
+	pubDatesFile            = "/Users/s4558151/Repositories/tar/2018-TAR/Task1/Testing/pubdates.txt"
+
+	queryOutputDir   = dir + "queries/"
+	queriesBinFile   = dir + "queries.bin"
+	protocolsBinFile = dir + "protocols.bin"
+	conceptsBinFile  = dir + "concepts.bin"
 
 	LoadQueries                = false
 	LoadProtocols              = false
 	DoStringMatchReachability  = false
 	DoConceptMatchReachability = false
-	DoQueryGeneration          = true
+	DoQueryGeneration          = false
+	DoQueryDateRestrictions    = true
 	DoMMScoreDistributions     = false
 )
 
@@ -65,9 +67,10 @@ var queryReg = regexp.MustCompile(`\(.*\)`)
 var mmClient = &http.Client{}
 var precomputedEmbeddings *cui2vec.PrecomputedEmbeddings
 var uncompressedEmbeddings *cui2vec.UncompressedEmbeddings
-var pubmedEmbeddings *go2vec.Embeddings
+var pubmedEmbeddings *w2v.Model
 var cuiMapping cui2vec.Mapping
 var cuiAliases cui2vec.AliasMapping
+var ticketGrantingTicket string
 
 // protocol is a representation of a systematic review protocol in XML.
 type protocol struct {
@@ -155,14 +158,44 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		f, err := os.OpenFile(word2vecLoc, os.O_RDONLY, 0644)
+
+		fmt.Println("getting umls ticket")
+		resp, err := mmClient.Post("https://utslogin.nlm.nih.gov/cas/v1/tickets", "application/x-www-form-urlencoded", bytes.NewBufferString(fmt.Sprintf("username=%s&password=%s", "ielabqut", "ielab@QUT")))
 		if err != nil {
 			panic(err)
 		}
-		pubmedEmbeddings, err = go2vec.ReadWord2VecBinary(bufio.NewReader(f), true)
+		b, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			panic(err)
 		}
+		re := regexp.MustCompile(`action=".*(?P<Ticket>TGT-.*-cas)"`)
+		ticketGrantingTicket = re.FindStringSubmatch(string(b))[1]
+		fmt.Println(ticketGrantingTicket)
+		//
+		//fmt.Println(matchUMLSConcept("C0009044"))
+
+		//fmt.Println("loading w2v model")
+		//pubmedEmbeddings, err = w2v.FromReader(f)
+		//if err != nil {
+		//	panic(err)
+		//}
+
+		//f, err = os.OpenFile("w2v.terms", os.O_WRONLY|os.O_CREATE, 0644)
+		//if err != nil {
+		//	panic(err)
+		//}
+		//fmt.Println(pubmedEmbeddings.GetVectorByWord("cancer"))
+		//fmt.Println(pubmedEmbeddings.GetVectorByWord("neoplasm"))
+		//fmt.Println(pubmedEmbeddings.GetVectorByWord("neoplasms"))
+		//fmt.Println(pubmedEmbeddings.GetVectorByWord("paracetamol"))
+		//fmt.Println(pubmedEmbeddings.GetVectorByWord("hypertension"))
+		//for w := range pubmedEmbeddings.Word2id {
+		//	_, err = f.WriteString(fmt.Sprintf("%s", w))
+		//	if err != nil {
+		//		panic(err)
+		//	}
+		//}
+
 		//fmt.Printf("! loading cuis...\n")
 		//f, err := os.OpenFile(cui2vecUncompressedPath, os.O_RDONLY, 0644)
 		//if err != nil {
@@ -173,7 +206,7 @@ func main() {
 		//	panic(err)
 		//}
 		//f.Close()
-		f, err = os.OpenFile(cui2vecPretrainedPath, os.O_RDONLY, 0644)
+		f, err := os.OpenFile(cui2vecPretrainedPath, os.O_RDONLY, 0644)
 		if err != nil {
 			panic(err)
 		}
@@ -186,9 +219,125 @@ func main() {
 		generateQueries(queries, protocols, notFound)
 	}
 
+	if DoQueryDateRestrictions {
+		queryDateRestrictions()
+	}
+
 	if DoMMScoreDistributions {
 		mmScoreDistributions(queries, protocols, notFound)
 	}
+}
+
+func queryDateRestrictions() {
+	f, err := os.OpenFile(pubDatesFile, os.O_RDONLY, 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	type restriction struct {
+		topic string
+		start time.Time
+		end   time.Time
+	}
+	var restrictions []restriction
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		line := strings.Split(s.Text(), "\t")
+		topic, start, end := line[0], line[1], line[2]
+		s, err := time.Parse("20060102", start)
+		if err != nil {
+			panic(err)
+		}
+		e, err := time.Parse("20060102", end)
+		if err != nil {
+			panic(err)
+		}
+		restrictions = append(restrictions, restriction{
+			topic: topic,
+			start: s,
+			end:   e,
+		})
+		fmt.Println(s, e)
+	}
+
+	// First, get a list of files in the directory.
+	files, err := ioutil.ReadDir(queryOutputDir)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, dir := range files {
+		if !dir.IsDir() {
+			continue
+		}
+		fmt.Println(dir.Name())
+		qs := query.NewTransmuteQuerySource(query.MedlineTransmutePipeline)
+		queries, err := qs.Load(path.Join(queryOutputDir, dir.Name()))
+		if err != nil {
+			panic(err)
+		}
+		for _, q := range queries {
+			for _, r := range restrictions {
+				if r.topic == q.Topic {
+					bq := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{
+						q.Query,
+						cqr.NewKeyword(fmt.Sprintf("%s:%s", r.start.Format("2006/01"), r.end.Format("2006/01")), fields.PublicationDate),
+					})
+
+					fmt.Println(q.Topic)
+					t, _ := transmute.CompileCqr2Medline(bq)
+					fmt.Println(t)
+					err := ioutil.WriteFile(path.Join(queryOutputDir, dir.Name(), q.Topic), []byte(t), 0644)
+					if err != nil {
+						panic(err)
+					}
+					break
+				}
+			}
+		}
+	}
+}
+
+func matchUMLSConcept(cui string) (string, error) {
+	fmt.Println(ticketGrantingTicket)
+	// Request service ticket.
+	resp, err := mmClient.Post(fmt.Sprintf("https://utslogin.nlm.nih.gov/cas/v1/tickets/%s", ticketGrantingTicket), "application/x-www-form-urlencoded", bytes.NewBufferString(fmt.Sprintf("service=%s", "http://umlsks.nlm.nih.gov")))
+	if err != nil {
+		return "", err
+	}
+	fmt.Println(resp.StatusCode, resp.Status)
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+		return "", err
+	}
+
+	ticket := string(b)
+	fmt.Println(ticket)
+	resp, err = mmClient.Get(fmt.Sprintf("https://uts-ws.nlm.nih.gov/rest/content/current/CUI/%s/atoms/preferred?ticket=%s", cui, ticket))
+	if err != nil {
+		panic(err)
+		return "", err
+	}
+
+	b, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(err)
+		return "", err
+	}
+
+	var r map[string]interface{}
+	err = json.Unmarshal(b, &r)
+	if err != nil {
+		fmt.Println(err)
+		return "", err
+	}
+
+	fmt.Println(resp.StatusCode, resp.Status)
+	s := r["result"].(map[string]interface{})["name"].(string)
+	fmt.Println(cui, "->", s)
+	return s, nil
 }
 
 type ast struct {
@@ -329,7 +478,7 @@ func simplify(r cqr.CommonQueryRepresentation) cqr.CommonQueryRepresentation {
 	return nil
 }
 
-func cui2vecExpansion(query cqr.CommonQueryRepresentation) cqr.CommonQueryRepresentation {
+func cui2vecExpansion(query cqr.CommonQueryRepresentation, kind int) cqr.CommonQueryRepresentation {
 	switch q := query.(type) {
 	case cqr.Keyword:
 		bq := cqr.NewBooleanQuery(cqr.OR, nil)
@@ -339,14 +488,33 @@ func cui2vecExpansion(query cqr.CommonQueryRepresentation) cqr.CommonQueryRepres
 			panic(err)
 		}
 		for _, concept := range concepts {
-			if v, ok := cuiMapping[concept.CUI]; ok {
-				if strings.Contains(v, "year") || strings.ContainsAny(v, "()[].^*+/") {
+			if kind == 0 {
+				//map using UMLS
+				//matched = strings.ToLower(c.CandidateMatched)
+				fmt.Println("match: NOT ALLOWED")
+			} else if kind == 1 {
+				fmt.Println(concept.CUI)
+				v, err := matchUMLSConcept(concept.CUI)
+				if err != nil {
 					continue
 				}
-				if len(v) == 0 {
-					continue
+				fmt.Println("preferred:", v)
+				bq.Children = append(bq.Children, cqr.NewKeyword(fmt.Sprintf(`"%s"`, v), fields.TitleAbstract))
+			} else if kind == 2 {
+				if v, ok := cuiMapping[concept.CUI]; ok {
+					matched := strings.ToLower(v)
+					if strings.Contains(matched, "year") || strings.ContainsAny(v, "()[].^*+/<>") {
+						continue
+					}
+					if len(v) == 0 {
+						continue
+					}
+					fmt.Println("frequency:", v)
+					bq.Children = append(bq.Children, cqr.NewKeyword(fmt.Sprintf(`"%s"`, v), fields.TitleAbstract))
 				}
-				bq.Children = append(bq.Children, cqr.NewKeyword(v, fields.TitleAbstract))
+			} else {
+				fmt.Println("alias: yeah...")
+				return aliasExpansion(q, make(map[string]bool))
 			}
 		}
 		if len(bq.Children) == 0 {
@@ -357,19 +525,18 @@ func cui2vecExpansion(query cqr.CommonQueryRepresentation) cqr.CommonQueryRepres
 	case cqr.BooleanQuery:
 		bq := cqr.NewBooleanQuery(q.Operator, nil)
 		for _, child := range q.Children {
-			bq.Children = append(bq.Children, cui2vecExpansion(child))
+			bq.Children = append(bq.Children, cui2vecExpansion(child, kind))
 		}
 		return bq
 	}
 	return nil
 }
 
-func aliasExpansion(query cqr.CommonQueryRepresentation) cqr.CommonQueryRepresentation {
+func aliasExpansion(query cqr.CommonQueryRepresentation, seen map[string]bool) cqr.CommonQueryRepresentation {
 	switch q := query.(type) {
 	case cqr.Keyword:
 		bq := cqr.NewBooleanQuery(cqr.OR, nil)
 		cui := q.GetOption("cui").(string)
-		seen := make(map[string]bool)
 		seen[q.QueryString] = true
 		if aliases, ok := cuiAliases[cui]; ok {
 			for _, alias := range aliases {
@@ -378,7 +545,7 @@ func aliasExpansion(query cqr.CommonQueryRepresentation) cqr.CommonQueryRepresen
 				}
 				a := strings.ToLower(alias)
 				if _, ok := seen[a]; !ok {
-					bq.Children = append(bq.Children, cqr.NewKeyword(strings.ToLower(a), fields.TitleAbstract))
+					bq.Children = append(bq.Children, cqr.NewKeyword(fmt.Sprintf(`"%s"`, strings.ToLower(a)), fields.TitleAbstract))
 					seen[a] = true
 				}
 			}
@@ -391,15 +558,14 @@ func aliasExpansion(query cqr.CommonQueryRepresentation) cqr.CommonQueryRepresen
 	case cqr.BooleanQuery:
 		bq := cqr.NewBooleanQuery(q.Operator, nil)
 		for _, child := range q.Children {
-			bq.Children = append(bq.Children, aliasExpansion(child))
+			bq.Children = append(bq.Children, aliasExpansion(child, seen))
 		}
 		return bq
 	}
 	return nil
 }
 
-func stemQuery(query cqr.CommonQueryRepresentation, d map[string]bool) cqr.CommonQueryRepresentation {
-	seen := make(map[string]bool)
+func stemQuery(query cqr.CommonQueryRepresentation, d map[string]bool, seen map[string]bool) cqr.CommonQueryRepresentation {
 	switch q := query.(type) {
 	case cqr.Keyword:
 		for k := range d {
@@ -418,7 +584,7 @@ func stemQuery(query cqr.CommonQueryRepresentation, d map[string]bool) cqr.Commo
 	case cqr.BooleanQuery:
 		var c []cqr.CommonQueryRepresentation
 		for _, child := range q.Children {
-			s := stemQuery(child, d)
+			s := stemQuery(child, d, seen)
 			if s != nil {
 				c = append(c, s)
 			}
@@ -434,7 +600,7 @@ func tfidf(tf, df, N float64) float64 {
 	return tf * math.Log(N/df)
 }
 
-func pseudoRelevanceFeedbackExpansion(query cqr.CommonQueryRepresentation, qrels trecresults.Qrels) cqr.CommonQueryRepresentation {
+func pseudoRelevanceFeedbackExpansion(query cqr.CommonQueryRepresentation, qrels trecresults.Qrels, kind int) cqr.CommonQueryRepresentation {
 	e, err := stats.NewEntrezStatisticsSource(
 		stats.EntrezAPIKey("22a11de46af145ce59bb288e0ede66721f09"),
 		stats.EntrezEmail("harryscells@gmail.com"),
@@ -444,47 +610,39 @@ func pseudoRelevanceFeedbackExpansion(query cqr.CommonQueryRepresentation, qrels
 		panic(err)
 	}
 
-	tq, err := transmute.CompileCqr2PubMed(query)
-	if err != nil {
-		panic(err)
-	}
-search:
-	ids, err := e.Search(tq, func(p *entrez.Parameters) {
-		p.Sort = "relevance"
-	})
-	if err != nil {
-		fmt.Println(err)
-		goto search
-	}
+	//tq, err := transmute.CompileCqr2PubMed(query)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//search:
+	//ids, err := e.Search(tq, func(p *entrez.Parameters) {
+	//	p.Sort = "relevance"
+	//})
+	//if err != nil {
+	//	fmt.Println(err)
+	//	goto search
+	//}
 	var relevant []int
-	for _, id := range ids {
-		if len(relevant) == 3 {
+	//for _, id := range ids {
+	//	if len(relevant) == 3 {
+	//		break
+	//	}
+	//	if v, ok := qrels[strconv.Itoa(id)]; ok {
+	//		if v.Score > 0 {
+	//			relevant = append(relevant, id)
+	//		}
+	//	}
+	//}
+	for _, q := range qrels {
+		if len(relevant) >= 3 {
 			break
 		}
-		if v, ok := qrels[strconv.Itoa(id)]; ok {
-			if v.Score > 0 {
-				relevant = append(relevant, id)
+		if q.Score > 0 {
+			v, err := strconv.Atoi(q.DocId)
+			if err != nil {
+				panic(err)
 			}
-		}
-	}
-	if len(relevant) == 0 {
-		if len(ids) < 3 {
-			for _, v := range ids[:len(ids)-1] {
-				relevant = append(relevant, v)
-			}
-		} else {
-			for _, q := range qrels {
-				if len(relevant) >= 3 {
-					break
-				}
-				if q.Score > 0 {
-					v, err := strconv.Atoi(q.DocId)
-					if err != nil {
-						panic(err)
-					}
-					relevant = append(relevant, v)
-				}
-			}
+			relevant = append(relevant, v)
 		}
 	}
 fetch:
@@ -624,11 +782,22 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 						matched = strings.ToLower(c.CandidateMatched)
 					} else if kind == 1 {
 						matched = strings.ToLower(c.CandidatePreferred)
-					} else {
+					} else if kind == 2 {
 						if v, ok := cuiMapping[c.CandidateCUI]; ok {
 							matched = strings.ToLower(v)
 							if strings.Contains(matched, "year") || strings.ContainsAny(v, "()[].^*+/<>") {
 								continue
+							}
+						} else {
+							matched = strings.ToLower(c.CandidateMatched)
+						}
+					} else {
+						if v, ok := cuiAliases[c.CandidateCUI]; ok {
+							for _, x := range v {
+								matched = strings.ToLower(x)
+								if strings.Contains(matched, "year") || strings.ContainsAny(x, "()[].^*+/<>") {
+									continue
+								}
 							}
 						} else {
 							matched = strings.ToLower(c.CandidateMatched)
@@ -649,11 +818,11 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 				if len(entities) == 0 {
 					return nil
 				} else if len(entities) == 1 {
-					return cqr.NewKeyword(entities[0].text, q.Fields...).SetOption("cui", entities[0].cui)
+					return cqr.NewKeyword(fmt.Sprintf(`"%s"`, entities[0].text), q.Fields...).SetOption("cui", entities[0].cui)
 				}
 				b := cqr.NewBooleanQuery(cqr.OR, nil)
 				for _, concept := range entities {
-					b.Children = append(b.Children, cqr.NewKeyword(concept.text, q.Fields...).SetOption("cui", concept.cui))
+					b.Children = append(b.Children, cqr.NewKeyword(fmt.Sprintf(`"%s"`, concept.text), q.Fields...).SetOption("cui", concept.cui))
 				}
 				return b
 			case cqr.BooleanQuery:
@@ -671,7 +840,7 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 					}
 				}
 
-				k := cqr.NewKeyword(strings.Join(qs, " "), fields.TitleAbstract)
+				k := cqr.NewKeyword(fmt.Sprintf(`"%s"`, strings.Join(qs, " ")), fields.TitleAbstract)
 				if len(qs) == len(q.Children) {
 					//b.Children = append(b.Children, cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{mapQuery(k)}))
 					return mapQuery(k, kind)
@@ -695,14 +864,14 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 			}
 		}
 
-		simple := cqr.NewBooleanQuery(cqr.OR, nil)
-		seen := make(map[string]bool)
-		for _, c := range metaMapCandidates(q.Name) {
-			if _, ok := seen[strings.ToLower(c.CandidateMatched)]; !ok {
-				simple.Children = append(simple.Children, cqr.NewKeyword(c.CandidateMatched, fields.TitleAbstract))
-				seen[strings.ToLower(c.CandidateMatched)] = true
-			}
-		}
+		//simple := cqr.NewBooleanQuery(cqr.OR, nil)
+		//seen := make(map[string]bool)
+		//for _, c := range metaMapCandidates(q.Name) {
+		//	if _, ok := seen[strings.ToLower(c.CandidateMatched)]; !ok {
+		//		simple.Children = append(simple.Children, cqr.NewKeyword(c.CandidateMatched, fields.TitleAbstract))
+		//		seen[strings.ToLower(c.CandidateMatched)] = true
+		//	}
+		//}
 		//s1, _ := transmute.CompileCqr2Medline(simple)
 		//err = os.MkdirAll(path.Join(queryOutputDir, "simple"), 0777)
 		//if err != nil {
@@ -713,12 +882,13 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 		//	panic(err)
 		//}
 
-		psr := pseudoRelevanceFeedbackExpansion(simple, rels.Qrels[q.Topic])
+		type fquery struct {
+			query  cqr.CommonQueryRepresentation
+			output string
+		}
 
-		//q1, _ := transmute.CompileCqr2PubMed(treeToSimpleQuery(parseTree(buff.String())))
-		//q0, _ := transmute.CompileCqr2PubMed(q.Query)
-		//r0 := evaluateQuery(e, pipeline.NewQuery(q.Name, q.Topic, treeToSimpleQuery(parseTree(buff.String()))), size, qrels)
-		//r0 := evaluateQuery(e, q, size, qrels)
+		var queries []fquery
+		// Entity mapping.
 		for i, logicMethod := range []string{"nlp_", "manual_"} {
 			outputDir0 := logicMethod
 			var p cqr.CommonQueryRepresentation
@@ -737,135 +907,58 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 				}
 			}
 			fmt.Sprintln(outputDir0, p, rels)
-			for j, mappingMethod := range []string{"match", "preferred", "frequency"} {
+			//
+			for j, mappingMethod := range []string{"match", "preferred", "frequency", "alias"} {
 				// Create the 'Match' query.
 				outputDir1 := outputDir0 + mappingMethod
 				m := mapQuery(p, j)
-				//q1, _ := transmute.CompileCqr2Medline(m)
-				//err = os.MkdirAll(path.Join(queryOutputDir, outputDir1), 0777)
-				//if err != nil {
-				//	panic(err)
-				//}
-				//err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir1, q.Topic), []byte(q1), 0644)
-				//if err != nil {
-				//	panic(err)
-				//}
+				queries = append(queries, fquery{query: m, output: outputDir1})
 
-				// Stem the 'Match' query.
-				//qS, _ := transmute.CompileCqr2Medline(stemQuery(m, stemDict))
-				//err = os.MkdirAll(path.Join(queryOutputDir, outputDir1+"_stem"), 0777)
-				//if err != nil {
-				//	panic(err)
-				//}
-				//err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir1+"_stem", q.Topic), []byte(qS), 0644)
-				//if err != nil {
-				//	panic(err)
-				//}
-				//log.Println(outputDir1 + "_stem")
-
-				rct10 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{m, seed.SensitivityFilter})
-				rct11 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{m, seed.PrecisionSensitivityFilter})
-				for l, rct := range []cqr.CommonQueryRepresentation{rct10, rct11} {
-					var outputDir3 string
-					switch l {
-					case 0:
-						outputDir3 = "rcts_" + outputDir1
-					case 1:
-						outputDir3 = "rctp_" + outputDir1
-					}
-					//q3, _ := transmute.CompileCqr2Medline(rct)
-					//err = os.MkdirAll(path.Join(queryOutputDir, outputDir3), 0777)
-					//if err != nil {
-					//	panic(err)
-					//}
-					//err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir3, q.Topic), []byte(q3), 0644)
-					//if err != nil {
-					//	panic(err)
-					//}
-
-					qS, _ := transmute.CompileCqr2Medline(stemQuery(rct, stemDict))
-					err = os.MkdirAll(path.Join(queryOutputDir, outputDir3+"_stem"), 0777)
-					if err != nil {
-						panic(err)
-					}
-					err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir3+"_stem", q.Topic), []byte(qS), 0644)
-					if err != nil {
-						panic(err)
-					}
-					log.Println(outputDir3 + "_stem")
+				if j == 0 {
+					continue
 				}
-
-				log.Println(outputDir1)
-				for k, expansionMethod := range []string{"_c2v", "_alias", "_psr"} {
+				for k, expansionMethod := range []string{"_c2v"} {
 					// Expand the 'Match' query.
 					outputDir2 := outputDir1 + expansionMethod
 					var exp cqr.CommonQueryRepresentation
 					switch k {
 					case 0:
-						exp = cui2vecExpansion(m)
-					case 1:
-						exp = aliasExpansion(m)
-					case 2:
-						exp = cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{m, psr})
+						exp = cui2vecExpansion(m, j)
 					}
-					//q2, _ := transmute.CompileCqr2Medline(exp)
-					//err = os.MkdirAll(path.Join(queryOutputDir, outputDir2), 0777)
-					//if err != nil {
-					//	panic(err)
-					//}
-					//err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir2, q.Topic), []byte(q2), 0664)
-					//if err != nil {
-					//	panic(err)
-					//}
-					//log.Println(outputDir2)
-
-					// Stem the expanded query.
-					//qS, _ := transmute.CompileCqr2Medline(stemQuery(m, stemDict))
-					//err = os.MkdirAll(path.Join(queryOutputDir, outputDir1+"_stem"), 0777)
-					//if err != nil {
-					//	panic(err)
-					//}
-					//err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir1+"_stem", q.Topic), []byte(qS), 0644)
-					//if err != nil {
-					//	panic(err)
-					//}
-					//log.Println(outputDir2 + "_stem")
-
-					rct20 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{exp, seed.SensitivityFilter})
-					rct21 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{exp, seed.PrecisionSensitivityFilter})
-
-					for l, rct := range []cqr.CommonQueryRepresentation{rct20, rct21} {
-						var outputDir3 string
-						switch l {
-						case 0:
-							outputDir3 = "rcts_" + outputDir2
-						case 1:
-							outputDir3 = "rctp_" + outputDir2
-						}
-						//q3, _ := transmute.CompileCqr2Medline(rct)
-						//err = os.MkdirAll(path.Join(queryOutputDir, outputDir3), 0777)
-						//if err != nil {
-						//	panic(err)
-						//}
-						//err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir3, q.Topic), []byte(q3), 0664)
-						//if err != nil {
-						//	panic(err)
-						//}
-						//log.Println(outputDir3)
-
-						qS, _ := transmute.CompileCqr2Medline(stemQuery(rct, stemDict))
-						err = os.MkdirAll(path.Join(queryOutputDir, outputDir3+"_stem"), 0777)
-						if err != nil {
-							panic(err)
-						}
-						err = ioutil.WriteFile(path.Join(queryOutputDir, outputDir3+"_stem", q.Topic), []byte(qS), 0644)
-						if err != nil {
-							panic(err)
-						}
-						log.Println(outputDir3 + "_stem")
-
-					}
+					queries = append(queries, fquery{query: exp, output: outputDir2})
 				}
+			}
+		}
+
+		var squeries []fquery
+		for _, f := range queries {
+			squeries = append(squeries, fquery{query: stemQuery(f.query, stemDict, make(map[string]bool)), output: "stem_" + f.output})
+
+			rct20 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{f.query, seed.SensitivityFilter})
+			rct21 := cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{f.query, seed.PrecisionSensitivityFilter})
+
+			for l, rct := range []cqr.CommonQueryRepresentation{rct20, rct21} {
+				var outputDir3 string
+				switch l {
+				case 0:
+					outputDir3 = "rcts_" + f.output
+				case 1:
+					outputDir3 = "rctp_" + f.output
+				}
+				squeries = append(squeries, fquery{query: rct, output: outputDir3})
+			}
+		}
+
+		queries = append(queries, squeries...)
+		for _, s := range queries {
+			tq, _ := transmute.CompileCqr2Medline(s.query)
+			err = os.MkdirAll(path.Join(queryOutputDir, s.output), 0777)
+			if err != nil {
+				panic(err)
+			}
+			err = ioutil.WriteFile(path.Join(queryOutputDir, s.output, q.Topic), []byte(tq), 0644)
+			if err != nil {
+				panic(err)
 			}
 		}
 	}
