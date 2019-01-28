@@ -281,25 +281,29 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 					defer func() { <-sem }()
 					log.Printf("starting topic %v\n", query.Topic)
 
-					tree, cache, err := combinator.NewLogicalTree(query, p.StatisticsSource, p.QueryCache)
+					//tree, cache, err := combinator.NewLogicalTree(query, p.StatisticsSource, p.QueryCache)
+					//if err != nil {
+					//	c <- pipeline.Result{
+					//		Topic: query.Topic,
+					//		Error: err,
+					//		Type:  pipeline.Error,
+					//	}
+					//	return
+					//}
+					//docIds := tree.Documents(cache)
+					//if err != nil {
+					//	c <- pipeline.Result{
+					//		Topic: query.Topic,
+					//		Error: err,
+					//		Type:  pipeline.Error,
+					//	}
+					//	return
+					//}
+					//trecResults := docIds.Results(query, query.Name)
+					trecResults, err := p.StatisticsSource.Execute(query, p.StatisticsSource.SearchOptions())
 					if err != nil {
-						c <- pipeline.Result{
-							Topic: query.Topic,
-							Error: err,
-							Type:  pipeline.Error,
-						}
-						return
+						panic(err)
 					}
-					docIds := tree.Documents(cache)
-					if err != nil {
-						c <- pipeline.Result{
-							Topic: query.Topic,
-							Error: err,
-							Type:  pipeline.Error,
-						}
-						return
-					}
-					trecResults := docIds.Results(query, query.Name)
 
 					// Set the evaluation results.
 					if len(p.Evaluations) > 0 {
@@ -323,7 +327,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 
 					log.Printf("completed topic %v\n", query.Topic)
 
-					docIds = nil
+					//docIds = nil
 					trecResults = nil
 					runtime.GC()
 				}(i, q)
