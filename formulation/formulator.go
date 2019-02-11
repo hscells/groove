@@ -1,3 +1,4 @@
+// Package formulation provides a library for automatically formulating queries.
 package formulation
 
 import (
