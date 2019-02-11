@@ -25,8 +25,10 @@ type MetaMapKeywordMapper struct {
 }
 
 // Matched uses the Matched entity from MetaMap.
-func Matched(keyword cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
-	return []cqr.CommonQueryRepresentation{keyword}, nil
+func Matched() MetaMapMapper {
+	return func(keyword cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
+		return []cqr.CommonQueryRepresentation{keyword}, nil
+	}
 }
 
 // Preferred uses the Preferred entity from MetaMap.
