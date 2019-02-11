@@ -230,7 +230,7 @@ func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Par
 	}
 	defer r.Close()
 
-	s := guru.UnmarshallMedline(r)
+	s := guru.UnmarshalMedline(r)
 
 	docs := make([]EntrezDocument, len(s))
 	for i, doc := range s {
@@ -263,7 +263,7 @@ func (e EntrezStatisticsSource) TermFrequency(term, field, document string) (flo
 	}
 	defer r.Close()
 
-	docs := guru.UnmarshallMedline(r)
+	docs := guru.UnmarshalMedline(r)
 
 	if len(docs) == 0 {
 		return 0, nil
