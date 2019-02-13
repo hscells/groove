@@ -7,7 +7,6 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/analysis/preqpp"
-	"github.com/hscells/groove/learning/seed"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"github.com/xtgo/set"
@@ -320,12 +319,6 @@ func booleanFeatures(q cqr.BooleanQuery) Features {
 
 	}
 	features = append(features, operatorType)
-
-	// Record the way the query was generated via protocol; if applicable.
-	if v, ok := q.Options[seed.ProtocolOption]; ok {
-		i, _ := v.(int)
-		features = append(features, NewFeature(ProtocolQueryTypeFeature, float64(i)))
-	}
 
 	return features
 }

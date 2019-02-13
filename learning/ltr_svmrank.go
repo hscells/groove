@@ -27,7 +27,7 @@ func (sel SVMRankQueryCandidateSelector) Output(lf LearntFeature, w io.Writer) e
 
 // Select uses a Ranking SVM to select the next most likely candidate.
 func (sel SVMRankQueryCandidateSelector) Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error) {
-	f, err := os.OpenFile("tmp.Features", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile("tmp.features", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		panic(err)
 	}
@@ -36,13 +36,13 @@ func (sel SVMRankQueryCandidateSelector) Select(query CandidateQuery, transforma
 	for _, applied := range transformations {
 		f.WriteString(fmt.Sprintf("%v%v", applied.Features.String(), "\n"))
 	}
-	svmrank.Predict("tmp.Features", sel.modelFile, "tmp.output")
+	svmrank.Predict("tmp.features", sel.modelFile, "tmp.output")
 	candidate, err := getRanking("tmp.output", transformations)
 
 	sel.depth++
 	f.Truncate(0)
 	f.Seek(0, 0)
-	err2 := os.Remove("tmp.Features")
+	err2 := os.Remove("tmp.features")
 	if err2 != nil {
 		return CandidateQuery{}, nil, err2
 	}

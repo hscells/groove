@@ -623,26 +623,24 @@ func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []
 
 		keyword := string(remRe.ReplaceAll([]byte(q.QueryString), []byte("")))
 
+		seen := make(map[string]bool)
 		var children []cqr.CommonQueryRepresentation
 		if candidates, ok := c.cache[keyword]; ok {
 			if len(candidates) == 0 {
 				return []cqr.CommonQueryRepresentation{}, nil
 			}
-
-			// Only continue to expand keywords until the Score is less than a tenth of a percent (0.001) similar.
-			// Or to a maximum of 5 expansions.
-			maxScore := candidates[0].Similarity
 			for _, candidate := range candidates {
-				if maxScore-candidate.Similarity > 0.001 {
-					break
+				concepts, err := c.vector.Similar(candidate.CUI)
+				if err != nil {
+					return []cqr.CommonQueryRepresentation{}, err
 				}
-
-				if len(children) >= 5 {
-					break
-				}
-
-				if term, ok := c.mapping[candidate.CUI]; ok {
-					children = append(children, cqr.NewKeyword(term, q.Fields...))
+				for _, concept := range concepts {
+					if term, ok := c.mapping[concept.CUI]; ok {
+						if _, ok := seen[term]; !ok {
+							children = append(children, cqr.NewKeyword(term, q.Fields...))
+							seen[term] = true
+						}
+					}
 				}
 			}
 		} else {

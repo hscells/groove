@@ -3,6 +3,7 @@ package learning
 import (
 	"bufio"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/hscells/groove/stats"
 	"io"
 	"log"
@@ -37,11 +38,13 @@ func makeArguments(a map[string]interface{}) []string {
 
 func (qr QuickRankQueryCandidateSelector) Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error) {
 	args := makeArguments(qr.arguments)
-	args = append(args, "--test", "tmp.Features")
-	defer os.Remove("tmp.Features")
+
+	fname := uuid.New().String()
+	args = append(args, "--test", fname)
+	defer os.Remove(fname)
 
 	// Create a temporary file to contain the Features for testing.
-	f, err := os.OpenFile("tmp.Features", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(fname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		panic(err)
 	}
@@ -102,6 +105,7 @@ func (qr QuickRankQueryCandidateSelector) Select(query CandidateQuery, transform
 	if err != nil {
 		return query, qr, err
 	}
+	defer os.Remove(qr.arguments["scores"].(string))
 
 	// Totally remove the file.
 	f.Truncate(0)
