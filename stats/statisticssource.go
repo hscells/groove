@@ -166,7 +166,10 @@ func NewLanguageModel(source StatisticsSource, docIds []string, scores []float64
 
 	// Update the term count map for all the docs and weights.
 	for i := range lm.DocIds {
-		lm.updateTermCountMap(lm.DocIds[i], lm.Weights[i])
+		err := lm.updateTermCountMap(lm.DocIds[i], lm.Weights[i])
+		if err != nil {
+			return &LanguageModel{}, err
+		}
 	}
 
 	return lm, nil

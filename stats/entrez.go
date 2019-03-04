@@ -30,6 +30,7 @@ type EntrezStatisticsSource struct {
 	email      string
 	parameters map[string]float64
 	options    SearchOptions
+	Limit      int
 	// The size of PubMed.
 	n float64
 }
@@ -39,12 +40,13 @@ type term struct {
 	token string
 }
 
-type EntrezDocument struct {
-	ID           string
-	Title        string
-	Text         string
-	MeSHHeadings []string
-}
+//type EntrezDocument struct {
+//	ID               string
+//	Title            string
+//	Text             string
+//	MeSHHeadings     []string
+//	PublicationTypes []string
+//}
 
 func formatTerm(term string) string {
 	buff := bytes.NewBufferString("")
@@ -203,7 +205,9 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	log.Printf("%d/%s\n", retstart+len(pmids), s.EsearchResult.Count)
 	//log.Println(len(pmids) == e.options.Size, len(pmids), e.options.Size)
 	// If the number of pmids equals the execute size, there might be more to come.
-	if len(pmids) == e.options.Size {
+	if e.Limit > 0 && len(pmids) >= e.Limit {
+		return pmids, nil
+	} else if len(pmids) == e.options.Size {
 		l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)), e.SearchSize(e.SearchOptions().Size))
 		if err != nil {
 			return nil, err
@@ -214,7 +218,7 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 }
 
 // Fetch uses the entrez eutils to fetch the pubmed Article given a set of pubmed identifiers.
-func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Parameters)) ([]EntrezDocument, error) {
+func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Parameters)) ([]guru.MedlineDocument, error) {
 	p := &entrez.Parameters{}
 	for _, option := range options {
 		option(p)
@@ -231,17 +235,27 @@ func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Par
 	defer r.Close()
 
 	s := guru.UnmarshalMedline(r)
+	return s, nil
+}
 
-	docs := make([]EntrezDocument, len(s))
-	for i, doc := range s {
-		docs[i] = EntrezDocument{
-			ID:           doc.PMID,
-			Title:        doc.TI,
-			Text:         doc.AB,
-			MeSHHeadings: doc.MH,
+func (e EntrezStatisticsSource) Link(pmids []int, linkname string) ([]int, error) {
+	link, err := entrez.DoLink("pubmed", "pubmed", "neighbor", "", &entrez.Parameters{
+		LinkName: linkname,
+	}, e.tool, e.email, nil, pmids)
+	if err != nil {
+		return nil, err
+	}
+
+	var links []int
+	for _, ls := range link.LinkSets {
+		for _, n := range ls.Neighbor {
+			for _, l := range n.Link {
+				links = append(links, l.Id.Id)
+			}
 		}
 	}
-	return docs, nil
+
+	return links, nil
 }
 
 func (e EntrezStatisticsSource) SearchOptions() SearchOptions {
@@ -295,7 +309,7 @@ func (e EntrezStatisticsSource) TermVector(document string) (TermVector, error) 
 	}
 
 	// Extract the title and the Abstract.
-	doc, err := prose.NewDocument(strings.ToLower(strings.Join([]string{docs[0].Title, docs[0].Text}, ". ")))
+	doc, err := prose.NewDocument(strings.ToLower(strings.Join([]string{docs[0].TI, docs[0].AB}, ". ")))
 	if err != nil {
 		return nil, err
 	}
@@ -374,8 +388,8 @@ func (e EntrezStatisticsSource) TotalTermFrequency(term, field string) (float64,
 
 	var n int
 	for _, doc := range docs {
-		t := strings.ToLower(doc.Title)
-		a := strings.ToLower(doc.Text)
+		t := strings.ToLower(doc.TI)
+		a := strings.ToLower(doc.AB)
 		n += strings.Count(fmt.Sprintf("%s %s", t, a), term)
 	}
 
@@ -509,8 +523,15 @@ func EntrezOptions(options SearchOptions) func(source *EntrezStatisticsSource) {
 	}
 }
 
+// EntrezOptions sets any additional options for the entrez statistics source.
+func EntrezLimit(limit int) func(source *EntrezStatisticsSource) {
+	return func(source *EntrezStatisticsSource) {
+		source.Limit = limit
+	}
+}
+
 // NewEntrezStatisticsSource creates a new entrez statistics source for searching pubmed.
-// When an API key is specified, the entrez request limit is raised to 10 per second instead of the default 3.
+// When an API key is specified, the entrez request Limit is raised to 10 per second instead of the default 3.
 func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) (EntrezStatisticsSource, error) {
 	e := &EntrezStatisticsSource{}
 	for _, option := range options {

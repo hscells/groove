@@ -234,7 +234,7 @@ func (es *ElasticsearchStatisticsSource) ExecuteFast(query gpipeline.Query, opti
 		return nil, err
 	}
 
-	// Set the limit to how many goroutines can be run.
+	// Set the Limit to how many goroutines can be run.
 	// http://jmoiron.net/blog/limiting-concurrency-in-go/
 	concurrency := runtime.NumCPU()
 	sem := make(chan bool, concurrency)
