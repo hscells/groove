@@ -2,7 +2,6 @@ package query
 
 import (
 	"encoding/xml"
-	"github.com/hscells/groove/learning/seed"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"io/ioutil"
@@ -89,15 +88,6 @@ func (ProtocolQuerySource) Load(directory string) ([]pipeline.Query, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		c := seed.NewProtocolConstructor(p.Objective, p.Participants, p.IndexTests, p.TargetConditions)
-		q, err := c.Construct()
-		if err != nil {
-			return nil, err
-		}
-		for _, query := range q {
-			queries = append(queries, pipeline.NewQuery(f.Name(), f.Name(), query))
-		}
 	}
 	return queries, nil
 }
@@ -133,15 +123,6 @@ func (q QuickUMLSProtocolQuerySource) Load(directory string) ([]pipeline.Query, 
 		err = xml.Unmarshal(source, &p)
 		if err != nil {
 			return nil, err
-		}
-
-		c := seed.NewQuickUMLSProtocolConstructor(p.Objective, p.Participants, p.IndexTests, p.TargetConditions, q.url, q.threshold, q.ss)
-		q, err := c.Construct()
-		if err != nil {
-			return nil, err
-		}
-		for _, query := range q {
-			queries = append(queries, pipeline.NewQuery(f.Name(), f.Name(), query))
 		}
 	}
 	return queries, nil

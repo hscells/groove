@@ -54,11 +54,12 @@ func tokenise(text string, lower bool) (Output, error) {
 			if prev != curr {
 				change = true
 			} else if curr == other {
-				if j > 0 {
-					if txt[portions.Positions[i][0]+j-1] != t {
-						change = true
-					}
-				}
+				continue
+				//if j > 0 {
+				//	if txt[portions.Positions[i][0]+j-1] != t {
+				//		change = true
+				//	}
+				//}
 			}
 
 			if change {
@@ -67,6 +68,10 @@ func tokenise(text string, lower bool) (Output, error) {
 					start = 0
 				}
 				if currWordLen != 0 {
+					if curr == other || curr == num {
+						currWordLen = 0
+						continue
+					}
 					tokens = append(tokens, txt[start:portions.Positions[i][0]+j])
 					currWordLen = 0
 				}
@@ -74,12 +79,16 @@ func tokenise(text string, lower bool) (Output, error) {
 
 			if portions.Positions[i][0]+j+1 == len(txt) {
 				if curr != space {
+					if curr == other || curr == num {
+						currWordLen = 0
+						continue
+					}
 					tokens = append(tokens, txt[portions.Positions[i][0]+j-currWordLen:portions.Positions[i][0]+j+1])
 					currWordLen = 0
 				}
 			}
 
-			if curr != space {
+			if curr != space && curr != other && curr != num {
 				currWordLen++
 			}
 		}
