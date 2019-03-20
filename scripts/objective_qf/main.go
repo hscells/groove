@@ -9,6 +9,7 @@ import (
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
+	"github.com/hscells/groove/preprocess"
 	"github.com/hscells/groove/query"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/guru"
@@ -91,9 +92,16 @@ func main() {
 	}
 
 	for _, topic := range topics {
-		fmt.Println(topic.Topic)
+		// Skip over these topics.
+		//switch topic.Topic {
+		//case "CD007394", "CD007427", "CD008054", "CD008122", "CD008587", "CD008691", "CD008759", "CD008892", "CD009020", "CD009135", "CD009175", "CD009185", "CD009263", "CD009323", "CD009519", "CD009579", "CD009591", "CD009593", "CD009647", "CD009925", "CD009944", "CD010023", "CD010213", "CD010276", "CD010296", "CD010339", "CD010502", "CD010657", "CD011134", "CD011431", "CD011515":
+		//	fmt.Println("skip", topic.Topic)
+		//	continue
+		//}
+
 		rels := qrels.Qrels[topic.Topic]
 		var docs []int
+		var nonrel []*trecresults.Qrel
 		for _, rel := range rels {
 			if rel.Score > 0 {
 				v, err := strconv.Atoi(rel.DocId)
@@ -101,12 +109,17 @@ func main() {
 					panic(err)
 				}
 				docs = append(docs, v)
+			} else {
+				nonrel = append(nonrel, rel)
 			}
 		}
 
 		if len(docs) <= 50 {
+			fmt.Println("skip (length)", topic.Topic)
 			continue
 		}
+
+		fmt.Println(topic.Topic)
 
 		test, err := FetchDocuments(docs, e)
 		if err != nil {
@@ -119,109 +132,231 @@ func main() {
 		dev, val, unseen := split(test)
 		fmt.Println(len(dev), len(val), len(unseen))
 
+		rrels := makeQrels(unseen)
+		for _, r := range nonrel {
+			rrels[r.DocId] = r
+		}
+
+		//---------------------------------------------------------
+		// Uncomment this section to do evaluation on the original queries.
+		//---------------------------------------------------------
+		//f2, err := os.OpenFile("/Users/s4558151/go/src/github.com/hscells/groove/scripts/query_protocol_reachability/test_data/queries/original/"+topic.Topic, os.O_RDONLY, 0664)
+		//if err != nil {
+		//	panic(err)
+		//}
+		//
+		//b, err := ioutil.ReadAll(f2)
+		//if err != nil {
+		//	panic(err)
+		//}
+		//
+		//qq, err := transmute.CompileMedline2Cqr(string(b))
+		//if err != nil {
+		//	panic(err)
+		//}
+		//
+		//topic.Query = qq
+		//
+		//results, err := e.Execute(topic, e.SearchOptions())
+		//if err != nil {
+		//	panic(err)
+		//}
+		//eval.RelevanceGrade = 0
+		//
+		//ev := []eval.Evaluator{eval.NumRel, eval.NumRet, eval.NumRelRet, eval.RecallEvaluator, eval.PrecisionEvaluator, eval.F1Measure, eval.F05Measure, eval.F3Measure, eval.NNR}
+		//evaluation := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{topic.Topic: rrels}}, topic.Topic)
+		//
+		//f, err := os.OpenFile("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/evaluation_orig2/"+topic.Topic+".evaluation.json", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+		//if err != nil {
+		//	panic(err)
+		//}
+		//err = json.NewEncoder(f).Encode(evaluation)
+		//if err != nil {
+		//	panic(err)
+		//}
+		//continue
+		//---------------------------------------------------------
+
 		// Perform 'term frequency analysis' on the development set.
 		devDF, err := TermFrequencyAnalysis(dev)
 		if err != nil {
 			panic(err)
 		}
 
-		// Take terms from dev where the DF > 20% of size of dev.
-		cut := CutDevelopmentTerms(devDF, dev)
+		//DeriveAndEvaluateQueries(devDF, dev, val, unseen, population, topic, e, []float64{0.2}, []float64{0.02}, []int{20}, "repl")
+		DeriveAndEvaluateQueries(devDF, dev, val, unseen, population, topic, e, []float64{0.05, 0.10, 0.15, 0.20, 0.25, 0.30}, []float64{0.001, 0.01, 0.02, 0.05, 0.10, 0.20}, []int{1, 5, 10, 15, 20, 25}, "grid_recall")
+	}
+}
 
-		// Rank the cut terms in dev by DF.
-		terms := RankTerms(cut, dev, topic.Topic)
+func DeriveAndEvaluateQueries(devDF Terms, dev, val, unseen, population []guru.MedlineDocument, topic pipeline.Query, e stats.EntrezStatisticsSource, devK, popK []float64, meshK []int, folder string) {
+	q, qWithMeSH, err := DeriveQueries(devDF, dev, val, population, topic, e, devK, popK, meshK, folder)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("evaluation without mesh terms:")
+	qEval, _ := transmute.CompileCqr2PubMed(q)
+	f, err := os.OpenFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/queries", folder, topic.Topic+".query"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+	if err != nil {
+		panic(err)
+	}
+	_, err = f.WriteString(qEval)
+	if err != nil {
+		panic(err)
+	}
+	f.Close()
+	evalWithoutMeSH, err := Evaluate(q, e, dev, val, unseen)
+	if err != nil {
+		panic(err)
+	}
+	b, err := json.Marshal(evalWithoutMeSH)
+	if err != nil {
+		panic(err)
+	}
+	err = ioutil.WriteFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/evaluation", folder, topic.Topic+".evaluation.json"), b, 0664)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("evaluation with mesh terms:")
+	qWithMeshEval, _ := transmute.CompileCqr2PubMed(qWithMeSH)
+	f, err = os.OpenFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/queries", folder, topic.Topic+"_mesh.query"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+	if err != nil {
+		panic(err)
+	}
+	_, err = f.WriteString(qWithMeshEval)
+	if err != nil {
+		panic(err)
+	}
+	f.Close()
+	evalWithMeSH, err := Evaluate(qWithMeSH, e, dev, val, unseen)
+	if err != nil {
+		panic(err)
+	}
+	b, err = json.Marshal(evalWithMeSH)
+	if err != nil {
+		panic(err)
+	}
+	err = ioutil.WriteFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/evaluation", folder, topic.Topic+"_mesh.evaluation.json"), b, 0664)
+	if err != nil {
+		panic(err)
+	}
+}
 
-		// Perform 'term frequency analysis' on the population.
-		popDF, err := TermFrequencyAnalysis(population)
-		if err != nil {
-			panic(err)
-		}
+func DeriveQueries(devDF Terms, dev, val, population []guru.MedlineDocument, topic pipeline.Query, e stats.EntrezStatisticsSource, devK, popK []float64, meshK []int, folder string) (cqr.CommonQueryRepresentation, cqr.CommonQueryRepresentation, error) {
+	var (
+		bestEval float64
+		bestD    float64
+		bestP    float64
+		bestM    int
 
-		// Identify dev terms which appear in <= 2% of the DF of the population set.
-		queryTerms := CutDevelopmentTermsWithPopulation(terms, popDF, topic.Topic)
+		bestConditions []cqr.Keyword
+		bestTreatments []cqr.Keyword
+		bestStudyTypes []cqr.Keyword
 
-		mapping, err := MetaMapTerms(queryTerms, metawrap.HTTPClient{URL: "http://ielab-metamap.uqcloud.net"})
-		if err != nil {
-			panic(err)
-		}
+		bestQ         cqr.CommonQueryRepresentation
+		bestQWithMesh cqr.CommonQueryRepresentation
+	)
 
-		// Load the sem type mapping.
-		semTypes, err := loadSemTypesMapping("/Users/s4558151/Papers/sysrev_queries/amia2019_objective/experiments/cui_semantic_types.txt")
-		if err != nil {
-			panic(err)
-		}
+	m := eval.RecallEvaluator
 
-		// Classify query terms.
-		conditions, treatments, studyTypes := ClassifyQueryTerms(queryTerms, mapping, semTypes)
+	// Load the sem type mapping.
+	semTypes, err := loadSemTypesMapping("/Users/s4558151/Papers/sysrev_queries/amia2019_objective/experiments/cui_semantic_types.txt")
+	if err != nil {
+		return nil, nil, err
+	}
 
-		// And then filter the query terms.
-		conditions, treatments, studyTypes, err = FilterQueryTerms(conditions, treatments, studyTypes, fields.TitleAbstract, makeQrels(dev), e)
-		if err != nil {
-			panic(err)
-		}
+	// Grid search over dev and pop values for the best query on validation.
+	for _, d := range devK {
+		for _, p := range popK {
+			fmt.Println(d, p)
+			// Take terms from dev where the DF > 20% of size of dev.
+			cut := CutDevelopmentTerms(devDF, dev, d)
+			// Rank the cut terms in dev by DF.
+			terms := RankTerms(cut, dev, topic.Topic, folder)
+			// Perform 'term frequency analysis' on the population.
+			popDF, err := TermFrequencyAnalysis(population)
+			if err != nil {
+				return nil, nil, err
+			}
+			// Identify dev terms which appear in <= 2% of the DF of the population set.
+			queryTerms := CutDevelopmentTermsWithPopulation(terms, popDF, topic.Topic, folder, p)
 
-		// Create keywords for the proceeding query.
-		conditionsKeywords, treatmentsKeywords, studyTypesKeywords := MakeKeywords(conditions, treatments, studyTypes)
+			// Map sem types in terms.
+			mapping, err := MetaMapTerms(queryTerms, metawrap.HTTPClient{URL: "http://ielab-metamap.uqcloud.net"})
+			if err != nil {
+				return nil, nil, err
+			}
 
-		conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH, err := AddMeSHTerms(conditionsKeywords, treatmentsKeywords, studyTypesKeywords, dev, e, topic.Topic)
-		if err != nil {
-			panic(err)
-		}
+			// Classify query terms.
+			conditions, treatments, studyTypes := ClassifyQueryTerms(queryTerms, mapping, semTypes)
 
-		// Create the query from the three categories.
-		q := ConstructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords)
+			// Create keywords for the proceeding query.
+			conditionsKeywords, treatmentsKeywords, studyTypesKeywords := MakeKeywords(conditions, treatments, studyTypes)
 
-		qWithMeSH := ConstructQuery(conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH)
+			// And then filter the query terms.
+			conditions, treatments, studyTypes, err = FilterQueryTerms(conditions, treatments, studyTypes, fields.TitleAbstract, makeQrels(dev), e)
+			if err != nil {
+				return nil, nil, err
+			}
 
-		fmt.Println("evaluation without mesh terms:")
-		qEval, _ := transmute.CompileCqr2PubMed(q)
-		f, err := os.OpenFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/queries", topic.Topic+".query"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
-		if err != nil {
-			panic(err)
-		}
-		_, err = f.WriteString(qEval)
-		if err != nil {
-			panic(err)
-		}
-		f.Close()
-		evalWithoutMeSH, err := Evaluate(q, e, dev, val, unseen)
-		if err != nil {
-			panic(err)
-		}
-		b, err := json.Marshal(evalWithoutMeSH)
-		if err != nil {
-			panic(err)
-		}
-		err = ioutil.WriteFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/evaluation", topic.Topic+".evaluation.json"), b, 0664)
-		if err != nil {
-			panic(err)
-		}
+			// Create the query from the three categories.
+			q := ConstructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords)
+			q = preprocess.DateRestrictions("/Users/s4558151/Repositories/tar/2018-TAR/Task1/Testing/pubdates.txt", topic.Topic)(q)()
 
-		fmt.Println("evaluation with mesh terms:")
-		qWithMeshEval, _ := transmute.CompileCqr2PubMed(qWithMeSH)
-		f, err = os.OpenFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/queries", topic.Topic+"_mesh.query"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
-		if err != nil {
-			panic(err)
-		}
-		_, err = f.WriteString(qWithMeshEval)
-		if err != nil {
-			panic(err)
-		}
-		f.Close()
-		evalWithMeSH, err := Evaluate(qWithMeSH, e, dev, val, unseen)
-		if err != nil {
-			panic(err)
-		}
+			ev, err := Evaluate(q, e, dev, val, nil)
+			if err != nil {
+				return nil, nil, err
+			}
 
-		b, err = json.Marshal(evalWithMeSH)
-		if err != nil {
-			panic(err)
-		}
-		err = ioutil.WriteFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/evaluation", topic.Topic+"_mesh.evaluation.json"), b, 0664)
-		if err != nil {
-			panic(err)
+			if ev.Validation[m.Name()] > bestEval {
+				bestEval = ev.Validation[m.Name()]
+				bestQ = q
+				bestConditions = conditionsKeywords
+				bestTreatments = treatmentsKeywords
+				bestStudyTypes = studyTypesKeywords
+				bestD = d
+				bestP = p
+			}
 		}
 	}
+
+	// Grid search parameters of k for the number of mesh keywords to add to a query.
+	bestEval = 0.0
+	for _, k := range meshK {
+		fmt.Println(k)
+		conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH, err := AddMeSHTerms(bestConditions, bestTreatments, bestStudyTypes, dev, e, topic.Topic, k, folder)
+		if err != nil {
+			return nil, nil, err
+		}
+		qWithMeSH := ConstructQuery(conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH)
+		qWithMeSH = preprocess.DateRestrictions("/Users/s4558151/Repositories/tar/2018-TAR/Task1/Testing/pubdates.txt", topic.Topic)(qWithMeSH)()
+
+		ev, err := Evaluate(qWithMeSH, e, dev, val, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if ev.Validation[eval.F1Measure.Name()] > bestEval {
+			bestEval = ev.Validation[eval.F1Measure.Name()]
+			bestQWithMesh = qWithMeSH
+			bestM = k
+		}
+	}
+
+	v := make(map[string]interface{})
+	v["d"] = bestD
+	v["p"] = bestP
+	v["m"] = bestM
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = ioutil.WriteFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/params", folder, topic.Topic+"params.json"), b, 0664)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return bestQ, bestQWithMesh, nil
 }
 
 func Evaluate(query cqr.CommonQueryRepresentation, e stats.EntrezStatisticsSource, dev, val, unseen []guru.MedlineDocument) (Evaluation, error) {
@@ -234,7 +369,7 @@ func Evaluate(query cqr.CommonQueryRepresentation, e stats.EntrezStatisticsSourc
 	}
 	results := tree.Documents(filecache).Results(pq, "0")
 	eval.RelevanceGrade = 0
-	ev := []eval.Evaluator{eval.NumRel, eval.NumRet, eval.NumRelRet, eval.RecallEvaluator, eval.PrecisionEvaluator, eval.F1Measure, eval.F05Measure, eval.F3Measure}
+	ev := []eval.Evaluator{eval.NumRel, eval.NumRet, eval.NumRelRet, eval.RecallEvaluator, eval.PrecisionEvaluator, eval.F1Measure, eval.F05Measure, eval.F3Measure, eval.NNR}
 	devEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": makeQrels(dev)}}, "0")
 	valEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": makeQrels(val)}}, "0")
 	unseenEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": makeQrels(unseen)}}, "0")
@@ -313,7 +448,7 @@ func FetchDocuments(refs []int, e stats.EntrezStatisticsSource) ([]guru.MedlineD
 	// Open the document store.
 	g, err := ghost.Open("/Users/s4558151/ghost/groove/objective/docs", ghost.NewGobSchema(guru.MedlineDocument{}))
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
 	// Try to retrieve as many docs from disk as possible.
@@ -329,7 +464,7 @@ func FetchDocuments(refs []int, e stats.EntrezStatisticsSource) ([]guru.MedlineD
 			var d guru.MedlineDocument
 			err := g.Get(pmid, &d)
 			if err != nil {
-				return nil, err
+				panic(err)
 			}
 			references = append(references, d)
 		} else {
@@ -343,15 +478,15 @@ func FetchDocuments(refs []int, e stats.EntrezStatisticsSource) ([]guru.MedlineD
 		// Retrieve the documents of the references.
 		docs, err = e.Fetch(fetching)
 		if err != nil {
-			return nil, err
+			panic(err)
 		}
 
 		// Put the docs in the store.
 		for _, d := range docs {
-			err := g.Put(d.PMID, d)
-			if err != nil {
-				return nil, err
-			}
+			//err := g.Put(d.PMID, d)
+			//if err != nil {
+			//	return nil, err
+			//}
 			fmt.Println("put", d.PMID)
 		}
 	}
@@ -386,7 +521,7 @@ func TermFrequencyAnalysis(docs []guru.MedlineDocument) (Terms, error) {
 }
 
 // RankTerms ranks a map of terms by document frequency.
-func RankTerms(t Terms, dev []guru.MedlineDocument, topic string) []string {
+func RankTerms(t Terms, dev []guru.MedlineDocument, topic, folder string) []string {
 	type pair struct {
 		K string
 		V int
@@ -402,7 +537,7 @@ func RankTerms(t Terms, dev []guru.MedlineDocument, topic string) []string {
 		return pairs[i].V > pairs[j].V
 	})
 
-	f, err := os.OpenFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/document_frequency", topic+".development.json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+	f, err := os.OpenFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/document_frequency", folder, topic+".development.json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
 	if err != nil {
 		panic(err)
 	}
@@ -434,8 +569,8 @@ func GetPopulationSet(e stats.EntrezStatisticsSource) ([]guru.MedlineDocument, e
 }
 
 // CutDevelopmentTerms takes terms from the development set where the DF of the term is >= 20%.
-func CutDevelopmentTerms(t Terms, dev []guru.MedlineDocument) Terms {
-	n := float64(len(dev)) * 0.2 // term must be <= 20% of development DF.
+func CutDevelopmentTerms(t Terms, dev []guru.MedlineDocument, cut float64) Terms {
+	n := float64(len(dev)) * cut // term must be <= 20% of development DF.
 	terms := make(Terms)
 
 	for k, v := range t {
@@ -448,8 +583,8 @@ func CutDevelopmentTerms(t Terms, dev []guru.MedlineDocument) Terms {
 }
 
 // CutDevelopmentTermsWithPopulation takes terms where the DF in the population collection is <= 2%.
-func CutDevelopmentTermsWithPopulation(dev []string, population Terms, topic string) []string {
-	n := float64(len(population)) * 0.02 // Term must be <= 2% of population DF.
+func CutDevelopmentTermsWithPopulation(dev []string, population Terms, topic, folder string, cut float64) []string {
+	n := float64(len(population)) * cut // Term must be <= 2% of population DF.
 	var t []string
 
 	type pair struct {
@@ -477,7 +612,7 @@ func CutDevelopmentTermsWithPopulation(dev []string, population Terms, topic str
 		return pairs[i].V > pairs[j].V
 	})
 
-	f, err := os.OpenFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/document_frequency", topic+".population.json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+	f, err := os.OpenFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/document_frequency", folder, topic+".population.json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
 	if err != nil {
 		panic(err)
 	}
@@ -495,25 +630,16 @@ func MetaMapTerms(terms []string, client metawrap.HTTPClient) (Mapping, error) {
 	// Open the document store.
 	g, err := ghost.Open("/Users/s4558151/ghost/groove/objective/metamap", ghost.NewGobSchema(MappingPair{}))
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-
 	cuis := make(Mapping)
 	for _, term := range terms {
-		if g.Contains(term) {
-			var p MappingPair
-			err := g.Get(term, &p)
-			if err != nil {
-				return nil, err
-			}
-			cuis[term] = p
-			fmt.Println("get term", term)
-		} else {
+		if !g.Contains(term) {
 			candidates, err := client.Candidates(term)
 			if err != nil {
 				return nil, err
 			}
-			found := false
+			//found := false
 			for _, candidate := range candidates {
 				if strings.ToLower(candidate.CandidateMatched) == term {
 					p := MappingPair{
@@ -521,22 +647,51 @@ func MetaMapTerms(terms []string, client metawrap.HTTPClient) (Mapping, error) {
 						Abbr: candidate.SemTypes[0],
 					}
 					cuis[term] = p
-					err := g.Put(term, p)
-					if err != nil {
-						return nil, err
-					}
-					found = true
+					//err := g.Put(term, p)
+					//if err != nil {
+					//	panic(err)
+					//}
+					//found = true
 					fmt.Println("put term", term)
 					break
 				}
 			}
 
-			if !found {
-				err := g.Put(term, MappingPair{})
+			//if !found {
+			//	err := g.Put(term, MappingPair{})
+			//	if err != nil {
+			//		panic(err)
+			//	}
+			//}
+		} else {
+			var p MappingPair
+			err := g.Get(term, &p)
+			if err != nil {
+				//panic(err)
+				candidates, err := client.Candidates(term)
 				if err != nil {
 					return nil, err
 				}
+				//found := false
+				for _, candidate := range candidates {
+					if strings.ToLower(candidate.CandidateMatched) == term {
+						p := MappingPair{
+							CUI:  candidate.CandidateCUI,
+							Abbr: candidate.SemTypes[0],
+						}
+						cuis[term] = p
+						//err := g.Put(term, p)
+						//if err != nil {
+						//	panic(err)
+						//}
+						//found = true
+						fmt.Println("put term", term)
+						break
+					}
+				}
 			}
+			//cuis[term] = p
+			fmt.Println("get term", term)
 		}
 	}
 
@@ -580,7 +735,7 @@ func ClassifyQueryTerms(terms []string, mapping Mapping, semTypes SemTypeMapping
 						category = Treatment
 					case "ANAT", "DISO", "GENE", "LIVB", "OCCU", "PHEN", "PHYS":
 						category = Condition
-					case "ORGA":
+					case "ORGA", "GEOG":
 						category = StudyType
 					case "CONC":
 						category = None
@@ -815,7 +970,7 @@ func MakeKeywords(conditions, treatments, studyTypes []string) ([]cqr.Keyword, [
 	return keywords[0], keywords[1], keywords[2]
 }
 
-func AddMeSHTerms(conditions, treatments, studyTypes []cqr.Keyword, dev []guru.MedlineDocument, e stats.EntrezStatisticsSource, topic string) ([]cqr.Keyword, []cqr.Keyword, []cqr.Keyword, error) {
+func AddMeSHTerms(conditions, treatments, studyTypes []cqr.Keyword, dev []guru.MedlineDocument, e stats.EntrezStatisticsSource, topic string, k int, folder string) ([]cqr.Keyword, []cqr.Keyword, []cqr.Keyword, error) {
 	subheadingsFreq := make(map[string]int)
 	for _, doc := range dev {
 		for _, mh := range doc.MH {
@@ -842,7 +997,7 @@ func AddMeSHTerms(conditions, treatments, studyTypes []cqr.Keyword, dev []guru.M
 	}
 
 	var topSubheadings []string
-	if len(subheadingsFreq) < 20 {
+	if len(subheadingsFreq) < k {
 		for _, p := range subheadings {
 			topSubheadings = append(topSubheadings, p.mh)
 		}
@@ -850,7 +1005,7 @@ func AddMeSHTerms(conditions, treatments, studyTypes []cqr.Keyword, dev []guru.M
 		sort.Slice(subheadings, func(i, j int) bool {
 			return subheadings[i].freq > subheadings[j].freq
 		})
-		for i := 0; i < 20; i++ {
+		for i := 0; i < k; i++ {
 			topSubheadings = append(topSubheadings, subheadings[i].mh)
 		}
 	}
@@ -858,7 +1013,7 @@ func AddMeSHTerms(conditions, treatments, studyTypes []cqr.Keyword, dev []guru.M
 	fmt.Println("top subheadings:")
 	fmt.Println(topSubheadings)
 
-	f, err := os.OpenFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/top_subheadings", topic), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+	f, err := os.OpenFile(path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/top_subheadings", folder, topic), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
 	if err != nil {
 		panic(err)
 	}

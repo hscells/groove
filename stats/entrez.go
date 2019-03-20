@@ -416,14 +416,15 @@ func (e EntrezStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentatio
 		return 0, err
 	}
 
-	fails := 20
+	nfails := 20
+	fails := nfails
 retry:
 	s, err := entrez.DoSearch("pubmed", q, &entrez.Parameters{RetType: "xml", APIKey: e.key}, nil, e.tool, e.email)
 	if err != nil {
 		if fails > 0 {
-			log.Printf("error: %v, retrying %d more times", err, fails)
+			log.Printf("error: %v, retrying %d more times for %d seconds", err, fails, ((nfails-fails)*5)*int(time.Second))
 			fails--
-			time.Sleep(5 * time.Second)
+			time.Sleep(time.Duration((nfails-fails)*5) * time.Second)
 			goto retry
 		}
 		panic(err)

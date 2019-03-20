@@ -216,7 +216,7 @@ func (m ManualLogicComposer) Compose(text string) (cqr.CommonQueryRepresentation
 		return p, nil
 	}
 	var buff string
-	//fmt.Println(q.Name)
+	//fmt.Println(qrels.Name)
 	l, err := readline.New("> ")
 	if err != nil {
 		return nil, err
@@ -229,7 +229,7 @@ func (m ManualLogicComposer) Compose(text string) (cqr.CommonQueryRepresentation
 			return nil, err
 		}
 		switch line {
-		case "q":
+		case "qrels":
 			goto exit
 		default:
 			buff += fmt.Sprintln(line)
