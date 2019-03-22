@@ -8,6 +8,7 @@ import (
 const Entity = "entity"
 
 // EntityExtractor extracts entities from queries. These could be, for example, CUIs.
+// Each Entity Extractor implementation adds the Entity option on queries which is used later in the keyword mapping step.
 type EntityExtractor interface {
 	Extract(query cqr.CommonQueryRepresentation) (cqr.CommonQueryRepresentation, error)
 }

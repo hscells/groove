@@ -57,8 +57,8 @@ func (oc OracleQueryChainCandidateSelector) Output(lf LearntFeature, w io.Writer
 //			continue
 //		}
 //
-//		evaluation := eval.Evaluate([]eval.Evaluator{eval.PrecisionEvaluator}, &results, oc.qrels, bestQuery.Topic)
-//		precision := evaluation[eval.PrecisionEvaluator.Name()]
+//		evaluation := eval.Evaluate([]eval.Evaluator{eval.Precision}, &results, oc.qrels, bestQuery.Topic)
+//		precision := evaluation[eval.Precision.Name()]
 //
 //		lf = append(lf, LearntFeature{Features: candidate.Features, Score: precision})
 //	}
@@ -100,7 +100,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query CandidateQuery, candida
 		}
 		results := tree.Documents(oc.seen).Results(pq, query.Topic)
 		oc.minResults = float64(len(results))
-		evaluation := eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results, oc.qrels, query.Topic)
+		evaluation := eval.Evaluate([]eval.Evaluator{eval.Recall, eval.Precision, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results, oc.qrels, query.Topic)
 		if err != nil {
 			return query, oc, err
 		}
@@ -141,7 +141,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query CandidateQuery, candida
 		results := tree.Documents(oc.seen).Results(nq, nq.Name)
 
 		// Evaluate the results using qrels.
-		evaluation := eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results, oc.qrels, query.Topic)
+		evaluation := eval.Evaluate([]eval.Evaluator{eval.Recall, eval.Precision, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results, oc.qrels, query.Topic)
 		numRelRet := evaluation[eval.NumRelRet.Name()]
 		numRet := evaluation[eval.NumRet.Name()]
 
@@ -158,7 +158,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query CandidateQuery, candida
 			bestRet = numRet
 			oc.bestRelRet = bestRelRet
 			oc.bestRet = bestRet
-			log.Printf("topic %v - P %v, R %v, %v %v, %v %v, %v %v\n", query.Topic, evaluation[eval.PrecisionEvaluator.Name()], evaluation[eval.RecallEvaluator.Name()], eval.NumRel.Name(), evaluation[eval.NumRel.Name()], eval.NumRet.Name(), evaluation[eval.NumRet.Name()], eval.NumRelRet.Name(), evaluation[eval.NumRelRet.Name()])
+			log.Printf("topic %v - P %v, R %v, %v %v, %v %v, %v %v\n", query.Topic, evaluation[eval.Precision.Name()], evaluation[eval.Recall.Name()], eval.NumRel.Name(), evaluation[eval.NumRel.Name()], eval.NumRet.Name(), evaluation[eval.NumRet.Name()], eval.NumRelRet.Name(), evaluation[eval.NumRelRet.Name()])
 			transformed = pipeline.NewQuery(query.Topic, query.Topic, applied.Query)
 		}
 

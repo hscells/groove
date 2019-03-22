@@ -27,7 +27,17 @@ import (
 	"strings"
 )
 
-type terms map[string]int
+// Splitter splits a test set into development, validation, and unseen.
+type Splitter interface {
+	Split(docs []guru.MedlineDocument) ([]guru.MedlineDocument, []guru.MedlineDocument, []guru.MedlineDocument)
+}
+
+// TermAnalyser records term/phrase statistics about a set of documents.
+type TermAnalyser func(docs []guru.MedlineDocument) (TermStatistics, error)
+
+// -----------------------------------------------------------
+
+type TermStatistics map[string]float64
 
 type mappingPair struct {
 	CUI  string
@@ -135,8 +145,11 @@ func fetchDocuments(refs []int, e stats.EntrezStatisticsSource) ([]guru.MedlineD
 	return append(references, docs...), nil
 }
 
+type RandomSplitter int64
+
 // splitTest creates three slices of documents: 2:4 development, 1:4 validation, 1:4 unseen.
-func splitTest(docs []guru.MedlineDocument) ([]guru.MedlineDocument, []guru.MedlineDocument, []guru.MedlineDocument) {
+func (r RandomSplitter) Split(docs []guru.MedlineDocument) ([]guru.MedlineDocument, []guru.MedlineDocument, []guru.MedlineDocument) {
+	rand.Seed(int64(r))
 	rand.Shuffle(len(docs), func(i, j int) {
 		docs[i], docs[j] = docs[j], docs[i]
 	})
@@ -162,9 +175,9 @@ func splitTest(docs []guru.MedlineDocument) ([]guru.MedlineDocument, []guru.Medl
 	return dev, val, unseen
 }
 
-// termFrequencyAnalysis computes the document frequency for the input documents.
-func termFrequencyAnalysis(docs []guru.MedlineDocument) (terms, error) {
-	t := make(terms)
+// TermFrequencyAnalyser computes the document frequency for the input documents.
+func TermFrequencyAnalyser(docs []guru.MedlineDocument) (TermStatistics, error) {
+	t := make(TermStatistics)
 	for _, doc := range docs {
 		seen := make(map[string]bool)
 		o, err := tokenise(strings.ToLower(fmt.Sprintf("%s. %s", doc.TI, doc.AB)))
@@ -206,10 +219,10 @@ func loadSemTypesMapping(filename string) (semTypeMapping, error) {
 	return m, nil
 }
 
-// cutDevelopmentTerms takes terms from the development set where the DF of the term is >= 20%.
-func cutDevelopmentTerms(t terms, dev []guru.MedlineDocument, cut float64) terms {
+// cutDevelopmentTerms takes TermStatistics from the development set where the DF of the term is >= 20%.
+func cutDevelopmentTerms(t TermStatistics, dev []guru.MedlineDocument, cut float64) TermStatistics {
 	n := float64(len(dev)) * cut // term must be <= 20% of development DF.
-	terms := make(terms)
+	terms := make(TermStatistics)
 
 	for k, v := range t {
 		if float64(v) >= n {
@@ -220,17 +233,17 @@ func cutDevelopmentTerms(t terms, dev []guru.MedlineDocument, cut float64) terms
 	return terms
 }
 
-// cutDevelopmentTermsWithPopulation takes terms where the DF in the population collection is <= 2%.
-func cutDevelopmentTermsWithPopulation(dev []string, population terms, topic, folder string, cut float64) []string {
+// cutDevelopmentTermsWithPopulation takes TermStatistics where the DF in the population collection is <= 2%.
+func cutDevelopmentTermsWithPopulation(dev []string, population TermStatistics, topic, folder string, cut float64) []string {
 	n := float64(len(population)) * cut // Term must be <= 2% of population DF.
 	var t []string
 
 	type pair struct {
 		K string
-		V int
+		V float64
 		P float64
 	}
-	terms := make(terms)
+	terms := make(TermStatistics)
 
 	for _, term := range dev {
 		if df, ok := population[term]; ok {
@@ -263,7 +276,7 @@ func cutDevelopmentTermsWithPopulation(dev []string, population terms, topic, fo
 	return t
 }
 
-// metaMapTerms maps terms to CUIs.
+// metaMapTerms maps TermStatistics to CUIs.
 func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 	// Open the document store.
 	d, err := os.UserCacheDir()
@@ -345,7 +358,7 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 	return cuis, nil
 }
 
-// classifyQueryTerms automatically classifies query terms based on the
+// classifyQueryTerms automatically classifies query TermStatistics based on the
 // semantic type of the query.
 func classifyQueryTerms(terms []string, mapping mapping, semTypes semTypeMapping) ([]string, []string, []string) {
 	var (
@@ -354,9 +367,9 @@ func classifyQueryTerms(terms []string, mapping mapping, semTypes semTypeMapping
 		studyTypes []string
 	)
 
-	// Loop through all the terms to become query terms.
+	// Loop through all the TermStatistics to become query TermStatistics.
 	for _, term := range terms {
-		// All terms _should_ have been meta-mapped
+		// All TermStatistics _should_ have been meta-mapped
 		if p, ok := mapping[term]; ok {
 			// The sem type of the term _should_ also be in this sem group.
 			if s, ok := guru.MapSemType(p.Abbr); ok {
@@ -385,7 +398,7 @@ func classifyQueryTerms(terms []string, mapping mapping, semTypes semTypeMapping
 				}
 
 				// Now that we have decided a category, we can continue
-				// adding query terms to the appropriate category.
+				// adding query TermStatistics to the appropriate category.
 				switch category {
 				case treatment:
 					treatments = append(treatments, term)
@@ -409,8 +422,8 @@ type res struct {
 	relret []string
 }
 
-// FilterQueryTerms reduces further query terms by identifying the best combination
-// of terms based on how many relevant documents they retrieve from the development set.
+// FilterQueryTerms reduces further query TermStatistics by identifying the best combination
+// of TermStatistics based on how many relevant documents they retrieve from the development set.
 func FilterQueryTerms(conditions, treatments, studyTypes []string, field string, development trecresults.Qrels, e stats.EntrezStatisticsSource) ([]string, []string, []string, error) {
 	eval.RelevanceGrade = 0
 	terms := make([][]string, 3)
@@ -420,7 +433,12 @@ func FilterQueryTerms(conditions, treatments, studyTypes []string, field string,
 
 	results := make([][]res, 3)
 
-	fileCache := combinator.NewFileQueryCache("/Users/s4558151/filecache/")
+	// Open the document store.
+	d, err := os.UserCacheDir()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	fileCache := combinator.NewFileQueryCache(path.Join(d, "filecache"))
 
 	// Identify how many relevant documents from the development set each term in each category retrieves.
 	for i := 0; i < len(terms); i++ {
@@ -449,7 +467,7 @@ func FilterQueryTerms(conditions, treatments, studyTypes []string, field string,
 	treatmentsDocs := make(map[string]bool)
 	studyTypesDocs := make(map[string]bool)
 
-	// Identify which terms contribute to the overall recall.
+	// Identify which TermStatistics contribute to the overall recall.
 	var idx int
 	for i := 0; i < len(results); i++ {
 		for j := 0; j < len(results[i]); j++ {
@@ -490,17 +508,17 @@ func FilterQueryTerms(conditions, treatments, studyTypes []string, field string,
 		}
 	}
 
-	// G represents the maximum coverage of all terms globally (i.e., when AND'ed together).
+	// G represents the maximum coverage of all TermStatistics globally (i.e., when AND'ed together).
 	G := maximumCoverage(conditionsVec, treatmentsVec, studyTypesVec)
 
-	// Add terms to c, t, and s on the condition that the removal of the term affects G.
+	// Add TermStatistics to c, t, and s on the condition that the removal of the term affects G.
 	var (
 		c []string
 		t []string
 		s []string
 	)
 	for i := 0; i < len(results); i++ {
-		// Sort the slice to look at high DF terms first.
+		// Sort the slice to look at high DF TermStatistics first.
 		sort.Slice(results[i], func(j, k int) bool {
 			return len(results[i][j].relret) < len(results[i][k].relret)
 		})
@@ -522,8 +540,8 @@ func FilterQueryTerms(conditions, treatments, studyTypes []string, field string,
 			}
 		}
 
-		// When no terms affect the query at all, then all
-		// terms must be added to the query.
+		// When no TermStatistics affect the query at all, then all
+		// TermStatistics must be added to the query.
 		switch i {
 		case 0:
 			if len(c) == 0 {
@@ -612,7 +630,8 @@ func makeKeywords(conditions, treatments, studyTypes []string) ([]cqr.Keyword, [
 	return keywords[0], keywords[1], keywords[2]
 }
 
-func makeQrels(docs []guru.MedlineDocument) trecresults.Qrels {
+// MakeQrels creates a set of relevance assessments from some medline documents.
+func MakeQrels(docs []guru.MedlineDocument) trecresults.Qrels {
 	qrels := make(trecresults.Qrels)
 	for _, doc := range docs {
 		qrels[doc.PMID] = &trecresults.Qrel{
@@ -703,7 +722,7 @@ func addMeSHTerms(conditions, treatments, studyTypes []cqr.Keyword, dev []guru.M
 		}
 	}
 
-	c, t, s, err = FilterQueryTerms(c, t, s, fields.MeshHeadings, makeQrels(dev), e)
+	c, t, s, err = FilterQueryTerms(c, t, s, fields.MeshHeadings, MakeQrels(dev), e)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -788,9 +807,14 @@ func constructQuery(conditions, treatments, studyTypes []cqr.Keyword) cqr.Common
 	return q
 }
 
+// evaluate computes evaluation measures for each of the dev, val, and unseen sets.
 func evaluate(query cqr.CommonQueryRepresentation, e stats.EntrezStatisticsSource, dev, val, unseen []guru.MedlineDocument) (evaluation, error) {
 	// Execute the query and find the effectiveness.
-	filecache := combinator.NewFileQueryCache("/Users/s4558151/filecache")
+	d, err := os.UserCacheDir()
+	if err != nil {
+		return evaluation{}, err
+	}
+	filecache := combinator.NewFileQueryCache(path.Join(d, "filecache"))
 	pq := pipeline.NewQuery("0", "0", query)
 	tree, _, err := combinator.NewLogicalTree(pq, e, filecache)
 	if err != nil {
@@ -798,10 +822,10 @@ func evaluate(query cqr.CommonQueryRepresentation, e stats.EntrezStatisticsSourc
 	}
 	results := tree.Documents(filecache).Results(pq, "0")
 	eval.RelevanceGrade = 0
-	ev := []eval.Evaluator{eval.NumRel, eval.NumRet, eval.NumRelRet, eval.RecallEvaluator, eval.PrecisionEvaluator, eval.F1Measure, eval.F05Measure, eval.F3Measure, eval.NNR}
-	devEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": makeQrels(dev)}}, "0")
-	valEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": makeQrels(val)}}, "0")
-	unseenEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": makeQrels(unseen)}}, "0")
+	ev := []eval.Evaluator{eval.NumRel, eval.NumRet, eval.NumRelRet, eval.Recall, eval.Precision, eval.F1Measure, eval.F05Measure, eval.F3Measure, eval.NNR}
+	devEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": MakeQrels(dev)}}, "0")
+	valEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": MakeQrels(val)}}, "0")
+	unseenEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": MakeQrels(unseen)}}, "0")
 	return evaluation{
 		Development: devEval,
 		Validation:  valEval,
@@ -809,11 +833,11 @@ func evaluate(query cqr.CommonQueryRepresentation, e stats.EntrezStatisticsSourc
 	}, nil
 }
 
-// RankTerms ranks a map of terms by document frequency.
-func rankTerms(t terms, dev []guru.MedlineDocument, topic, folder string) []string {
+// RankTerms ranks term statistics.
+func rankTerms(t TermStatistics, dev []guru.MedlineDocument, topic, folder string) []string {
 	type pair struct {
 		K string
-		V int
+		V float64
 		P float64
 	}
 
@@ -826,7 +850,7 @@ func rankTerms(t terms, dev []guru.MedlineDocument, topic, folder string) []stri
 		return pairs[i].V > pairs[j].V
 	})
 
-	f, err := os.OpenFile(path.Join("./document_frequency", folder, topic+".development.json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+	f, err := os.OpenFile(path.Join("./statistics", folder, topic+".development.json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
 	if err != nil {
 		panic(err)
 	}
@@ -844,7 +868,8 @@ func rankTerms(t terms, dev []guru.MedlineDocument, topic, folder string) []stri
 	return terms
 }
 
-func deriveQueries(devDF terms, dev, val, population []guru.MedlineDocument, topic pipeline.Query, e stats.EntrezStatisticsSource, devK, popK []float64, meshK []int, folder, semtypes, pubdates, metamap string) (cqr.CommonQueryRepresentation, cqr.CommonQueryRepresentation, error) {
+// derive actually performs the objective derivation for the objective method.
+func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val, population []guru.MedlineDocument) (cqr.CommonQueryRepresentation, cqr.CommonQueryRepresentation, error) {
 	var (
 		bestEval float64
 		bestD    float64
@@ -859,53 +884,53 @@ func deriveQueries(devDF terms, dev, val, population []guru.MedlineDocument, top
 		bestQWithMesh cqr.CommonQueryRepresentation
 	)
 
-	m := eval.RecallEvaluator
+	m := eval.Recall
 
 	// Load the sem type mapping.
-	semTypes, err := loadSemTypesMapping(semtypes)
+	semTypes, err := loadSemTypesMapping(o.SemTypes)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Grid search over dev and pop values for the best query on validation.
-	for _, d := range devK {
-		for _, p := range popK {
+	for _, d := range o.DevK {
+		for _, p := range o.PopK {
 			fmt.Println(d, p)
-			// Take terms from dev where the DF > 20% of size of dev.
+			// Take terms from dev.
 			cut := cutDevelopmentTerms(devDF, dev, d)
-			// Rank the cut terms in dev by DF.
-			terms := rankTerms(cut, dev, topic.Topic, folder)
+			// Rank the cut terms in dev.
+			terms := rankTerms(cut, dev, o.query.Topic, o.Folder)
 			// Perform 'term frequency analysis' on the population.
-			popDF, err := termFrequencyAnalysis(population)
+			popDF, err := o.analyser(population)
 			if err != nil {
 				return nil, nil, err
 			}
-			// Identify dev terms which appear in <= 2% of the DF of the population set.
-			queryTerms := cutDevelopmentTermsWithPopulation(terms, popDF, topic.Topic, folder, p)
+			// Identify dev TermStatistics which appear in <= 2% of the DF of the population set.
+			queryTerms := cutDevelopmentTermsWithPopulation(terms, popDF, o.query.Topic, o.Folder, p)
 
-			// Map sem types in terms.
-			mapping, err := metaMapTerms(queryTerms, metawrap.HTTPClient{URL: metamap})
+			// Map sem types in TermStatistics.
+			mapping, err := metaMapTerms(queryTerms, metawrap.HTTPClient{URL: o.MetaMapURL})
 			if err != nil {
 				return nil, nil, err
 			}
 
-			// Classify query terms.
+			// Classify query TermStatistics.
 			conditions, treatments, studyTypes := classifyQueryTerms(queryTerms, mapping, semTypes)
 
 			// Create keywords for the proceeding query.
 			conditionsKeywords, treatmentsKeywords, studyTypesKeywords := makeKeywords(conditions, treatments, studyTypes)
 
-			// And then filter the query terms.
-			conditions, treatments, studyTypes, err = FilterQueryTerms(conditions, treatments, studyTypes, fields.TitleAbstract, makeQrels(dev), e)
+			// And then filter the query TermStatistics.
+			conditions, treatments, studyTypes, err = FilterQueryTerms(conditions, treatments, studyTypes, fields.TitleAbstract, MakeQrels(dev), o.s)
 			if err != nil {
 				return nil, nil, err
 			}
 
 			// Create the query from the three categories.
 			q := constructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords)
-			q = preprocess.DateRestrictions(pubdates, topic.Topic)(q)()
+			q = preprocess.DateRestrictions(o.Pubdates, o.query.Topic)(q)()
 
-			ev, err := evaluate(q, e, dev, val, nil)
+			ev, err := evaluate(q, o.s, dev, val, nil)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -924,16 +949,16 @@ func deriveQueries(devDF terms, dev, val, population []guru.MedlineDocument, top
 
 	// Grid search parameters of k for the number of mesh keywords to add to a query.
 	bestEval = 0.0
-	for _, k := range meshK {
+	for _, k := range o.MeSHK {
 		fmt.Println(k)
-		conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH, err := addMeSHTerms(bestConditions, bestTreatments, bestStudyTypes, dev, e, topic.Topic, k, folder)
+		conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH, err := addMeSHTerms(bestConditions, bestTreatments, bestStudyTypes, dev, o.s, o.query.Topic, k, o.Folder)
 		if err != nil {
 			return nil, nil, err
 		}
 		qWithMeSH := constructQuery(conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH)
-		qWithMeSH = preprocess.DateRestrictions(pubdates, topic.Topic)(qWithMeSH)()
+		qWithMeSH = preprocess.DateRestrictions(o.Pubdates, o.query.Topic)(qWithMeSH)()
 
-		ev, err := evaluate(qWithMeSH, e, dev, val, nil)
+		ev, err := evaluate(qWithMeSH, o.s, dev, val, nil)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -954,7 +979,7 @@ func deriveQueries(devDF terms, dev, val, population []guru.MedlineDocument, top
 		return nil, nil, err
 	}
 
-	err = ioutil.WriteFile(path.Join("./objective_qf/params", folder, topic.Topic+"params.json"), b, 0664)
+	err = ioutil.WriteFile(path.Join("./objective_qf/params", o.Folder, o.query.Topic+"params.json"), b, 0664)
 	if err != nil {
 		return nil, nil, err
 	}

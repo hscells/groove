@@ -52,7 +52,7 @@ func Frequent(mapping cui2vec.Mapping) MetaMapMapper {
 	}
 }
 
-// Frequent identifies all of the terms for the concept in the UMLS meta-thesaurus.
+// Frequent identifies all of the TermStatistics for the concept in the UMLS meta-thesaurus.
 func Alias(mapping cui2vec.AliasMapping) MetaMapMapper {
 	return func(keyword cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
 		if v, ok := mapping[keyword.GetOption(Entity).(string)]; ok {

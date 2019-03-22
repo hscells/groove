@@ -139,9 +139,9 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 	)
 	chain.GenerationExplorer = learning.NewBreadthFirstExplorer(chain, learning.NewRandomSampler(20, 0.1), learning.DepthStoppingCondition)
 
-	//chain.Sampler = learning.NewEvaluationSampler(10, 0.1, eval.PrecisionEvaluator, qrels, cache, ss)
+	//chain.Sampler = learning.NewEvaluationSampler(10, 0.1, eval.Precision, qrels, cache, ss)
 	//chain.GenerationFile = "../evaluation.features"
-	//chain.Sampler = learning.NewGreedySampler(10, 0.1, eval.PrecisionEvaluator, qrels, cache, ss)
+	//chain.Sampler = learning.NewGreedySampler(10, 0.1, eval.Precision, qrels, cache, ss)
 	//chain.GenerationFile = "../greedy.features"
 	//chain.Sampler = learning.NewTransformationSampler(10, 0.1)
 	//chain.GenerationFile = "../transformation.features"
@@ -149,8 +149,8 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 	chain.QueryCacher = cache
 	chain.QrelsFile = qrels
 	chain.Evaluators = []eval.Evaluator{
-		eval.PrecisionEvaluator,
-		eval.RecallEvaluator,
+		eval.Precision,
+		eval.Recall,
 		eval.F05Measure,
 		eval.F1Measure,
 		eval.F3Measure,
@@ -169,6 +169,6 @@ func TestOracleQueryChainSelector_Select(t *testing.T) {
 	//	t.Fatal(err)
 	//}
 	//fmt.Println(repr.(cqr.CommonQueryRepresentation))
-	//fmt.Println(eval.Evaluate([]eval.Evaluator{eval.RecallEvaluator, eval.PrecisionEvaluator, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results1, qrels, topic))
+	//fmt.Println(eval.Evaluate([]eval.Evaluator{eval.Recall, eval.Precision, eval.NumRet, eval.NumRel, eval.NumRelRet}, &results1, qrels, topic))
 
 }

@@ -163,7 +163,7 @@ func main() {
 		//}
 		//eval.RelevanceGrade = 0
 		//
-		//ev := []eval.Evaluator{eval.NumRel, eval.NumRet, eval.NumRelRet, eval.RecallEvaluator, eval.PrecisionEvaluator, eval.F1Measure, eval.F05Measure, eval.F3Measure, eval.NNR}
+		//ev := []eval.Evaluator{eval.NumRel, eval.NumRet, eval.NumRelRet, eval.Recall, eval.Precision, eval.F1Measure, eval.F05Measure, eval.F3Measure, eval.NNR}
 		//evaluation := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{topic.Topic: rrels}}, topic.Topic)
 		//
 		//f, err := os.OpenFile("/Users/s4558151/go/src/github.com/hscells/groove/scripts/objective_qf/evaluation_orig2/"+topic.Topic+".evaluation.json", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
@@ -256,7 +256,7 @@ func DeriveQueries(devDF Terms, dev, val, population []guru.MedlineDocument, top
 		bestQWithMesh cqr.CommonQueryRepresentation
 	)
 
-	m := eval.RecallEvaluator
+	m := eval.Recall
 
 	// Load the sem type mapping.
 	semTypes, err := loadSemTypesMapping("/Users/s4558151/Papers/sysrev_queries/amia2019_objective/experiments/cui_semantic_types.txt")
@@ -369,7 +369,7 @@ func Evaluate(query cqr.CommonQueryRepresentation, e stats.EntrezStatisticsSourc
 	}
 	results := tree.Documents(filecache).Results(pq, "0")
 	eval.RelevanceGrade = 0
-	ev := []eval.Evaluator{eval.NumRel, eval.NumRet, eval.NumRelRet, eval.RecallEvaluator, eval.PrecisionEvaluator, eval.F1Measure, eval.F05Measure, eval.F3Measure, eval.NNR}
+	ev := []eval.Evaluator{eval.NumRel, eval.NumRet, eval.NumRelRet, eval.Recall, eval.Precision, eval.F1Measure, eval.F05Measure, eval.F3Measure, eval.NNR}
 	devEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": makeQrels(dev)}}, "0")
 	valEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": makeQrels(val)}}, "0")
 	unseenEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": makeQrels(unseen)}}, "0")

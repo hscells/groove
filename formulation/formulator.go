@@ -8,7 +8,6 @@ import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/guru"
 	"github.com/hscells/trecresults"
-	"math/rand"
 	"strconv"
 )
 
@@ -29,6 +28,7 @@ type ConceptualFormulator struct {
 }
 
 // ObjectiveFormulator formulates queries according to the objective approach.
+// This implementation writes files to disk as a side effect which can be later be used for analysis.
 type ObjectiveFormulator struct {
 	seed                                   int
 	Folder, Pubdates, SemTypes, MetaMapURL string
@@ -38,23 +38,68 @@ type ObjectiveFormulator struct {
 	population                             []guru.MedlineDocument
 	MeSHK                                  []int
 	DevK, PopK                             []float64
+
+	splitter       Splitter
+	analyser       TermAnalyser
+	postProcessing []PostProcess
 }
 
-func NewObjectiveFormulator(query pipeline.Query, s stats.EntrezStatisticsSource, qrels trecresults.Qrels, population []guru.MedlineDocument) *ObjectiveFormulator {
-	return &ObjectiveFormulator{
+type ObjectiveOption func(o *ObjectiveFormulator)
+
+func ObjectiveGrid(devK, popK []float64, meshK []int) ObjectiveOption {
+	return func(o *ObjectiveFormulator) {
+		o.DevK = devK
+		o.PopK = popK
+		o.MeSHK = meshK
+	}
+}
+
+func ObjectiveSplitter(spitter Splitter) ObjectiveOption {
+	return func(o *ObjectiveFormulator) {
+		o.splitter = spitter
+	}
+}
+
+func ObjectiveAnalyser(analyser TermAnalyser) ObjectiveOption {
+	return func(o *ObjectiveFormulator) {
+		o.analyser = analyser
+	}
+}
+
+func ObjectivePostProcessing(processes ...PostProcess) ObjectiveOption {
+	return func(o *ObjectiveFormulator) {
+		o.postProcessing = processes
+	}
+}
+
+func NewObjectiveFormulator(query pipeline.Query, s stats.EntrezStatisticsSource, qrels trecresults.Qrels, population []guru.MedlineDocument, folder, pubdates, semTypes, metamapURL string, options ...ObjectiveOption) *ObjectiveFormulator {
+	o := &ObjectiveFormulator{
 		s:          s,
 		qrels:      qrels,
 		population: population,
 		query:      query,
+		Folder:     folder,
+		Pubdates:   pubdates,
+		SemTypes:   semTypes,
+		MetaMapURL: metamapURL,
 		DevK:       []float64{0.20},
 		PopK:       []float64{0.02},
 		MeSHK:      []int{20},
+		splitter:   RandomSplitter(1000),
+		analyser:   TermFrequencyAnalyser,
 		//DevK:       []float64{0.05, 0.10, 0.15, 0.20, 0.25, 0.30},
 		//PopK:       []float64{0.001, 0.01, 0.02, 0.05, 0.10, 0.20},
 		//MeSHK:      []int{1, 5, 10, 15, 20, 25},
 	}
+
+	for _, option := range options {
+		option(o)
+	}
+
+	return o
 }
 
+// Formulate returns two queries: one with MeSH terms and one without. It also returns the set of unseen documents for evaluation later.
 func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []interface{}, error) {
 	// Identify the relevant studies using relevance assessments.
 	var docs []int
@@ -82,17 +127,29 @@ func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []int
 	}
 
 	// Split the 'test' set into dev, val, and unseen.
-	rand.Seed(1000)
-	dev, val, unseen := splitTest(test)
+	dev, val, unseen := o.splitter.Split(test)
 	fmt.Println(len(dev), len(val), len(unseen))
 
 	// Perform 'term frequency analysis' on the development set.
-	devDF, err := termFrequencyAnalysis(dev)
+	devTerms, err := o.analyser(dev)
 	if err != nil {
 		panic(err)
 	}
 
-	q1, q2, err := deriveQueries(devDF, dev, val, o.population, o.query, o.s, o.DevK, o.PopK, o.MeSHK, o.Folder, o.SemTypes, o.Pubdates, o.MetaMapURL)
+	q1, q2, err := o.derive(devTerms, dev, val, o.population)
+
+	// Post-Processing.
+	for _, postProcessor := range o.postProcessing {
+		q1, err = postProcessor(q1)
+		if err != nil {
+			return nil, nil, err
+		}
+		q2, err = postProcessor(q2)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
 	return []cqr.CommonQueryRepresentation{q1, q2}, []interface{}{unseen}, nil
 }
 
