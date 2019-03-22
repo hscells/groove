@@ -52,7 +52,7 @@ func TestMLE(t *testing.T) {
 		},
 	}
 
-	e := eval.NewMaximumLikelihoodEvaluator(eval.PrecisionEvaluator)
+	e := eval.NewMaximumLikelihoodEvaluator(eval.Precision)
 	t.Log(e.Probability(qrels))
 
 	results := &trecresults.ResultList{
@@ -66,6 +66,6 @@ func TestMLE(t *testing.T) {
 		&trecresults.Result{Topic: "1", DocId: "9"},
 	}
 
-	t.Log(eval.PrecisionEvaluator.Score(results, qrels))
+	t.Log(eval.Precision.Score(results, qrels))
 	t.Log(e.Score(results, qrels))
 }

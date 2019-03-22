@@ -28,6 +28,6 @@ func TestPrecision(t *testing.T) {
 	topic := "107"
 
 	l := results.Results[topic]
-	t.Log(eval.PrecisionEvaluator.Score(&l, qrels.Qrels[topic]))
-	t.Log(eval.RecallEvaluator.Score(&l, qrels.Qrels[topic]))
+	t.Log(eval.Precision.Score(&l, qrels.Qrels[topic]))
+	t.Log(eval.Recall.Score(&l, qrels.Qrels[topic]))
 }

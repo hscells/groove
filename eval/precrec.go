@@ -8,8 +8,8 @@ import (
 
 var RelevanceGrade int64 = 1
 
-type recallEvaluator struct{}
-type precisionEvaluator struct{}
+type recall struct{}
+type precision struct{}
 type numRel struct{}
 type numRet struct{}
 type numRelRet struct{}
@@ -21,10 +21,10 @@ type FMeasure struct {
 }
 
 var (
-	// RecallEvaluator calculates recall.
-	RecallEvaluator = recallEvaluator{}
-	// PrecisionEvaluator calculates precision.
-	PrecisionEvaluator = precisionEvaluator{}
+	// Recall calculates recall.
+	Recall = recall{}
+	// Precision calculates precision.
+	Precision = precision{}
 	// NumRel is the number of relevant documents.
 	NumRel = numRel{}
 	// NumRet is the number of retrieved documents.
@@ -40,11 +40,11 @@ var (
 	F3Measure = FMeasure{beta: 3}
 )
 
-func (rec recallEvaluator) Name() string {
+func (rec recall) Name() string {
 	return "Recall"
 }
 
-func (rec recallEvaluator) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
+func (rec recall) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
 	if float64(len(*results)) == 0 {
 		return 0.0
 	}
@@ -75,11 +75,11 @@ func (rec recallEvaluator) Score(results *trecresults.ResultList, qrels trecresu
 	return numRelRet / (numRelRet + numRelNotRet)
 }
 
-func (rec precisionEvaluator) Name() string {
+func (rec precision) Name() string {
 	return "Precision"
 }
 
-func (rec precisionEvaluator) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
+func (rec precision) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
 	if float64(len(*results)) == 0 {
 		return 0.0
 	}
@@ -146,8 +146,8 @@ func (numRelRet) Name() string {
 
 // Score uses the beta parameter to compute f-measure.
 func (f FMeasure) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
-	precision := PrecisionEvaluator.Score(results, qrels)
-	recall := RecallEvaluator.Score(results, qrels)
+	precision := Precision.Score(results, qrels)
+	recall := Recall.Score(results, qrels)
 	if precision == 0 || recall == 0 {
 		return 0
 	}
@@ -168,7 +168,7 @@ func (w WorkSavedOverSampling) Score(results *trecresults.ResultList, qrels trec
 	// # WSS = (total_col - num_ret / total_colN) - (1 - recall)
 	// wss = lambda N, num_ret, rel_ret, recall: ((N - num_ret) / N) - (1 - recall)
 	ret := NumRet.Score(results, qrels)
-	recall := RecallEvaluator.Score(results, qrels)
+	recall := Recall.Score(results, qrels)
 	return ((w.N - ret) / w.N) - (1.0 - recall)
 }
 
