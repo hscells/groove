@@ -29,7 +29,7 @@ func TestName(t *testing.T) {
 	p := pipeline.NewGroovePipeline(
 		query.NewTransmuteQuerySource(query.MedlineTransmutePipeline), ss,
 		pipeline.Measurement(preqpp.AvgICTF, preqpp.SumIDF, preqpp.AvgIDF, preqpp.StdDevIDF, preqpp.MaxIDF, postqpp.ClarityScore),
-		pipeline.Evaluation(eval.PrecisionEvaluator, eval.RecallEvaluator),
+		pipeline.Evaluation(eval.Precision, eval.Recall),
 		pipeline.MeasurementOutput(output.JsonMeasurementFormatter),
 		pipeline.EvaluationOutput("medline.qrels", output.JsonEvaluationFormatter),
 		pipeline.TrecOutput("medline_qpp.results"))

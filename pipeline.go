@@ -8,18 +8,23 @@ import (
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
+	"github.com/hscells/groove/formulation"
 	"github.com/hscells/groove/learning"
 	"github.com/hscells/groove/output"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/preprocess"
 	"github.com/hscells/groove/query"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/transmute"
 	"github.com/hscells/trecresults"
 	"github.com/peterbourgon/diskv"
 	"io/ioutil"
 	"log"
+	"os"
+	"path"
 	"runtime"
 	"sort"
+	"strconv"
 )
 
 // Pipeline contains all the information for executing a pipeline for query analysis.
@@ -38,6 +43,7 @@ type Pipeline struct {
 	QueryCache            combinator.QueryCacher
 	Model                 learning.Model
 	ModelConfiguration    ModelConfiguration
+	QueryFormulator       formulation.Formulator
 }
 
 // ModelConfiguration specifies what actions of a model should be taken by the pipeline.
@@ -395,6 +401,125 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 				return
 			}
 
+		}
+	}
+
+	// This part of the pipeline handles query formulation.
+	if p.QueryFormulator != nil {
+		// Perform the query formulation.
+		queries, sup, err := p.QueryFormulator.Formulate()
+		if err != nil {
+			c <- pipeline.Result{
+				Error: err,
+				Type:  pipeline.Error,
+			}
+			return
+		}
+		for _, s := range sup {
+			// Create the folder the data will be contained in.
+			err := os.MkdirAll(s.Name, 0777)
+			if err != nil {
+				c <- pipeline.Result{
+					Error: err,
+					Type:  pipeline.Error,
+				}
+				return
+			}
+
+			for _, d := range s.Data {
+				// Create and open the file that will contain the data.
+				f, err := os.OpenFile(path.Join(s.Name, d.Name), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+				if err != nil {
+					c <- pipeline.Result{
+						Error: err,
+						Type:  pipeline.Error,
+					}
+					return
+				}
+				// Marshal the data into bytes for writing to disk.
+				b, err := d.Value.Marshal()
+				if err != nil {
+					c <- pipeline.Result{
+						Error: err,
+						Type:  pipeline.Error,
+					}
+					return
+				}
+				// Write those bytes to disk.
+				_, err = f.Write(b)
+				if err != nil {
+					c <- pipeline.Result{
+						Error: err,
+						Type:  pipeline.Error,
+					}
+					return
+				}
+				// Close that file.
+				err = f.Close()
+				if err != nil {
+					c <- pipeline.Result{
+						Error: err,
+						Type:  pipeline.Error,
+					}
+					return
+				}
+			}
+		}
+
+		// Create the folder that will contain the formulated query/queries.
+		err = os.MkdirAll(p.QueryFormulator.Method(), 0777)
+		if err != nil {
+			c <- pipeline.Result{
+				Error: err,
+				Type:  pipeline.Error,
+			}
+			return
+		}
+		for i, q := range queries {
+			err := os.MkdirAll(path.Join(p.QueryFormulator.Method(), strconv.Itoa(i)), 0777)
+			if err != nil {
+				c <- pipeline.Result{
+					Error: err,
+					Type:  pipeline.Error,
+				}
+				return
+			}
+			// Compile the query to CQR.
+			s, err := transmute.CompileCqr2PubMed(q)
+			if err != nil {
+				c <- pipeline.Result{
+					Error: err,
+					Type:  pipeline.Error,
+				}
+				return
+			}
+			// Open the file that will contain the query.
+			f, err := os.OpenFile(path.Join(p.QueryFormulator.Method(), strconv.Itoa(i), p.QueryFormulator.Topic()), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+			if err != nil {
+				c <- pipeline.Result{
+					Error: err,
+					Type:  pipeline.Error,
+				}
+				return
+			}
+			// Write the query to disk.
+			_, err = f.WriteString(s)
+			if err != nil {
+				c <- pipeline.Result{
+					Error: err,
+					Type:  pipeline.Error,
+				}
+				return
+			}
+			// Close the file.
+			err = f.Close()
+			if err != nil {
+				c <- pipeline.Result{
+					Error: err,
+					Type:  pipeline.Error,
+				}
+				return
+			}
 		}
 	}
 

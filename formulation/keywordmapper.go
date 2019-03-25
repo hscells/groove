@@ -6,7 +6,6 @@ import (
 	"github.com/hscells/cui2vec"
 	"github.com/hscells/guru"
 	"github.com/hscells/metawrap"
-	"github.com/hscells/transmute/fields"
 	"strings"
 )
 
@@ -52,14 +51,16 @@ func Frequent(mapping cui2vec.Mapping) MetaMapMapper {
 	}
 }
 
-// Frequent identifies all of the TermStatistics for the concept in the UMLS meta-thesaurus.
+// Frequent identifies all of the terms for the concept in the UMLS meta-thesaurus.
 func Alias(mapping cui2vec.AliasMapping) MetaMapMapper {
 	return func(keyword cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
+		fmt.Println(keyword.QueryString, keyword.GetOption(Entity))
 		if v, ok := mapping[keyword.GetOption(Entity).(string)]; ok {
 			var mappings []cqr.CommonQueryRepresentation
 			for _, s := range v {
-				mappings = append(mappings, cqr.NewKeyword(s, keyword.Fields...))
+				mappings = append(mappings, cqr.NewKeyword(fmt.Sprintf(`"%s"`, s), keyword.Fields...))
 			}
+			fmt.Println(mappings)
 			return mappings, nil
 		}
 		return []cqr.CommonQueryRepresentation{keyword}, nil
@@ -81,18 +82,18 @@ func NewMetaMapKeywordMapper(client metawrap.HTTPClient, mapper MetaMapMapper) M
 
 // MapKeywords takes as input a proto-query from a newly logically composed query and maps concepts in it to keywords
 // using the specified mapper.
-func MapKeywords(r cqr.CommonQueryRepresentation, mapper KeywordMapper) (v cqr.CommonQueryRepresentation, err error) {
+func MapKeywords(r cqr.CommonQueryRepresentation, mapper KeywordMapper) (cqr.CommonQueryRepresentation, error) {
 	switch q := r.(type) {
 	case cqr.Keyword:
 		if len(strings.TrimSpace(q.QueryString)) == 0 {
-			return
+			return nil, nil
 		}
 		keywords, err := mapper.Map(q)
 		if err != nil {
-			return
+			return nil, err
 		}
 		if len(keywords) == 0 {
-			return
+			return nil, nil
 		} else if len(keywords) == 1 {
 			return keywords[0], nil
 		}
@@ -103,35 +104,16 @@ func MapKeywords(r cqr.CommonQueryRepresentation, mapper KeywordMapper) (v cqr.C
 		return b, nil
 	case cqr.BooleanQuery:
 		b := cqr.NewBooleanQuery(q.Operator, nil)
-		var qs []string
+		var children []cqr.CommonQueryRepresentation
 		for _, child := range q.Children {
-			switch v := child.(type) {
-			case cqr.Keyword:
-				qs = append(qs, v.QueryString)
-			case cqr.BooleanQuery:
-				m, err := MapKeywords(child, mapper)
-				if err != nil {
-					return
-				}
-				if m != nil {
-					b.Children = append(b.Children, m)
-				}
+			kws, err := MapKeywords(child, mapper)
+			if err != nil {
+				return nil, err
 			}
+			children = append(children, kws)
 		}
 
-		k := cqr.NewKeyword(fmt.Sprintf(`"%s"`, strings.Join(qs, " ")), fields.TitleAbstract)
-		if len(qs) == len(q.Children) {
-			return MapKeywords(k, mapper)
-		} else if len(qs) > 0 {
-			v, err := MapKeywords(k, mapper)
-			if err != nil {
-				return
-			}
-			if v != nil {
-				b.Children = append(b.Children, v)
-			}
-		}
-		return b, nil
+		return cqr.NewBooleanQuery(b.Operator, children), nil
 	}
-	return
+	return r, nil
 }

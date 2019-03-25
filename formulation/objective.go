@@ -35,9 +35,36 @@ type Splitter interface {
 // TermAnalyser records term/phrase statistics about a set of documents.
 type TermAnalyser func(docs []guru.MedlineDocument) (TermStatistics, error)
 
+type BackgroundCollection interface {
+	Statistic(term string) (float64, error)
+	Size() (float64, error)
+}
+
 // -----------------------------------------------------------
 
 type TermStatistics map[string]float64
+
+type PopulationSet TermStatistics
+
+func (p PopulationSet) Statistic(term string) (float64, error) {
+	return p[term], nil
+}
+
+func (p PopulationSet) Size() (float64, error) {
+	return float64(len(p)), nil
+}
+
+type PubMedSet struct {
+	e stats.EntrezStatisticsSource
+}
+
+func (p PubMedSet) Statistic(term string) (float64, error) {
+	return p.e.DocumentFrequency(term, fields.TitleAbstract)
+}
+
+func (p PubMedSet) Size() (float64, error) {
+	return p.e.CollectionSize()
+}
 
 type mappingPair struct {
 	CUI  string
@@ -73,7 +100,7 @@ var (
 )
 
 // GetPopulationSet retrieves a set of publications to form a population set.
-func GetPopulationSet(e stats.EntrezStatisticsSource) ([]guru.MedlineDocument, error) {
+func GetPopulationSet(e stats.EntrezStatisticsSource, analyser TermAnalyser) (BackgroundCollection, error) {
 	e.Limit = 10000
 	pmids, err := e.Search(`("0000"[Date - Publication] : "2018"[Date - Publication])`, e.SearchSize(10000), )
 	if err != nil {
@@ -82,7 +109,18 @@ func GetPopulationSet(e stats.EntrezStatisticsSource) ([]guru.MedlineDocument, e
 	e.Limit = 0
 	fmt.Println("fetching docs")
 
-	return fetchDocuments(pmids, e)
+	// Perform 'term frequency analysis' on the population.
+	docs, err := fetchDocuments(pmids, e)
+	if err != nil {
+		return nil, err
+	}
+
+	pop, err := analyser(docs)
+	if err != nil {
+		return nil, err
+	}
+
+	return PopulationSet(pop), nil
 }
 
 // FetchDocuments retrieves the references to studies of target PMID(s).
@@ -234,8 +272,12 @@ func cutDevelopmentTerms(t TermStatistics, dev []guru.MedlineDocument, cut float
 }
 
 // cutDevelopmentTermsWithPopulation takes TermStatistics where the DF in the population collection is <= 2%.
-func cutDevelopmentTermsWithPopulation(dev []string, population TermStatistics, topic, folder string, cut float64) []string {
-	n := float64(len(population)) * cut // Term must be <= 2% of population DF.
+func cutDevelopmentTermsWithPopulation(dev []string, population BackgroundCollection, topic, folder string, cut float64) []string {
+	size, err := population.Size()
+	if err != nil {
+		panic(err)
+	}
+	n := size * cut // Term must be <= 2% of population DF.
 	var t []string
 
 	type pair struct {
@@ -246,17 +288,19 @@ func cutDevelopmentTermsWithPopulation(dev []string, population TermStatistics, 
 	terms := make(TermStatistics)
 
 	for _, term := range dev {
-		if df, ok := population[term]; ok {
+		if df, err := population.Statistic(term); err == nil {
 			if float64(df) <= n {
 				terms[term] = df
 				t = append(t, term)
 			}
+		} else {
+			panic(err)
 		}
 	}
 
 	var pairs []pair
 	for k, v := range terms {
-		pairs = append(pairs, pair{K: k, V: v, P: float64(v) / float64(len(population))})
+		pairs = append(pairs, pair{K: k, V: v, P: float64(v) / size})
 	}
 
 	sort.Slice(pairs, func(i, j int) bool {
@@ -869,7 +913,7 @@ func rankTerms(t TermStatistics, dev []guru.MedlineDocument, topic, folder strin
 }
 
 // derive actually performs the objective derivation for the objective method.
-func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val, population []guru.MedlineDocument) (cqr.CommonQueryRepresentation, cqr.CommonQueryRepresentation, error) {
+func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.MedlineDocument, population BackgroundCollection) (cqr.CommonQueryRepresentation, cqr.CommonQueryRepresentation, error) {
 	var (
 		bestEval float64
 		bestD    float64
@@ -900,13 +944,9 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val, population [
 			cut := cutDevelopmentTerms(devDF, dev, d)
 			// Rank the cut terms in dev.
 			terms := rankTerms(cut, dev, o.query.Topic, o.Folder)
-			// Perform 'term frequency analysis' on the population.
-			popDF, err := o.analyser(population)
-			if err != nil {
-				return nil, nil, err
-			}
+
 			// Identify dev TermStatistics which appear in <= 2% of the DF of the population set.
-			queryTerms := cutDevelopmentTermsWithPopulation(terms, popDF, o.query.Topic, o.Folder, p)
+			queryTerms := cutDevelopmentTermsWithPopulation(terms, population, o.query.Topic, o.Folder, p)
 
 			// Map sem types in TermStatistics.
 			mapping, err := metaMapTerms(queryTerms, metawrap.HTTPClient{URL: o.MetaMapURL})

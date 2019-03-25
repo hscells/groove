@@ -6,19 +6,38 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/guru"
 	"github.com/hscells/trecresults"
 	"strconv"
 )
 
 // Formulator formulates queries to some specification.
 type Formulator interface {
-	Formulate() ([]cqr.CommonQueryRepresentation, []interface{}, error)
+	Formulate() ([]cqr.CommonQueryRepresentation, []SupplementalData, error)
+	Method() string
+	Topic() string
+}
+
+// Data contains the actual data saved and how to write it to disk.
+type Data struct {
+	Name  string
+	Value DataMarshaler
+}
+
+// DataMarshaler describes how data should be written to disk.
+type DataMarshaler interface {
+	Marshal() ([]byte, error)
+}
+
+// SupplementalData is extra data than may output from the formulation process.
+type SupplementalData struct {
+	Name string
+	Data []Data
 }
 
 // ConceptualFormulator formulates queries using the title or string of a systematic review.
 type ConceptualFormulator struct {
 	title string
+	topic string
 
 	LogicComposer
 	EntityExtractor
@@ -35,10 +54,10 @@ type ObjectiveFormulator struct {
 	query                                  pipeline.Query
 	s                                      stats.EntrezStatisticsSource
 	qrels                                  trecresults.Qrels
-	population                             []guru.MedlineDocument
 	MeSHK                                  []int
 	DevK, PopK                             []float64
 
+	population     BackgroundCollection
 	splitter       Splitter
 	analyser       TermAnalyser
 	postProcessing []PostProcess
@@ -72,7 +91,7 @@ func ObjectivePostProcessing(processes ...PostProcess) ObjectiveOption {
 	}
 }
 
-func NewObjectiveFormulator(query pipeline.Query, s stats.EntrezStatisticsSource, qrels trecresults.Qrels, population []guru.MedlineDocument, folder, pubdates, semTypes, metamapURL string, options ...ObjectiveOption) *ObjectiveFormulator {
+func NewObjectiveFormulator(query pipeline.Query, s stats.EntrezStatisticsSource, qrels trecresults.Qrels, population BackgroundCollection, folder, pubdates, semTypes, metamapURL string, options ...ObjectiveOption) *ObjectiveFormulator {
 	o := &ObjectiveFormulator{
 		s:          s,
 		qrels:      qrels,
@@ -100,7 +119,7 @@ func NewObjectiveFormulator(query pipeline.Query, s stats.EntrezStatisticsSource
 }
 
 // Formulate returns two queries: one with MeSH terms and one without. It also returns the set of unseen documents for evaluation later.
-func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []interface{}, error) {
+func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []SupplementalData, error) {
 	// Identify the relevant studies using relevance assessments.
 	var docs []int
 	var nonrel []*trecresults.Qrel
@@ -150,25 +169,55 @@ func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []int
 		}
 	}
 
-	return []cqr.CommonQueryRepresentation{q1, q2}, []interface{}{unseen}, nil
+	sup := SupplementalData{
+		Name: "objective",
+		Data: []Data{
+			{
+				Name:  "unseen.qrels",
+				Value: MakeQrels(unseen),
+			},
+		},
+	}
+
+	return []cqr.CommonQueryRepresentation{q1, q2}, []SupplementalData{sup}, nil
 }
 
-func NewConceptualFormulator(title string, logicComposer LogicComposer, entityExtractor EntityExtractor, entityExpander EntityExpander, keywordMapper KeywordMapper, postProcessing ...PostProcess) *ConceptualFormulator {
-	return &ConceptualFormulator{title: title, LogicComposer: logicComposer, EntityExtractor: entityExtractor, EntityExpander: entityExpander, KeywordMapper: keywordMapper, postProcessing: postProcessing}
+func (o ObjectiveFormulator) Method() string {
+	return "objective"
 }
 
-func (t ConceptualFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []interface{}, error) {
+func (o ObjectiveFormulator) Topic() string {
+	return o.query.Topic
+}
+
+func NewConceptualFormulator(title, topic string, logicComposer LogicComposer, entityExtractor EntityExtractor, entityExpander EntityExpander, keywordMapper KeywordMapper, postProcessing ...PostProcess) *ConceptualFormulator {
+	return &ConceptualFormulator{
+		title:           title,
+		topic:           topic,
+		LogicComposer:   logicComposer,
+		EntityExtractor: entityExtractor,
+		EntityExpander:  entityExpander,
+		KeywordMapper:   keywordMapper,
+		postProcessing:  postProcessing,
+	}
+}
+
+func (t ConceptualFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []SupplementalData, error) {
 	// Query Logic Composition.
 	q, err := t.LogicComposer.Compose(t.title)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	fmt.Println("compose", q)
+
 	// Entity Extraction.
 	q, err = t.EntityExtractor.Extract(q)
 	if err != nil {
 		return nil, nil, err
 	}
+
+	fmt.Println("extract", q)
 
 	// Entity Expansion.
 	if t.EntityExpander != nil {
@@ -178,11 +227,15 @@ func (t ConceptualFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []in
 		}
 	}
 
+	fmt.Println("expand", q)
+
 	// Entities to Keywords Mapping.
 	q, err = MapKeywords(q, t.KeywordMapper)
 	if err != nil {
 		return nil, nil, err
 	}
+
+	fmt.Println("mapped", q)
 
 	// Post-Processing.
 	for _, postProcessor := range t.postProcessing {
@@ -193,4 +246,12 @@ func (t ConceptualFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []in
 	}
 
 	return []cqr.CommonQueryRepresentation{q}, nil, nil
+}
+
+func (t ConceptualFormulator) Method() string {
+	return "conceptual"
+}
+
+func (t ConceptualFormulator) Topic() string {
+	return t.topic
 }

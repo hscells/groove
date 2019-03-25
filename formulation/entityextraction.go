@@ -47,3 +47,9 @@ func (m MetaMapEntityExtractor) Extract(query cqr.CommonQueryRepresentation) (cq
 	}
 	return query, nil
 }
+
+func NewMetaMapEntityExtractor(client metawrap.HTTPClient) MetaMapEntityExtractor {
+	return MetaMapEntityExtractor{
+		client: client,
+	}
+}

@@ -10,8 +10,8 @@ import (
 // PostProcess applies any post-formatting to a query.
 type PostProcess func(query cqr.CommonQueryRepresentation) (cqr.CommonQueryRepresentation, error)
 
-// Stem uses already stemmed TermStatistics from the original query to
-// replace TermStatistics from the query that requires post-processing.
+// Stem uses already stemmed terms from the original query to
+// replace terms from the query that requires post-processing.
 func Stem(original cqr.CommonQueryRepresentation) PostProcess {
 	return func(query cqr.CommonQueryRepresentation) (cqr.CommonQueryRepresentation, error) {
 		stemDict := make(map[string]bool)
@@ -56,7 +56,6 @@ func stemQuery(query cqr.CommonQueryRepresentation, d map[string]bool, seen map[
 		return q
 	}
 }
-
 
 var (
 	/*

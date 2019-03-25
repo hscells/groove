@@ -1,6 +1,7 @@
 package formulation
 
 import (
+	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/hscells/cui2vec"
 )
@@ -25,9 +26,13 @@ func (c Cui2VecEntityExpander) Expand(keyword cqr.Keyword) ([]cqr.CommonQueryRep
 	if err != nil {
 		return nil, err
 	}
-	keywords := make([]cqr.CommonQueryRepresentation, len(concepts))
-	for i, concept := range concepts {
-		keywords[i] = cqr.NewKeyword(keyword.QueryString, keyword.Fields...).SetOption(Entity, concept.CUI)
+	var keywords []cqr.CommonQueryRepresentation
+	for _, concept := range concepts {
+		if len(concept.CUI) == 0 {
+			continue
+		}
+		fmt.Println(concept.CUI)
+		keywords = append(keywords, cqr.NewKeyword(keyword.QueryString, keyword.Fields...).SetOption(Entity, concept.CUI))
 	}
 	return keywords, nil
 }
