@@ -25,12 +25,13 @@ import (
 )
 
 type EntrezStatisticsSource struct {
+	Limit      int
 	tool       string
 	key        string
 	email      string
+	db         string
 	parameters map[string]float64
 	options    SearchOptions
-	Limit      int
 	// The size of PubMed.
 	n float64
 }
@@ -167,7 +168,7 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 
 	//entrez.Limit.Wait()
 	v := url.Values{}
-	v["db"] = []string{"pubmed"}
+	v["db"] = []string{e.db}
 	v["term"] = []string{query}
 	fillParams(p, v)
 	fmt.Print(".")
@@ -217,6 +218,24 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	return pmids, nil
 }
 
+// Summary uses the entrez eutils to obtain summary documents for the ids.
+func (e EntrezStatisticsSource) Summary(ids []string, value interface{}, options ...func(p *entrez.Parameters)) error {
+	p := &entrez.Parameters{}
+	for _, option := range options {
+		option(p)
+	}
+	p.RetMax = e.options.Size
+	p.RetMode = "xml"
+	p.APIKey = e.key
+	fmt.Println(e.db)
+	v := url.Values{}
+	v["db"] = []string{e.db}
+	v["id"] = ids
+	fillParams(p, v)
+
+	return entrez.SummaryURL.GetXML(v, e.tool, e.email, entrez.Limit, value)
+}
+
 // Fetch uses the entrez eutils to fetch the pubmed Article given a set of pubmed identifiers.
 func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Parameters)) ([]guru.MedlineDocument, error) {
 	p := &entrez.Parameters{}
@@ -228,7 +247,7 @@ func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Par
 	p.RetType = "medline"
 	p.APIKey = e.key
 
-	r, err := entrez.Fetch("pubmed", p, e.tool, e.email, nil, pmids...)
+	r, err := entrez.Fetch(e.db, p, e.tool, e.email, nil, pmids...)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +258,7 @@ func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Par
 }
 
 func (e EntrezStatisticsSource) Link(pmids []int, linkname string) ([]int, error) {
-	link, err := entrez.DoLink("pubmed", "pubmed", "neighbor", "", &entrez.Parameters{
+	link, err := entrez.DoLink(e.db, "pubmed", "neighbor", "", &entrez.Parameters{
 		LinkName: linkname,
 	}, e.tool, e.email, nil, pmids)
 	if err != nil {
@@ -271,7 +290,7 @@ func (e EntrezStatisticsSource) TermFrequency(term, field, document string) (flo
 	if err != nil {
 		return 0, err
 	}
-	r, err := entrez.Fetch("pubmed", &entrez.Parameters{RetMode: "xml", APIKey: e.key}, e.tool, e.email, nil, int(d))
+	r, err := entrez.Fetch(e.db, &entrez.Parameters{RetMode: "xml", APIKey: e.key}, e.tool, e.email, nil, int(d))
 	if err != nil {
 		return 0, err
 	}
@@ -366,7 +385,7 @@ func (e EntrezStatisticsSource) TermVector(document string) (TermVector, error) 
 }
 
 func (e EntrezStatisticsSource) DocumentFrequency(term, field string) (float64, error) {
-	s, err := entrez.DoSearch("pubmed", term, &entrez.Parameters{APIKey: e.key}, nil, e.tool, e.email)
+	s, err := entrez.DoSearch(e.db, term, &entrez.Parameters{APIKey: e.key}, nil, e.tool, e.email)
 	if err != nil {
 		return 0, err
 	}
@@ -419,7 +438,7 @@ func (e EntrezStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentatio
 	nfails := 20
 	fails := nfails
 retry:
-	s, err := entrez.DoSearch("pubmed", q, &entrez.Parameters{RetType: "xml", APIKey: e.key}, nil, e.tool, e.email)
+	s, err := entrez.DoSearch(e.db, q, &entrez.Parameters{RetType: "xml", APIKey: e.key}, nil, e.tool, e.email)
 	if err != nil {
 		if fails > 0 {
 			log.Printf("error: %v, retrying %d more times for %d seconds", err, fails, ((nfails-fails)*5)*int(time.Second))
@@ -433,7 +452,7 @@ retry:
 }
 
 func (e EntrezStatisticsSource) VocabularySize(field string) (float64, error) {
-	i, err := entrez.DoInfo("pubmed", e.tool, e.email)
+	i, err := entrez.DoInfo(e.db, e.tool, e.email)
 	if err != nil {
 		return 0, err
 	}
@@ -489,7 +508,7 @@ func (e EntrezStatisticsSource) CollectionSize() (float64, error) {
 	if e.n > 0 {
 		return e.n, nil
 	}
-	info, err := entrez.DoInfo("pubmed", e.tool, e.email)
+	info, err := entrez.DoInfo(e.db, e.tool, e.email)
 	if err != nil {
 		return 0, err
 	}
@@ -531,10 +550,19 @@ func EntrezLimit(limit int) func(source *EntrezStatisticsSource) {
 	}
 }
 
+// EntrezDb sets the database to search.
+func EntrezDb(db string) func(source *EntrezStatisticsSource) {
+	return func(source *EntrezStatisticsSource) {
+		source.db = db
+	}
+}
+
 // NewEntrezStatisticsSource creates a new entrez statistics source for searching pubmed.
 // When an API key is specified, the entrez request Limit is raised to 10 per second instead of the default 3.
 func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) (EntrezStatisticsSource, error) {
-	e := &EntrezStatisticsSource{}
+	e := &EntrezStatisticsSource{
+		db: "pubmed",
+	}
 	for _, option := range options {
 		option(e)
 	}

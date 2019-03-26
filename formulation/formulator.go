@@ -245,6 +245,8 @@ func (t ConceptualFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Su
 		}
 	}
 
+	fmt.Println("post-processed", q)
+
 	return []cqr.CommonQueryRepresentation{q}, nil, nil
 }
 

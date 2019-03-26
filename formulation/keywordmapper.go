@@ -5,7 +5,9 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/cui2vec"
 	"github.com/hscells/guru"
+	"github.com/hscells/meshexp"
 	"github.com/hscells/metawrap"
+	"github.com/hscells/transmute/fields"
 	"strings"
 )
 
@@ -54,16 +56,38 @@ func Frequent(mapping cui2vec.Mapping) MetaMapMapper {
 // Frequent identifies all of the terms for the concept in the UMLS meta-thesaurus.
 func Alias(mapping cui2vec.AliasMapping) MetaMapMapper {
 	return func(keyword cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
-		fmt.Println(keyword.QueryString, keyword.GetOption(Entity))
 		if v, ok := mapping[keyword.GetOption(Entity).(string)]; ok {
 			var mappings []cqr.CommonQueryRepresentation
 			for _, s := range v {
 				mappings = append(mappings, cqr.NewKeyword(fmt.Sprintf(`"%s"`, s), keyword.Fields...))
 			}
-			fmt.Println(mappings)
 			return mappings, nil
 		}
 		return []cqr.CommonQueryRepresentation{keyword}, nil
+	}
+}
+
+// MeSHMapper uses the output of another MetaMap mapper to assign MeSH terms.
+func MeSHMapper(mapper MetaMapMapper) MetaMapMapper {
+	return func(keyword cqr.Keyword) (representations []cqr.CommonQueryRepresentation, e error) {
+		mt, err := meshexp.Default()
+		if e != nil {
+			return nil, err
+		}
+		keywords, err := mapper(keyword)
+		if e != nil {
+			return nil, err
+		}
+		for i := 0; i < len(keywords); i++ {
+			switch q := keywords[i].(type) {
+			case cqr.Keyword:
+				if mt.Contains(strings.ToLower(q.QueryString)) {
+					q.Fields = []string{fields.MeSHTerms}
+					keywords[i] = q
+				}
+			}
+		}
+		return keywords, nil
 	}
 }
 
@@ -85,9 +109,15 @@ func NewMetaMapKeywordMapper(client metawrap.HTTPClient, mapper MetaMapMapper) M
 func MapKeywords(r cqr.CommonQueryRepresentation, mapper KeywordMapper) (cqr.CommonQueryRepresentation, error) {
 	switch q := r.(type) {
 	case cqr.Keyword:
+		// Don't process the query if it has no content.
 		if len(strings.TrimSpace(q.QueryString)) == 0 {
-			return nil, nil
+			return q, nil
 		}
+		// Don't process the query if was never assigned an entity.
+		if q.GetOption(Entity) == nil {
+			return q, nil
+		}
+		// Otherwise, proceed to map the entities in the query to keywords.
 		keywords, err := mapper.Map(q)
 		if err != nil {
 			return nil, err

@@ -1,9 +1,12 @@
 package formulation
 
 import (
-	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/hscells/cui2vec"
+	"github.com/hscells/groove/stats"
+	"github.com/hscells/guru"
+	"github.com/hscells/transmute/fields"
+	"strconv"
 )
 
 // EntityExpander takes as input a keyword that has been annotated with entities in the entity extraction
@@ -15,6 +18,53 @@ type EntityExpander interface {
 // Cui2VecEntityExpander expands entities using cui2vec embeddings.
 type Cui2VecEntityExpander struct {
 	embeddings cui2vec.PrecomputedEmbeddings
+}
+
+// MedGenEntityExpander expands entities using the MedGen API.
+type MedGenEntityExpander struct {
+	e stats.EntrezStatisticsSource
+}
+
+func (m MedGenEntityExpander) Expand(q cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
+	cui := q.GetOption(Entity).(string)
+
+	ids, err := m.e.Search(cui)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	sids := make([]string, len(ids))
+	for i, id := range ids {
+		sids[i] = strconv.Itoa(id)
+	}
+
+	var summary guru.CeSummaryResult
+	err = m.e.Summary(sids, &summary)
+	if err != nil {
+		return nil, err
+	}
+
+	var keywords []cqr.CommonQueryRepresentation
+	for _, docSum := range summary.CDocumentSummarySet.CDocumentSummary {
+		for _, name := range docSum.CConceptMeta.CNames.CName {
+			query := cqr.NewKeyword(name.Value)
+			// Add MeSH field restrictions to the query if it comes from a MeSH source.
+			if name.AttrSAB == "MSH" {
+				query.Fields = []string{fields.MeshHeadings}
+				query = query.SetOption(cqr.ExplodedString, false).(cqr.Keyword)
+			}
+			keywords = append(keywords, query)
+		}
+	}
+	return keywords, nil
+}
+
+func NewMedGenExpander(e stats.EntrezStatisticsSource) *MedGenEntityExpander {
+	return &MedGenEntityExpander{e: e}
 }
 
 func NewCui2VecEntityExpander(embeddings cui2vec.PrecomputedEmbeddings) *Cui2VecEntityExpander {
@@ -31,7 +81,6 @@ func (c Cui2VecEntityExpander) Expand(keyword cqr.Keyword) ([]cqr.CommonQueryRep
 		if len(concept.CUI) == 0 {
 			continue
 		}
-		fmt.Println(concept.CUI)
 		keywords = append(keywords, cqr.NewKeyword(keyword.QueryString, keyword.Fields...).SetOption(Entity, concept.CUI))
 	}
 	return keywords, nil
@@ -45,7 +94,7 @@ func EntityExpansion(query cqr.CommonQueryRepresentation, expander EntityExpande
 		if err != nil {
 			panic(err)
 		}
-		if len(keywords) == 0 {
+		if keywords == nil || len(keywords) == 0 {
 			return q, nil
 		} else if len(keywords) == 1 {
 			return keywords[0], nil
