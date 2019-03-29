@@ -146,16 +146,25 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 
 	// TODO this method needs some serious refactoring done to it.
 
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		c <- pipeline.Result{
+			Error: err,
+			Type:  pipeline.Error,
+		}
+		return
+	}
+
 	// Configure caches.
 	statisticsCache := diskv.New(diskv.Options{
-		BasePath:     "statistics_cache",
+		BasePath:     path.Join(cacheDir, "groove", "statistics_cache"),
 		Transform:    combinator.BlockTransform(8),
 		CacheSizeMax: 4096 * 1024,
 		Compression:  diskv.NewGzipCompression(),
 	})
 
 	if p.QueryCache == nil {
-		p.QueryCache = combinator.NewFileQueryCache("file_cache")
+		p.QueryCache = combinator.NewFileQueryCache(path.Join(cacheDir, "groove", "file_cache"))
 	}
 
 	p.MeasurementExecutor = analysis.NewDiskMeasurementExecutor(statisticsCache)
@@ -270,7 +279,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 		}
 
 		// This section is run concurrently, since the results can sometimes get quite large and we don't want to eat ram.
-		if len(p.Evaluations) > 0 && (len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0) {
+		if len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0 {
 			// Store the measurements to be output later.
 			measurements := make(map[string]map[string]float64)
 
@@ -287,29 +296,29 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 					defer func() { <-sem }()
 					log.Printf("starting topic %v\n", query.Topic)
 
-					//tree, cache, err := combinator.NewLogicalTree(query, p.StatisticsSource, p.QueryCache)
-					//if err != nil {
-					//	c <- pipeline.Result{
-					//		Topic: query.Topic,
-					//		Error: err,
-					//		Type:  pipeline.Error,
-					//	}
-					//	return
-					//}
-					//docIds := tree.Documents(cache)
-					//if err != nil {
-					//	c <- pipeline.Result{
-					//		Topic: query.Topic,
-					//		Error: err,
-					//		Type:  pipeline.Error,
-					//	}
-					//	return
-					//}
-					//trecResults := docIds.Results(query, query.Name)
-					trecResults, err := p.StatisticsSource.Execute(query, p.StatisticsSource.SearchOptions())
+					tree, cache, err := combinator.NewLogicalTree(query, p.StatisticsSource, p.QueryCache)
 					if err != nil {
-						panic(err)
+						c <- pipeline.Result{
+							Topic: query.Topic,
+							Error: err,
+							Type:  pipeline.Error,
+						}
+						return
 					}
+					docIds := tree.Documents(cache)
+					if err != nil {
+						c <- pipeline.Result{
+							Topic: query.Topic,
+							Error: err,
+							Type:  pipeline.Error,
+						}
+						return
+					}
+					trecResults := docIds.Results(query, query.Name)
+					//trecResults, err := p.StatisticsSource.Execute(query, p.StatisticsSource.SearchOptions())
+					//if err != nil {
+					//	panic(err)
+					//}
 
 					// Set the evaluation results.
 					if len(p.Evaluations) > 0 {
@@ -332,10 +341,6 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 					}
 
 					log.Printf("completed topic %v\n", query.Topic)
-
-					//docIds = nil
-					trecResults = nil
-					runtime.GC()
 				}(i, q)
 			}
 

@@ -209,8 +209,16 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	if e.Limit > 0 && len(pmids) >= e.Limit {
 		return pmids, nil
 	} else if len(pmids) == e.options.Size {
+		fails, nfails := 20, 20
+	retry:
 		l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)), e.SearchSize(e.SearchOptions().Size))
 		if err != nil {
+			if fails > 0 {
+				log.Printf("error: %v, retrying %d more times for %d seconds", err, fails, ((nfails-fails)*5)*int(time.Second))
+				fails--
+				time.Sleep(time.Duration((nfails-fails)*5) * time.Second)
+				goto retry
+			}
 			return nil, err
 		}
 		pmids = append(pmids, l...)

@@ -177,16 +177,17 @@ func (orOperator) Combine(nodes []LogicalTreeNode, cache QueryCacher) Documents 
 	totalDocs := 0
 	var docIds []Documents
 	var wg sync.WaitGroup
+	var mu2 sync.Mutex
 	for i, node := range nodes {
 		wg.Add(1)
 		go func(n LogicalTreeNode, j int) {
 			defer wg.Done()
 			d := n.Documents(cache)
 			if len(d) > 0 {
-				mu.Lock()
+				mu2.Lock()
 				docIds = append(docIds, d)
 				totalDocs += len(d)
-				mu.Unlock()
+				mu2.Unlock()
 			}
 		}(node, i)
 	}
@@ -392,13 +393,17 @@ func constructTree(query pipeline.Query, ss stats.StatisticsSource, seen QueryCa
 		// Return a seen clause.
 		var docs Documents
 
-		mu.Lock()
-		defer mu.Unlock()
-		docs, err := seen.Get(q)
-		if err == nil && docs != nil {
-			return NewAtom(q), seen, nil
-		} else if err != nil && err != ErrCacheMiss {
-			return nil, nil, err
+		{
+			mu.Lock()
+			docs, err := seen.Get(q)
+			if err == nil && docs != nil {
+				mu.Unlock()
+				return NewAtom(q), seen, nil
+			} else if err != nil && err != ErrCacheMiss {
+				mu.Unlock()
+				return nil, nil, err
+			}
+			mu.Unlock()
 		}
 
 		ids, err := stats.GetDocumentIDs(query, ss)
@@ -411,13 +416,17 @@ func constructTree(query pipeline.Query, ss stats.StatisticsSource, seen QueryCa
 			docs[i] = Document(id)
 		}
 
-		// Create the new clause add it to the seen list.
-		a := NewAtom(q)
-		err = seen.Set(a.Query(), docs)
-		if err != nil {
-			return nil, nil, err
+		{
+			mu.Lock()
+			defer mu.Unlock()
+			// Create the new clause add it to the seen list.
+			a := NewAtom(q)
+			err = seen.Set(a.Query(), docs)
+			if err != nil {
+				return nil, nil, err
+			}
+			return a, seen, nil
 		}
-		return a, seen, nil
 	case cqr.BooleanQuery:
 		var operator Operator
 		switch strings.ToLower(q.Operator) {
