@@ -77,7 +77,8 @@ type meshParent struct{}
 
 // NewLogicalOperatorTransformer creates a logical operator transformation.
 func NewLogicalOperatorTransformer() Transformation {
-	return Transformation{ID: LogicalOperatorTransformation, Transformer: logicalOperatorReplacement{}, BooleanTransformer: logicalOperatorReplacement{}}
+	t := Transformation{ID: LogicalOperatorTransformation, Transformer: logicalOperatorReplacement{}, BooleanTransformer: logicalOperatorReplacement{}}
+	return t
 }
 
 // NewAdjacencyRangeTransformer creates an adjacency range transformation.
@@ -88,12 +89,14 @@ func NewAdjacencyRangeTransformer() Transformation {
 
 // NewMeSHExplosionTransformer creates a mesh explosion transformer.
 func NewMeSHExplosionTransformer() Transformation {
-	return Transformation{ID: MeshExplosionTransformation, Transformer: meshExplosion{}}
+	t := Transformation{ID: MeshExplosionTransformation, Transformer: meshExplosion{}}
+	return t
 }
 
 // NewFieldRestrictionsTransformer creates a field restrictions transformer.
 func NewFieldRestrictionsTransformer() Transformation {
-	return Transformation{ID: FieldRestrictionsTransformation, Transformer: fieldRestrictions{}}
+	t := Transformation{ID: FieldRestrictionsTransformation, Transformer: fieldRestrictions{}}
+	return t
 }
 
 // NewAdjacencyReplacementTransformer creates an adjacency replacement transformer.
@@ -303,6 +306,7 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 		wg.Add(1)
 		go func(t Transformation) {
 			defer wg.Done()
+			mu.Lock()
 			log.Println("generating variations for", t.Name())
 			c, err := variations(query, TransformationContext{}, ss, me, measurements, t)
 			if err != nil {
@@ -313,7 +317,6 @@ func Variations(query CandidateQuery, ss stats.StatisticsSource, me analysis.Mea
 				return
 			}
 			// Must lock here to avoid a concurrent write to the slice.
-			mu.Lock()
 			log.Println("done variations for", t.Name())
 			vars = append(vars, c...)
 			mu.Unlock()
@@ -536,7 +539,7 @@ func (r fieldRestrictions) Features(query cqr.CommonQueryRepresentation, context
 }
 
 func (fieldRestrictions) Name() string {
-	return "FieldRestrictions"
+	return "fieldRestrictions"
 }
 
 func (adjacencyReplacement) Apply(query cqr.CommonQueryRepresentation) (queries []cqr.CommonQueryRepresentation, err error) {
