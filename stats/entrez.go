@@ -214,7 +214,7 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 		l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)), e.SearchSize(e.SearchOptions().Size))
 		if err != nil {
 			if fails > 0 {
-				log.Printf("error: %v, retrying %d more times for %d seconds", err, fails, time.Duration(((nfails - fails) * 5) * int(time.Second)).Seconds())
+				log.Printf("error: %v, retrying %d more times for %f seconds", err, fails, time.Duration(((nfails - fails) * 5) * int(time.Second)).Seconds())
 				fails--
 				time.Sleep(time.Duration((nfails-fails)*5) * time.Second)
 				goto retry
