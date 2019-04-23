@@ -188,7 +188,7 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	if err != nil {
 		return nil, err
 	}
-	fmt.Print(".\n")
+	fmt.Print(".")
 
 	pmids := make([]int, len(s.EsearchResult.Idlist))
 	for i, pmid := range s.EsearchResult.Idlist {
@@ -203,7 +203,7 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	}
 
 	//pmids = s.EsearchResult.Idlist
-	log.Printf("%d/%s\n", retstart+len(pmids), s.EsearchResult.Count)
+	fmt.Printf("%d/%s\n", retstart+len(pmids), s.EsearchResult.Count)
 	//log.Println(len(pmids) == e.options.Size, len(pmids), e.options.Size)
 	// If the number of pmids equals the execute size, there might be more to come.
 	if e.Limit > 0 && len(pmids) >= e.Limit {
@@ -214,7 +214,7 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 		l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)), e.SearchSize(e.SearchOptions().Size))
 		if err != nil {
 			if fails > 0 {
-				log.Printf("error: %v, retrying %d more times for %d seconds", err, fails, ((nfails-fails)*5)*int(time.Second))
+				log.Printf("error: %v, retrying %d more times for %d seconds", err, fails, time.Duration(((nfails - fails) * 5) * int(time.Second)).Seconds())
 				fails--
 				time.Sleep(time.Duration((nfails-fails)*5) * time.Second)
 				goto retry
