@@ -74,7 +74,7 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 		Compression:  diskv.NewGzipCompression(),
 	})
 
-	f, err := os.OpenFile("/Users/harryscells/Repositories/cui2vec/testdata/cui2vec_precomputed.bin", os.O_RDONLY, os.ModePerm)
+	f, err := os.OpenFile("/Users/s4558151/Repositories/cui2vec/testdata/cui2vec_precomputed.bin", os.O_RDONLY, os.ModePerm)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestLogicalOperatorReplacement_Apply(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m, err := cui2vec.LoadCUIMapping("/Users/harryscells/Repositories/cui2vec/cuis.csv")
+	m, err := cui2vec.LoadCUIMapping("/Users/s4558151/Repositories/cui2vec/cuis.csv")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,10 +11,7 @@ import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute/fields"
 	"github.com/peterbourgon/diskv"
-	"log"
 	"math"
-	"os"
-	"reflect"
 	"strings"
 )
 
@@ -89,21 +86,20 @@ func (m MeasurementExecutor) Execute(query pipeline.Query, ss stats.StatisticsSo
 			f := math.Float64frombits(bits)
 			results[i] = f
 			continue
-		} else if reflect.TypeOf(err) != reflect.TypeOf(&os.PathError{}) {
-			return nil, err
 		}
 
 		var v float64
 		v, err := measurement.Execute(query, ss)
 		if err != nil {
-			log.Println(measurement.Name())
-			panic(err)
 			return nil, err
 		}
 		results[i] = v
 		buff := make([]byte, 8)
 		binary.BigEndian.PutUint64(buff[:], math.Float64bits(v))
-		m.cache.Write(qHash, buff)
+		err = m.cache.Write(qHash, buff)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return results, nil
 }

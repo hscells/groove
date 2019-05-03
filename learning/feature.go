@@ -337,8 +337,6 @@ func deltas(query cqr.CommonQueryRepresentation, ss stats.StatisticsSource, meas
 	deltas := make(deltaFeatures)
 
 	gq := pipeline.NewQuery("qpp", "test", query)
-	mu.Lock()
-	defer mu.Unlock()
 	m, err := me.Execute(gq, ss, measurements...)
 	if err != nil {
 		return nil, err

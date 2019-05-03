@@ -28,8 +28,6 @@ const (
 	MeshParentTransformation
 )
 
-var mu sync.Mutex
-
 // Transformer is applied to a query to generate a set of query candidates.
 type Transformer interface {
 	Apply(query cqr.CommonQueryRepresentation) (queries []cqr.CommonQueryRepresentation, err error)
@@ -625,7 +623,6 @@ func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []
 		remRe := regexp.MustCompile(`[$*~"'?]*`)
 
 		keyword := string(remRe.ReplaceAll([]byte(q.QueryString), []byte("")))
-
 		seen := make(map[string]bool)
 		var children []cqr.CommonQueryRepresentation
 		if candidates, ok := c.cache[keyword]; ok {
