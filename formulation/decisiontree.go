@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"github.com/bbalet/stopwords"
 	"github.com/hscells/cqr"
+	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/guru"
+	"github.com/hscells/transmute/fields"
 	"github.com/xtgo/set"
+	"gopkg.in/cheggaaa/pb.v1"
 	"gopkg.in/jdkato/prose.v2"
 	"math"
 	"sort"
@@ -18,7 +21,7 @@ type DecisionTreeFormulator struct {
 	topic string
 	// Terms identified as candidate query terms.
 	N        [][]string          // Attributes.
-	labels   map[string]bool     // map[pmid] -> YES?NO
+	labels   map[string]bool     // map[pmid] -> TRUE?FALSE
 	training map[string][]string // map[attribute] -> []pmid
 
 	statistics stats.EntrezStatisticsSource
@@ -29,9 +32,9 @@ type invertedIndex map[string]map[string]float64
 type leaf int
 
 const (
-	NA  leaf = 0
-	YES      = 1
-	NO       = -1
+	NA    leaf = 0
+	TRUE       = 1
+	FALSE      = -1
 )
 
 type tree struct {
@@ -45,6 +48,7 @@ type tree struct {
 //func insert(t *tree, candidate string, value bool)
 
 func buildIndex(docs guru.MedlineDocuments, index invertedIndex) error {
+	bar := pb.StartNew(len(docs))
 	for _, doc := range docs {
 		clean := stopwords.CleanString(fmt.Sprintf("%s. %s", doc.TI, doc.AB), "en", false)
 		d, err := prose.NewDocument(clean)
@@ -57,7 +61,9 @@ func buildIndex(docs guru.MedlineDocuments, index invertedIndex) error {
 			}
 			index[term.Text][doc.PMID]++
 		}
+		bar.Increment()
 	}
+	bar.Finish()
 	return nil
 }
 
@@ -168,13 +174,13 @@ func ID3(training map[string][]string, labels map[string]bool, attrs []string) *
 
 	// If all examples are positive, Return the single-node tree Root, with label = +.
 	if posLabels == len(labels) {
-		node.value = YES
+		node.value = TRUE
 		return node
 	}
 
 	// If all examples are negative, Return the single-node tree Root, with label = -.
 	if negLabels == len(labels) {
-		node.value = NO
+		node.value = FALSE
 		return node
 	}
 
@@ -182,9 +188,9 @@ func ID3(training map[string][]string, labels map[string]bool, attrs []string) *
 	// with label = most common value of the target attribute in the examples.
 	if len(attrs) == 0 {
 		if posLabels >= negLabels {
-			node.value = YES
+			node.value = TRUE
 		} else {
-			node.value = NO
+			node.value = FALSE
 		}
 		return node
 	}
@@ -196,9 +202,8 @@ func ID3(training map[string][]string, labels map[string]bool, attrs []string) *
 		attrIdx  int
 	)
 	gain := 0.0
-	for i, attr := range attrs[1:] {
+	for i, attr := range attrs {
 		g, l, r := InformationGain(attr, training, labels)
-		fmt.Println(attr, g)
 		if g > gain {
 			bestAttr = attr
 			gain = g
@@ -208,7 +213,7 @@ func ID3(training map[string][]string, labels map[string]bool, attrs []string) *
 	}
 
 	if gain == 0 {
-		node.value = NO
+		node.value = FALSE
 		return node
 	}
 
@@ -222,11 +227,11 @@ func ID3(training map[string][]string, labels map[string]bool, attrs []string) *
 	if len(lhs) == 0 {
 		if posLabels >= negLabels {
 			node.left = &tree{
-				value: YES,
+				value: TRUE,
 			}
 		} else {
 			node.left = &tree{
-				value: NO,
+				value: FALSE,
 			}
 		}
 	} else { // Else below this new branch add the subtree ID3().
@@ -259,11 +264,11 @@ func ID3(training map[string][]string, labels map[string]bool, attrs []string) *
 	if len(rhs) == 0 {
 		if posLabels >= negLabels {
 			node.right = &tree{
-				value: YES,
+				value: TRUE,
 			}
 		} else {
 			node.right = &tree{
-				value: NO,
+				value: FALSE,
 			}
 		}
 	} else {
@@ -301,21 +306,74 @@ func (t *tree) walk(n int) {
 	}
 	if t.value == NA {
 		fmt.Printf("(%s)\n", t.candidate)
+		fmt.Print("Y")
 		t.left.walk(n + 1)
+		fmt.Print("N")
 		t.right.walk(n + 1)
 	} else {
 		fmt.Printf("=> [%v]\n", t.value)
 	}
 }
 
+func (t *tree) extract() []cqr.CommonQueryRepresentation {
+	var bqs []cqr.CommonQueryRepresentation
+
+	if t.left.value == TRUE || t.right.value == TRUE {
+		bqs = append(bqs, cqr.NewKeyword(t.candidate, fields.TitleAbstract))
+	}
+
+	//if t.left.value == FALSE || t.right.value == FALSE {
+	//
+	//}
+
+	if t.left.value == NA {
+		extracted := t.left.extract()
+		for _, e := range extracted {
+			bqs = append(bqs, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{
+				cqr.NewKeyword(t.candidate, fields.TitleAbstract),
+				e,
+			}))
+		}
+	}
+
+	if t.right.value == NA {
+		extracted := t.right.extract()
+		for _, e := range extracted {
+			bqs = append(bqs, cqr.NewBooleanQuery(cqr.NOT, []cqr.CommonQueryRepresentation{
+				cqr.NewKeyword(t.candidate, fields.TitleAbstract),
+				e,
+			}))
+		}
+	}
+
+	return bqs
+}
+
 func (dt DecisionTreeFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []SupplementalData, error) {
 	var (
 		S []cqr.CommonQueryRepresentation
 	)
-	for _, can := range dt.N {
+	trees := make([]*tree, len(dt.N))
+	fmt.Println("generating queries using decision trees")
+	bar := pb.StartNew(len(dt.N))
+	for i, can := range dt.N {
 		t := ID3(dt.training, dt.labels, can)
-		t.walk(0)
+		trees[i] = t
+		bar.Increment()
 	}
+	bar.Finish()
+
+	seen := make(map[uint64]bool)
+	for _, tree := range trees {
+		for _, query := range tree.extract() {
+			hash := combinator.HashCQR(query)
+			if _, ok := seen[hash]; !ok {
+				S = append(S, query)
+				seen[hash] = true
+			}
+		}
+	}
+
 	return S, nil, nil
 }
 
@@ -334,6 +392,8 @@ func NewDecisionTreeFormulator(topic string, positive, negative guru.MedlineDocu
 	)
 
 	docLens := make(map[string]float64)
+	fmt.Println("computing doc lens")
+	bar := pb.StartNew(len(positive))
 	for _, doc := range positive {
 		clean := stopwords.CleanString(fmt.Sprintf("%s. %s", doc.TI, doc.AB), "en", false)
 		d, err := prose.NewDocument(clean)
@@ -341,22 +401,30 @@ func NewDecisionTreeFormulator(topic string, positive, negative guru.MedlineDocu
 			return nil, err
 		}
 		docLens[doc.PMID] = float64(len(d.Tokens()))
+		bar.Increment()
 	}
+	bar.Finish()
 
 	// Construct the inverted indexes.
 	indexPositive := make(invertedIndex)
 	indexNegative := make(invertedIndex)
+	fmt.Println("building index [0/1]")
 	err = buildIndex(positive, indexPositive)
 	if err != nil {
 		return nil, err
 	}
-	err = buildIndex(negative, indexNegative)
-	if err != nil {
-		return nil, err
+	if len(negative) > 0 {
+		fmt.Println("building index [1/1]")
+		err = buildIndex(negative, indexNegative)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Using a language model, construct the sets of attributes, N.
 	lm := make(map[string]float64)
+	fmt.Println("creating language model from in-memory index")
+	bar = pb.StartNew(len(indexPositive))
 	for term, dv := range indexPositive {
 		prelTf := 0.0
 		prelDl := 0.0
@@ -365,8 +433,9 @@ func NewDecisionTreeFormulator(topic string, positive, negative guru.MedlineDocu
 			prelDl += docLens[pmid]
 		}
 		lm[term] = prelTf / prelDl
+		bar.Increment()
 	}
-
+	bar.Finish()
 	type term struct {
 		a string  // attribute.
 		v float64 // value.
@@ -396,9 +465,11 @@ func NewDecisionTreeFormulator(topic string, positive, negative guru.MedlineDocu
 		}
 	}
 
-	labels := make(map[string]bool)       // map[pmid] -> YES?NO
+	labels := make(map[string]bool)       // map[pmid] -> TRUE?FALSE
 	training := make(map[string][]string) // map[attribute] -> []pmid
 
+	fmt.Println("creating training data from language model")
+	bar = pb.StartNew(len(attrs))
 	for _, attr := range attrs {
 		for _, doc := range positive {
 			clean := stopwords.CleanString(fmt.Sprintf("%s. %s", doc.TI, doc.AB), "en", false)
@@ -412,7 +483,9 @@ func NewDecisionTreeFormulator(topic string, positive, negative guru.MedlineDocu
 				training[attr] = append(training[attr], doc.PMID)
 			}
 		}
+		bar.Increment()
 	}
+	bar.Finish()
 
 	for _, doc := range positive {
 		labels[doc.PMID] = true

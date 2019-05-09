@@ -34,22 +34,15 @@ func (d Deduplicator) Handle(list *trecresults.ResultList) error {
 
 	log.Println("fetching documents")
 
-	var (
-		docs []guru.MedlineDocument
-	)
-	for i := 0; i < len(pmids); i += 1000 {
-		batch := pmids[i:min(i+1000, len(pmids))]
-		log.Println("start", len(batch), len(pmids))
-	reset:
-		fetched, err := d.e.Fetch(batch)
-		if err != nil {
-			log.Println(err)
-			time.Sleep(5 * time.Second)
-			goto reset
-		}
-		docs = append(docs, fetched...)
-		log.Println("done ", len(batch), len(pmids))
+	var docs []guru.MedlineDocument
+reset:
+	fetched, err := d.e.Fetch(pmids)
+	if err != nil {
+		log.Println(err)
+		time.Sleep(5 * time.Second)
+		goto reset
 	}
+	docs = append(docs, fetched...)
 	log.Println("begin de-duplication")
 
 	var removal []int
