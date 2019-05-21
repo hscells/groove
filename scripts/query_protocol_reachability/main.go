@@ -20,7 +20,6 @@ import (
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
 	"github.com/hscells/trecresults"
-	"github.com/yizha/go/w2v"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -37,16 +36,16 @@ import (
 )
 
 const (
-	cui2vecUncompressedPath = "/Users/s4558151/Repositories/cui2vec/cui2vec_pretrained.csv"
-	cui2vecPretrainedPath   = "/Users/s4558151/Repositories/cui2vec/testdata/cui2vec_precomputed.bin"
-	cuisFreqPath            = "/Users/s4558151/Repositories/cui2vec/ICUI_STR_Frequency.csv"
-	qrelsPath               = "/Users/s4558151/Repositories/tar/2018-TAR/Task2/qrel_abs_combined"
-	javaClassPath           = "/Users/s4558151/stanford-parser-full-2018-10-17"
-	dir                     = "/Users/s4558151/go/src/github.com/hscells/groove/scripts/query_protocol_reachability/test_data/"
-	queriesDir              = "/Users/s4558151/Repositories/tar/2018-TAR/Task2/Combined"
-	protocolsDir            = "/Users/s4558151/Repositories/tar/2018-TAR/Task1/Training/protocols"
-	word2vecLoc             = "/Users/s4558151/Downloads/PubMed-and-PMC-w2v.bin"
-	pubDatesFile            = "/Users/s4558151/Repositories/tar/2018-TAR/Task1/Testing/pubdates.txt"
+	cui2vecUncompressedPath = "/Users/harryscells/Repositories/cui2vec/cui2vec_pretrained.csv"
+	cui2vecPretrainedPath   = "/Users/harryscells/Repositories/cui2vec/testdata/cui2vec_precomputed.bin"
+	cuisFreqPath            = "/Users/harryscells/Downloads/ICUI_STR_Frequency.csv"
+	qrelsPath               = "/Users/harryscells/Repositories/tar/2018-TAR/Task2/qrel_abs_combined"
+	javaClassPath           = "/Users/harryscells/stanford-parser-full-2018-10-17"
+	dir                     = "/Users/harryscells/gocode/src/github.com/hscells/groove/scripts/query_protocol_reachability/test_data/"
+	queriesDir              = "/Users/harryscells/Repositories/tar/2018-TAR/Task2/t"
+	protocolsDir            = "/Users/harryscells/Repositories/tar/2018-TAR/Task1/Training/protocols"
+	word2vecLoc             = "/Users/harryscells/Downloads/PubMed-and-PMC-w2v.bin"
+	pubDatesFile            = "/Users/harryscells/Repositories/tar/2018-TAR/Task1/Testing/pubdates.txt"
 
 	queryOutputDir   = dir + "queries/"
 	queriesBinFile   = dir + "queries.bin"
@@ -57,8 +56,8 @@ const (
 	LoadProtocols              = false
 	DoStringMatchReachability  = false
 	DoConceptMatchReachability = false
-	DoQueryGeneration          = false
-	DoQueryDateRestrictions    = true
+	DoQueryGeneration          = true
+	DoQueryDateRestrictions    = false
 	DoMMScoreDistributions     = false
 )
 
@@ -67,7 +66,6 @@ var queryReg = regexp.MustCompile(`\(.*\)`)
 var mmClient = &http.Client{}
 var precomputedEmbeddings *cui2vec.PrecomputedEmbeddings
 var uncompressedEmbeddings *cui2vec.UncompressedEmbeddings
-var pubmedEmbeddings *w2v.Model
 var cuiMapping cui2vec.Mapping
 var cuiAliases cui2vec.AliasMapping
 var ticketGrantingTicket string
@@ -739,14 +737,9 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 	}
 
 	for _, q := range queries {
-		switch q.Topic {
-		case "CD008782", "CD009593", "CD009925", "CD010386", "CD010632", "CD010705", "CD011975", "CD011984", "CD012216", "CD012599":
-			continue
-		default:
-			q.Name = strings.Replace(q.Name, "®", "", -1)
-			q.Name = strings.Replace(q.Name, "’", "", -1)
-			q.Name = strings.Replace(q.Name, "'", "", -1)
-		}
+		q.Name = strings.Replace(q.Name, "®", "", -1)
+		q.Name = strings.Replace(q.Name, "’", "", -1)
+		q.Name = strings.Replace(q.Name, "'", "", -1)
 		//if q.Topic != "CD009519" {
 		//	continue
 		//}
@@ -930,6 +923,8 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 			}
 		}
 
+		fmt.Println("squeries")
+
 		var squeries []fquery
 		for _, f := range queries {
 			squeries = append(squeries, fquery{query: stemQuery(f.query, stemDict, make(map[string]bool)), output: "stem_" + f.output})
@@ -949,6 +944,8 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 			}
 		}
 
+		fmt.Println("queries")
+
 		queries = append(queries, squeries...)
 		for _, s := range queries {
 			tq, _ := transmute.CompileCqr2Medline(s.query)
@@ -961,6 +958,8 @@ func generateQueries(queries []pipeline.Query, protocols protocols, notFound map
 				panic(err)
 			}
 		}
+
+		fmt.Println("done!")
 	}
 }
 
@@ -1539,7 +1538,7 @@ func simplifyOriginal(query cqr.CommonQueryRepresentation) cqr.CommonQueryRepres
 }
 
 func readAndWriteQueries() []pipeline.Query {
-	qs := query.TARTask2QueriesSource{}
+	qs := query.TARTask2QuerySource{}
 	queries, err := qs.Load(queriesDir)
 	if err != nil {
 		panic(err)
