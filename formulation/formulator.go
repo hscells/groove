@@ -209,15 +209,11 @@ func (t ConceptualFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Su
 		return nil, nil, err
 	}
 
-	fmt.Println("compose", q)
-
 	// Entity Extraction.
 	q, err = t.EntityExtractor.Extract(q)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	fmt.Println("extract", q)
 
 	// Entity Expansion.
 	if t.EntityExpander != nil {
@@ -227,15 +223,11 @@ func (t ConceptualFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Su
 		}
 	}
 
-	fmt.Println("expand", q)
-
 	// Entities to Keywords Mapping.
 	q, err = MapKeywords(q, t.KeywordMapper)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	fmt.Println("mapped", q)
 
 	// Post-Processing.
 	for _, postProcessor := range t.postProcessing {
@@ -244,8 +236,6 @@ func (t ConceptualFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Su
 			return nil, nil, err
 		}
 	}
-
-	fmt.Println("post-processed", q)
 
 	return []cqr.CommonQueryRepresentation{q}, nil, nil
 }

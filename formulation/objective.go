@@ -968,7 +968,7 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 
 			// Create the query from the three categories.
 			q := constructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords)
-			q = preprocess.DateRestrictions(o.Pubdates, o.query.Topic)(q)()
+			q = preprocess.DateRestrictions(o.Pubdates)(q, o.query.Topic)()
 
 			ev, err := evaluate(q, o.s, dev, val, nil)
 			if err != nil {
@@ -996,7 +996,7 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 			return nil, nil, err
 		}
 		qWithMeSH := constructQuery(conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH)
-		qWithMeSH = preprocess.DateRestrictions(o.Pubdates, o.query.Topic)(qWithMeSH)()
+		qWithMeSH = preprocess.DateRestrictions(o.Pubdates)(qWithMeSH, o.query.Topic)()
 
 		ev, err := evaluate(qWithMeSH, o.s, dev, val, nil)
 		if err != nil {

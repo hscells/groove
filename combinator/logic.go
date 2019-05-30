@@ -471,15 +471,27 @@ func constructTree(query pipeline.Query, ss stats.StatisticsSource, seen QueryCa
 
 		// Otherwise, we can just perform the operation with a typical operator.
 		clauses := make([]LogicalTreeNode, len(q.Children))
+		var wg sync.WaitGroup
+		var once sync.Once
+		var errOnce error
 		for i, child := range q.Children {
-			var err error
-			clauses[i], seen, err = constructTree(pipeline.NewQuery(query.Name, query.Topic, child), ss, seen)
-			if err != nil {
-				return nil, seen, err
-			}
+			wg.Add(1)
+			go func(idx int, c cqr.CommonQueryRepresentation) {
+				defer wg.Done()
+				var err error
+				clauses[idx], seen, err = constructTree(pipeline.NewQuery(query.Name, query.Topic, c), ss, seen)
+				if err != nil {
+					once.Do(func() {
+						errOnce = err
+					})
+				}
+			}(i, child)
 		}
-		c := NewCombinator(q, operator, clauses...)
-		return c, seen, nil
+		wg.Wait()
+		if errOnce != nil {
+			return nil, nil, errOnce
+		}
+		return NewCombinator(q, operator, clauses...), seen, nil
 	}
 	return nil, nil, errors.New(fmt.Sprintf("supplied query is not supported: %s", query.Query))
 }

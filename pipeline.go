@@ -208,7 +208,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 		measurementQueries := make([]pipeline.Query, len(queries))
 		topics := make([]string, len(queries))
 		for i, q := range queries {
-			topics[i] = q.Name
+			topics[i] = q.Topic
 			// Ensure there is a processed query.
 
 			// And apply the processing if there is any.
@@ -218,7 +218,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 
 			// Apply any transformations.
 			for _, t := range p.Transformations.BooleanTransformations {
-				q = pipeline.NewQuery(q.Name, q.Topic, t(q.Query)())
+				q = pipeline.NewQuery(q.Name, q.Topic, t(q.Query, q.Topic)())
 			}
 			for _, t := range p.Transformations.ElasticsearchTransformations {
 				if s, ok := p.StatisticsSource.(*stats.ElasticsearchStatisticsSource); ok {
@@ -236,21 +236,22 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 		headers := make([]string, N)
 		data := make([][]float64, N)
 
+		for i, measure := range p.Measurements {
+			headers[i] = measure.Name()
+		}
+
 		// Only perform the measurements if there are some measurement formatters to output them to.
 		if len(p.MeasurementFormatters) > 0 {
 			// data[measurement][queryN]
-			for i, m := range p.Measurements {
-				headers[i] = m.Name()
-				data[i] = make([]float64, len(queries))
-				for qi, measurementQuery := range measurementQueries {
-					data[i][qi], err = m.Execute(measurementQuery, p.StatisticsSource)
-					if err != nil {
-						c <- pipeline.Result{
-							Error: err,
-							Type:  pipeline.Error,
-						}
-						return
+			for i, m := range measurementQueries {
+				//data[i] = make([]float64, len(queries))
+				data[i], err = p.MeasurementExecutor.Execute(m, p.StatisticsSource, p.Measurements...)
+				if err != nil {
+					c <- pipeline.Result{
+						Error: err,
+						Type:  pipeline.Error,
 					}
+					return
 				}
 			}
 
@@ -295,30 +296,30 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 				go func(idx int, query pipeline.Query) {
 					defer func() { <-sem }()
 					log.Printf("starting topic %v\n", query.Topic)
-
-					tree, cache, err := combinator.NewLogicalTree(query, p.StatisticsSource, p.QueryCache)
-					if err != nil {
-						c <- pipeline.Result{
-							Topic: query.Topic,
-							Error: err,
-							Type:  pipeline.Error,
-						}
-						return
-					}
-					docIds := tree.Documents(cache)
-					if err != nil {
-						c <- pipeline.Result{
-							Topic: query.Topic,
-							Error: err,
-							Type:  pipeline.Error,
-						}
-						return
-					}
-					trecResults := docIds.Results(query, query.Name)
-					//trecResults, err := p.StatisticsSource.Execute(query, p.StatisticsSource.SearchOptions())
+					//
+					//tree, cache, err := combinator.NewLogicalTree(query, p.StatisticsSource, p.QueryCache)
 					//if err != nil {
-					//	panic(err)
+					//	c <- pipeline.Result{
+					//		Topic: query.Topic,
+					//		Error: err,
+					//		Type:  pipeline.Error,
+					//	}
+					//	return
 					//}
+					//docIds := tree.Documents(cache)
+					//if err != nil {
+					//	c <- pipeline.Result{
+					//		Topic: query.Topic,
+					//		Error: err,
+					//		Type:  pipeline.Error,
+					//	}
+					//	return
+					//}
+					//trecResults := docIds.Results(query, query.Name)
+					trecResults, err := p.StatisticsSource.Execute(query, p.StatisticsSource.SearchOptions())
+					if err != nil {
+						panic(err)
+					}
 
 					// Set the evaluation results.
 					if len(p.Evaluations) > 0 {

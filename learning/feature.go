@@ -110,7 +110,7 @@ func (ff Features) Scores(max int) []float64 {
 	v := make([]float64, max)
 	for _, f := range ff {
 		if f.ID >= len(v) {
-			fmt.Printf("[!] %d is larger than feature size %d\n", f.ID, len(v))
+			//fmt.Printf("[!] %d is larger than feature size %d\n", f.ID, len(v))
 			continue
 		}
 		v[f.ID] = f.Score
@@ -403,6 +403,7 @@ func (ff Features) String() string {
 	}
 	return strings.Join(s, " ")
 }
+
 
 // WriteLibSVM writes a LIBSVM compatible line to a writer.
 func (lf LearntFeature) WriteLibSVM(writer io.Writer, comment ...interface{}) (int, error) {

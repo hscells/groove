@@ -8,7 +8,7 @@ import (
 type Transformation func() cqr.CommonQueryRepresentation
 
 // BooleanTransformation is a transformation that can be made to a Boolean query.
-type BooleanTransformation func(q cqr.CommonQueryRepresentation) Transformation
+type BooleanTransformation func(q cqr.CommonQueryRepresentation, topic string) Transformation
 
 // Transformations is a collection of transformation operations.
 type Transformations []Transformation
@@ -24,7 +24,7 @@ type QueryTransformations struct {
 }
 
 // Simplify replaces anything that is not an `and` operator with and `or` operator.
-func Simplify(query cqr.CommonQueryRepresentation) Transformation {
+func Simplify(query cqr.CommonQueryRepresentation, topic string) Transformation {
 	return func() cqr.CommonQueryRepresentation {
 		//return cqr.NewBooleanQuery("or", nil)
 		switch q := query.(type) {
@@ -35,7 +35,7 @@ func Simplify(query cqr.CommonQueryRepresentation) Transformation {
 				q.Operator = "or"
 			}
 			for i, child := range q.Children {
-				q.Children[i] = Simplify(child)()
+				q.Children[i] = Simplify(child, topic)()
 			}
 			return q
 		default:
@@ -45,7 +45,7 @@ func Simplify(query cqr.CommonQueryRepresentation) Transformation {
 }
 
 // AndSimplify replaces all operators with `and`.
-func AndSimplify(query cqr.CommonQueryRepresentation) Transformation {
+func AndSimplify(query cqr.CommonQueryRepresentation, topic string) Transformation {
 	return func() cqr.CommonQueryRepresentation {
 		//return cqr.NewBooleanQuery("or", nil)
 		switch q := query.(type) {
@@ -54,7 +54,7 @@ func AndSimplify(query cqr.CommonQueryRepresentation) Transformation {
 		case cqr.BooleanQuery:
 			q.Operator = "and"
 			for i, child := range q.Children {
-				q.Children[i] = AndSimplify(child)()
+				q.Children[i] = AndSimplify(child, topic)()
 			}
 			return q
 		default:
@@ -64,7 +64,7 @@ func AndSimplify(query cqr.CommonQueryRepresentation) Transformation {
 }
 
 // OrSimplify replaces all operators with `or`.
-func OrSimplify(query cqr.CommonQueryRepresentation) Transformation {
+func OrSimplify(query cqr.CommonQueryRepresentation, topic string) Transformation {
 	return func() cqr.CommonQueryRepresentation {
 		//return cqr.NewBooleanQuery("or", nil)
 		switch q := query.(type) {
@@ -73,7 +73,7 @@ func OrSimplify(query cqr.CommonQueryRepresentation) Transformation {
 		case cqr.BooleanQuery:
 			q.Operator = "or"
 			for i, child := range q.Children {
-				q.Children[i] = OrSimplify(child)()
+				q.Children[i] = OrSimplify(child, topic)()
 			}
 			return q
 		default:
@@ -90,7 +90,7 @@ func OrSimplify(query cqr.CommonQueryRepresentation) Transformation {
 // clinical trials as topic.sh.
 // randomly.ab.
 // trial.ti.
-func RCTFilter(query cqr.CommonQueryRepresentation) Transformation {
+func RCTFilter(query cqr.CommonQueryRepresentation, _ string) Transformation {
 	return func() cqr.CommonQueryRepresentation {
 		switch q := query.(type) {
 		case cqr.BooleanQuery:

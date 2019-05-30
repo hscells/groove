@@ -35,6 +35,13 @@ type ManualLogicComposer struct {
 	topic      string
 }
 
+func NewManualLogicComposer(outputPath, topic string) ManualLogicComposer {
+	return ManualLogicComposer{
+		outputPath: outputPath,
+		topic:      topic,
+	}
+}
+
 type ast struct {
 	tag      string
 	text     string
@@ -201,7 +208,7 @@ func (n NLPLogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, e
 func (m ManualLogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, error) {
 	p := cqr.NewBooleanQuery(cqr.AND, nil)
 
-	outputPath := path.Join(m.outputPath, "manual", m.topic)
+	outputPath := path.Join(m.outputPath, m.topic)
 	if _, err := os.Stat(outputPath); err == nil {
 		b, err := ioutil.ReadFile(outputPath)
 		if err != nil {

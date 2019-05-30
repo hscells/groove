@@ -31,6 +31,7 @@ type EntrezStatisticsSource struct {
 	email      string
 	db         string
 	parameters map[string]float64
+	rank       bool
 	options    SearchOptions
 	// The size of PubMed.
 	n float64
@@ -165,6 +166,10 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	}
 	p.APIKey = e.key
 	p.RetMode = "json"
+	if e.rank {
+		p.Sort = "rank"
+		p.RetMax = e.options.Size
+	}
 
 	//entrez.Limit.Wait()
 	v := url.Values{}
@@ -194,11 +199,13 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	for i, pmid := range s.EsearchResult.Idlist {
 		pmids[i], err = strconv.Atoi(pmid)
 		if err != nil {
+			fmt.Println(string(b))
 			return nil, err
 		}
 	}
 	retstart, err := strconv.Atoi(s.EsearchResult.RetStart)
 	if err != nil {
+		fmt.Println(string(b))
 		return nil, err
 	}
 
@@ -206,7 +213,7 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	fmt.Printf("%d/%s\n", retstart+len(pmids), s.EsearchResult.Count)
 	//log.Println(len(pmids) == e.options.Size, len(pmids), e.options.Size)
 	// If the number of pmids equals the execute size, there might be more to come.
-	if e.Limit > 0 && len(pmids) >= e.Limit {
+	if e.rank || (e.Limit > 0 && len(pmids) >= e.Limit) {
 		return pmids, nil
 	} else if len(pmids) == e.options.Size {
 		fails, nfails := 20, 20
@@ -246,6 +253,10 @@ func (e EntrezStatisticsSource) Summary(ids []string, value interface{}, options
 
 // Fetch uses the entrez eutils to fetch the pubmed Article given a set of pubmed identifiers.
 func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Parameters)) ([]guru.MedlineDocument, error) {
+	if len(pmids) == 0 {
+		return guru.MedlineDocuments{}, nil
+	}
+
 	p := &entrez.Parameters{}
 	for _, option := range options {
 		option(p)
@@ -400,12 +411,14 @@ func (e EntrezStatisticsSource) DocumentFrequency(term, field string) (float64, 
 	return float64(s.Count), nil
 }
 
-func (e EntrezStatisticsSource) TotalTermFrequency(term, field string) (float64, error) {
-	pmids, err := e.Search(term, func(p *entrez.Parameters) {
-		p.Field = field
-	})
+func (e EntrezStatisticsSource) TotalTermFrequency(term, _ string) (float64, error) {
+	pmids, err := e.Search(fmt.Sprintf("%s[Title/Abstract]", term))
 	if err != nil {
 		return 0, err
+	}
+
+	if len(pmids) == 0 {
+		return 0, nil
 	}
 
 	docs, err := e.Fetch(pmids)
@@ -492,7 +505,7 @@ execute:
 	pmids, err := e.Search(q)
 	if err != nil {
 		if fails > 0 {
-			log.Printf("error: %v, retrying %d more times", err, fails)
+			log.Printf("error: %v, retrying %d more times for query: %s", err, fails, q)
 			fails--
 			time.Sleep(5 * time.Second)
 			goto execute
@@ -565,18 +578,25 @@ func EntrezDb(db string) func(source *EntrezStatisticsSource) {
 	}
 }
 
+func EntrezRank(rank bool) func(source *EntrezStatisticsSource) {
+	return func(source *EntrezStatisticsSource) {
+		source.rank = rank
+	}
+}
+
 // NewEntrezStatisticsSource creates a new entrez statistics source for searching pubmed.
 // When an API key is specified, the entrez request Limit is raised to 10 per second instead of the default 3.
 func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) (EntrezStatisticsSource, error) {
 	e := &EntrezStatisticsSource{
-		db: "pubmed",
+		db:   "pubmed",
+		rank: false,
 	}
 	for _, option := range options {
 		option(e)
 	}
 
 	if len(e.key) > 0 {
-		entrez.Limit = ncbi.NewLimiter(time.Second / 10)
+		entrez.Limit = ncbi.NewLimiter(time.Second / 5)
 	}
 
 	ncbi.SetTimeout(0)

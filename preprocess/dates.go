@@ -26,8 +26,8 @@ import (
 //
 // Where the fist column is the topic of the query, and the other
 // two columns are the start and end dates of the restriction.
-func DateRestrictions(pubDatesFile, topic string) BooleanTransformation {
-	return func(query cqr.CommonQueryRepresentation) Transformation {
+func DateRestrictions(pubDatesFile string) BooleanTransformation {
+	return func(query cqr.CommonQueryRepresentation, topic string) Transformation {
 		return func() cqr.CommonQueryRepresentation {
 			f, err := os.OpenFile(pubDatesFile, os.O_RDONLY, 0644)
 			if err != nil {

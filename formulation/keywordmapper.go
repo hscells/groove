@@ -39,6 +39,9 @@ func Preferred(client guru.UMLSClient) MetaMapMapper {
 		if err != nil {
 			return
 		}
+		if len(preferred) == 0 {
+			return []cqr.CommonQueryRepresentation{keyword}, nil
+		}
 		return []cqr.CommonQueryRepresentation{cqr.NewKeyword(preferred, keyword.Fields...)}, nil
 	}
 }

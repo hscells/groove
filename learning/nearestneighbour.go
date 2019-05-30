@@ -45,6 +45,38 @@ type scoredDivergenceQuery struct {
 	query      CandidateQuery
 }
 
+func (u NearestNeighbourQueryCandidateSelector) Predict(lf LearntFeature) float64 {
+	divergencePredict := 0.0
+	minDivergence := math.MaxFloat64
+	minScore := 0.0
+
+	for i, f := range u.model.Features {
+		for len(lf.Features.Scores(NNFeaturesN)) < len(f.Scores(NNFeaturesN)) {
+			lf.Features = append(lf.Features, NewFeature(len(lf.Features), 0.0))
+		}
+		//for len(f.Scores(NNFeaturesN)) < len(lf.Features.Scores(NNFeaturesN)) {
+		//	lf.Features = append(lf.Features, NewFeature(len(lf.Features), 0.0))
+		//}
+		distance, err := cui2vec.Cosine(lf.Features.Scores(NNFeaturesN), f.Scores(NNFeaturesN))
+		if err != nil {
+			panic(err)
+		}
+		j := u.closest(distance, f.Scores(NNFeaturesN))
+		if i >= len(u.model.Values) {
+			continue
+		}
+		if j >= len(u.model.Values[i]) {
+			continue
+		}
+		divergencePredict = u.model.Values[i][j].Divergence
+		if divergencePredict < minDivergence && u.model.Scores[i] > minScore {
+			minDivergence = divergencePredict
+			minScore = u.model.Scores[i]
+		}
+	}
+	return minScore
+}
+
 func (u NearestNeighbourQueryCandidateSelector) Select(query CandidateQuery, transformations []CandidateQuery) (CandidateQuery, QueryChainCandidateSelector, error) {
 	queries := make([]scoredDivergenceQuery, len(transformations))
 	if _, ok := u.topics[query.Topic]; !ok {
