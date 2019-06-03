@@ -258,13 +258,12 @@ func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Par
 	}
 
 	p := &entrez.Parameters{}
-	for _, option := range options {
-		option(p)
-	}
-	p.RetMax = e.options.Size
 	p.RetMode = "text"
 	p.RetType = "medline"
 	p.APIKey = e.key
+	for _, option := range options {
+		option(p)
+	}
 
 	r, err := entrez.Fetch(e.db, p, e.tool, e.email, nil, pmids...)
 	if err != nil {
