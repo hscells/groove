@@ -258,6 +258,7 @@ func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Par
 	}
 
 	p := &entrez.Parameters{}
+	//p.RetMode = "asn.1"
 	p.RetMode = "text"
 	p.RetType = "medline"
 	p.APIKey = e.key
@@ -269,10 +270,25 @@ func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Par
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
 
-	s := guru.UnmarshalMedline(r)
-	return s, nil
+	//log.Println("reading")
+	//ncbi.SetTimeout(1 * time.Hour
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	//d := make(map[string]interface{})
+	//s, err := asn1.Unmarshal(b, &d)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//
+	//fmt.Println(s)
+	//log.Println("unmarshalling")
+	//s := guru.UnmarshalAbstract(bytes.NewReader(b))
+	s := guru.UnmarshalMedline(bytes.NewReader(b))
+	//log.Println("done")
+	return s, r.Close()
 }
 
 func (e EntrezStatisticsSource) Link(pmids []int, linkname string) ([]int, error) {
@@ -564,9 +580,9 @@ func EntrezOptions(options SearchOptions) func(source *EntrezStatisticsSource) {
 }
 
 // EntrezOptions sets any additional options for the entrez statistics source.
-func EntrezLimit(limit int) func(source *EntrezStatisticsSource) {
+func EntrezLimiter(limit time.Duration) func(source *EntrezStatisticsSource) {
 	return func(source *EntrezStatisticsSource) {
-		source.Limit = limit
+		entrez.Limit = ncbi.NewLimiter(limit)
 	}
 }
 
@@ -590,15 +606,16 @@ func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) 
 		db:   "pubmed",
 		rank: false,
 	}
+
+	if len(e.key) > 0 {
+		entrez.Limit = ncbi.NewLimiter(time.Second)
+	}
+
+	//ncbi.SetTimeout(0)
+
 	for _, option := range options {
 		option(e)
 	}
-
-	if len(e.key) > 0 {
-		entrez.Limit = ncbi.NewLimiter(time.Second / 5)
-	}
-
-	ncbi.SetTimeout(0)
 
 	var err error
 	e.n, err = e.CollectionSize()

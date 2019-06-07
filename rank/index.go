@@ -93,16 +93,33 @@ func Index(documents guru.MedlineDocuments) (*Posting, error) {
 }
 
 func (p Posting) Tf(term, field, pmid string) float64 {
-	if _, ok := p.Index[term]; !ok {
-		return 0
+	var terms []string
+	if strings.Contains(term, "*") {
+		tt := strings.Replace(term, "*", "", -1)
+		for t := range p.Index {
+			if strings.Contains(t, tt) {
+				terms = append(terms, t)
+			}
+		}
+	} else {
+		terms = append(terms, term)
 	}
-	if _, ok := p.Index[term][field]; !ok {
-		return 0
+
+	var tf float64
+	for _, term := range terms {
+		if _, ok := p.Index[term]; !ok {
+			continue
+		}
+		if _, ok := p.Index[term][field]; !ok {
+			continue
+		}
+		if _, ok := p.Index[term][field][pmid]; !ok {
+			continue
+		}
+		tf += p.Index[term][field][pmid]
 	}
-	if _, ok := p.Index[term][field][pmid]; !ok {
-		return 0
-	}
-	return p.Index[term][field][pmid]
+
+	return tf
 }
 
 func (p Posting) DocLen(field, pmid string) float64 {

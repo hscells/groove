@@ -10,6 +10,9 @@ var RelevanceGrade int64 = 1
 
 type recall struct{}
 type precision struct{}
+type PrecisionAtK struct{ K int }
+type RecallAtK struct{ K int }
+
 type numRel struct{}
 type numRet struct{}
 type numRelRet struct{}
@@ -103,6 +106,44 @@ func (rec precision) Score(results *trecresults.ResultList, qrels trecresults.Qr
 	}
 
 	return numRelRet / (numRelRet + numNonRelRet)
+}
+
+func (e PrecisionAtK) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
+	if results.Len() < e.K {
+		return Precision.Score(results, qrels)
+	} else {
+		r := make(trecresults.ResultList, e.K)
+		for i, res := range *results {
+			if i >= e.K {
+				break
+			}
+			r[i] = res
+		}
+		return Precision.Score(&r, qrels)
+	}
+}
+
+func (e PrecisionAtK) Name() string {
+	return fmt.Sprintf("Precision@%d", e.K)
+}
+
+func (e RecallAtK) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
+	if results.Len() < e.K {
+		return Recall.Score(results, qrels)
+	} else {
+		r := make(trecresults.ResultList, e.K)
+		for i, res := range *results {
+			if i >= e.K {
+				break
+			}
+			r[i] = res
+		}
+		return Recall.Score(&r, qrels)
+	}
+}
+
+func (e RecallAtK) Name() string {
+	return fmt.Sprintf("Recall@%d", e.K)
 }
 
 func (numRel) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
