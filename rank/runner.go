@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/guru"
-	skiplist "github.com/sean-public/fast-skiplist"
 	"gopkg.in/cheggaaa/pb.v1"
 	"os"
 	"path"
 	"runtime"
 	"sort"
-	"strconv"
 	"sync"
 )
 
@@ -24,7 +22,71 @@ type Runner struct {
 	scorer Scorer
 }
 
-func index(query string, indexPath string, e stats.EntrezStatisticsSource) (*Posting, error) {
+func index(pmids []int, e stats.EntrezStatisticsSource) (*Posting, error) {
+	var docs guru.MedlineDocuments
+	sem := make(chan bool, 1)
+	n := 10000
+	bar := pb.New(len(pmids))
+	bar.Start()
+	for i, j := 0, n; i < len(pmids); i, j = i+n, j+n {
+		sem <- true
+		go func(k, l int) {
+			defer func() { <-sem }()
+			if l > len(pmids) {
+				l = len(pmids)
+			}
+			d, err := e.Fetch(pmids[k:l])
+			if err != nil {
+				panic(err)
+			}
+			docs = append(docs, d...)
+			bar.Add(n)
+		}(i, j)
+	}
+
+	// Wait until the last goroutine has read from the semaphore.
+	for i := 0; i < cap(sem); i++ {
+		sem <- true
+	}
+	bar.Finish()
+
+	return Index(docs)
+}
+
+func newPostingFromPMIDS(pmids []int, topic string, indexPath string, e stats.EntrezStatisticsSource) (*Posting, error) {
+	cachePath := path.Join(indexPath, topic)
+
+	var posting *Posting
+
+	if _, err := os.Stat(cachePath); err == nil {
+		fmt.Printf("found a cached copy for the cache %s\n", topic)
+		f, err := os.OpenFile(cachePath, os.O_RDONLY, 0644)
+		if err != nil {
+			return nil, err
+		}
+		err = gob.NewDecoder(f).Decode(&posting)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		posting, err = index(pmids, e)
+
+		fmt.Printf("caching a copy using id %s\n", topic)
+		err = os.MkdirAll(indexPath, 0777)
+		if err != nil {
+			return nil, err
+		}
+		f, err := os.OpenFile(cachePath, os.O_WRONLY|os.O_CREATE, 0644)
+		if err != nil {
+			return nil, err
+		}
+		err = gob.NewEncoder(f).Encode(posting)
+	}
+	return posting, nil
+}
+
+func newPosting(query, indexPath string, e stats.EntrezStatisticsSource) (*Posting, error) {
 	h := sha256.New()
 	h.Write([]byte(query))
 	id := fmt.Sprintf("%x", h.Sum(nil))
@@ -47,42 +109,8 @@ func index(query string, indexPath string, e stats.EntrezStatisticsSource) (*Pos
 		if err != nil {
 			return nil, err
 		}
-		pmids := make([]string, len(p))
-		for i, pmid := range p {
-			pmids[i] = strconv.Itoa(pmid)
-		}
 
-		var docs guru.MedlineDocuments
-		sem := make(chan bool, 1)
-		n := 10000
-		bar := pb.New(len(pmids))
-		bar.Start()
-		for i, j := 0, n; i < len(pmids); i, j = i+n, j+n {
-			sem <- true
-			go func(k, l int) {
-				defer func() { <-sem }()
-				if l > len(pmids) {
-					l = len(pmids) - 1
-				}
-				d, err := e.Fetch(p[k:l])
-				if err != nil {
-					panic(err)
-				}
-				docs = append(docs, d...)
-				bar.Add(n)
-			}(i, j)
-		}
-
-		// Wait until the last goroutine has read from the semaphore.
-		for i := 0; i < cap(sem); i++ {
-			sem <- true
-		}
-		bar.Finish()
-
-		posting, err = Index(docs)
-		if err != nil {
-			return nil, err
-		}
+		posting, err := index(p, e)
 
 		fmt.Printf("caching a copy using id %s\n", id)
 		err = os.MkdirAll(indexPath, 0777)
@@ -103,7 +131,6 @@ func (r Runner) run(done chan bool, scoredc chan ScoredDocuments, errc chan erro
 	defer close(errc)
 	defer close(done)
 
-	gob.Register(skiplist.SkipList{})
 	gob.Register(Posting{})
 
 	cd, err := os.UserCacheDir()
@@ -114,7 +141,7 @@ func (r Runner) run(done chan bool, scoredc chan ScoredDocuments, errc chan erro
 	indexPath := path.Join(cd, r.cache)
 
 	for _, query := range r.queries {
-		posting, err := index(query, indexPath, r.EntrezStatisticsSource)
+		posting, err := newPosting(query, indexPath, r.EntrezStatisticsSource)
 		if err != nil {
 			errc <- err
 			return
