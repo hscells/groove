@@ -1,6 +1,7 @@
 package rank
 
 import (
+	"fmt"
 	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/stats"
 	"math"
@@ -36,7 +37,12 @@ type BM25Scorer struct {
 	B  float64
 }
 
-type documentLengthScorer struct {
+type DocLenScorer struct {
+	s stats.EntrezStatisticsSource
+	p *Posting
+}
+
+type PubDateScorer struct {
 	s stats.EntrezStatisticsSource
 	p *Posting
 }
@@ -51,8 +57,63 @@ type PosScorer struct {
 	p *Posting
 }
 
+type AppearScorer struct {
+	s stats.EntrezStatisticsSource
+	p *Posting
+}
+
+func (s AppearScorer) Score(query, pmid string, fields ...string) (float64, error) {
+	tokens, err := fastTokenise(query, fields...)
+	if err != nil {
+		return 0, err
+	}
+	var sumTf float64
+	for _, token := range tokens {
+		for _, field := range fields {
+			sumTf += s.p.Tf(token, field, pmid)
+		}
+	}
+	if sumTf == 0 {
+		return 0, nil
+	}
+	return 1, nil
+}
+
+func (s AppearScorer) posting(p *Posting) {
+	s.p = p
+}
+
+func (s AppearScorer) entrez(e stats.EntrezStatisticsSource) {
+	s.s = e
+}
+
+func (s PubDateScorer) Score(query, pmid string, fields ...string) (float64, error) {
+	tokens, err := fastTokenise(query, fields...)
+	if err != nil {
+		return 0, err
+	}
+	var sumTf float64
+	for _, token := range tokens {
+		for _, field := range fields {
+			sumTf += s.p.Tf(token, field, pmid)
+		}
+	}
+	if sumTf == 0 {
+		return 0, nil
+	}
+	return float64(s.p.DocDates[hash(pmid)]), nil
+}
+
+func (s PubDateScorer) posting(p *Posting) {
+	s.p = p
+}
+
+func (s PubDateScorer) entrez(e stats.EntrezStatisticsSource) {
+	s.s = e
+}
+
 func (s PosScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	tokens, err := fastTokenise(query)
+	tokens, err := fastTokenise(query, fields...)
 	if err != nil {
 		return 0, err
 	}
@@ -74,7 +135,7 @@ func (s PosScorer) entrez(e stats.EntrezStatisticsSource) {
 }
 
 func (s VectorSpaceScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	terms, err := fastTokenise(query)
+	terms, err := fastTokenise(query, fields...)
 	if err != nil {
 		return 0, err
 	}
@@ -115,7 +176,7 @@ func (s VectorSpaceScorer) entrez(e stats.EntrezStatisticsSource) {
 }
 
 func (s TitleAbstractScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	tokens, err := fastTokenise(query)
+	tokens, err := fastTokenise(query, fields...)
 	if err != nil {
 		return 0, err
 	}
@@ -128,7 +189,7 @@ func (s TitleAbstractScorer) Score(query, pmid string, fields ...string) (float6
 		if ti > 0 && ab > 0 && mh > 0 {
 			score += 50
 		} else if ti > 0 && ab > 0 {
-			score += 10
+			score += 25
 		} else if ti > 0 && mh > 0 {
 			score += 10
 		} else if ab > 0 && mh > 0 {
@@ -146,7 +207,20 @@ func (s TitleAbstractScorer) entrez(e stats.EntrezStatisticsSource) {
 	s.s = e
 }
 
-func (s documentLengthScorer) Score(query, pmid string, fields ...string) (float64, error) {
+func (s DocLenScorer) Score(query, pmid string, fields ...string) (float64, error) {
+	tokens, err := fastTokenise(query, fields...)
+	if err != nil {
+		return 0, err
+	}
+	var sumTf float64
+	for _, token := range tokens {
+		for _, field := range fields {
+			sumTf += s.p.Tf(token, field, pmid)
+		}
+	}
+	if sumTf == 0 {
+		return 0, nil
+	}
 	var l float64
 	for _, field := range fields {
 		l += s.p.MaxDocLen - (s.p.MaxDocLen - s.p.DocLens[pmid][hash(field)])
@@ -154,11 +228,11 @@ func (s documentLengthScorer) Score(query, pmid string, fields ...string) (float
 	return l / float64(len(fields)), nil
 }
 
-func (s documentLengthScorer) posting(p *Posting) {
+func (s DocLenScorer) posting(p *Posting) {
 	s.p = p
 }
 
-func (s documentLengthScorer) entrez(e stats.EntrezStatisticsSource) {
+func (s DocLenScorer) entrez(e stats.EntrezStatisticsSource) {
 	s.s = e
 }
 
@@ -191,7 +265,7 @@ func (s DirichlectTermProbScorer) entrez(e stats.EntrezStatisticsSource) {
 }
 
 func (s *TFIDFScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	tokens, err := fastTokenise(query)
+	tokens, err := fastTokenise(query, fields...)
 	if err != nil {
 		return 0, err
 	}
@@ -223,7 +297,7 @@ func (s *TFIDFScorer) entrez(e stats.EntrezStatisticsSource) {
 }
 
 func (s *IDFScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	tokens, err := fastTokenise(query)
+	tokens, err := fastTokenise(query, fields...)
 	if err != nil {
 		return 0, err
 	}
@@ -263,7 +337,7 @@ func (s *BM25Scorer) Score(query, pmid string, fields ...string) (float64, error
 			if err != nil {
 				return 0, err
 			}
-			tf := s.p.Tf(token, field, pmid) + s.p.Pos(token, field, pmid)
+			tf := s.p.Tf(token, field, pmid)
 			if tf == 0 {
 				continue
 			}
@@ -317,7 +391,20 @@ func fastTokenise(query string, fields ...string) ([]string, error) {
 				tokensCache[q] = []string{query}
 			}
 		} else {
-			tokensCache[q] = strings.Split(query, " ")
+			terms := strings.Split(query, " ")
+			var toks []string
+			for _, term := range terms {
+				if strings.Contains(term, "*") {
+					wc := strings.ReplaceAll(term, "*", "")
+					for _, t := range suffixes {
+						toks = append(toks, fmt.Sprintf("%s%s", wc, t))
+					}
+					toks = append(toks, wc)
+				} else {
+					toks = append(toks, term)
+				}
+			}
+			tokensCache[q] = toks
 		}
 	}
 	return tokensCache[q], nil

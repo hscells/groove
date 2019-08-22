@@ -185,6 +185,7 @@ func Index(documents guru.MedlineDocuments) (*Posting, error) {
 		DocLens:   dl,
 		MaxDocLen: maxL,
 		TermIdx:   tm,
+		DocDates:  da,
 	}, nil
 }
 
@@ -218,71 +219,87 @@ func (p *Posting) DocumentVector(pmid uint32) []float64 {
 }
 
 func (p *Posting) Tf(term, field, pmid string) float64 {
-	var terms []uint32
-	if strings.Contains(term, "*") {
-		tt := strings.Replace(term, "*", "", -1)
-		for _, suff := range suffixes {
-			t := hash(fmt.Sprintf("%s%s", tt, suff))
-			if _, ok := p.Index[t]; ok {
-				terms = append(terms, t)
-			}
-		}
-	} else {
-		terms = append(terms, hash(term))
-	}
-
+	//var terms []uint32
+	//if strings.Contains(term, "*") {
+	//	tt := strings.Replace(term, "*", "", -1)
+	//	for _, suff := range suffixes {
+	//		t := hash(fmt.Sprintf("%s%s", tt, suff))
+	//		if _, ok := p.Index[t]; ok {
+	//			terms = append(terms, t)
+	//		}
+	//	}
+	//} else {
+	//	terms = append(terms, hash(term))
+	//}
+	//
+	//f := hash(field)
+	//d := hash(pmid)
+	//var tf float64
+	//for _, term := range terms {
+	//	if _, ok := p.Index[term]; !ok {
+	//		continue
+	//	}
+	//	if _, ok := p.Index[term][f]; !ok {
+	//		continue
+	//	}
+	//	if _, ok := p.Index[term][f][d]; !ok {
+	//		continue
+	//	}
+	//	tf += p.Index[term][f][d].Tf
+	//}
+	//
+	//return tf
+	t := hash(term)
 	f := hash(field)
 	d := hash(pmid)
-	var tf float64
-	for _, term := range terms {
-		if _, ok := p.Index[term]; !ok {
-			continue
-		}
-		if _, ok := p.Index[term][f]; !ok {
-			continue
-		}
-		if _, ok := p.Index[term][f][d]; !ok {
-			continue
-		}
-		tf += p.Index[term][f][d].Tf
+	//var pos float64
+	//for _, term := range terms {
+	if _, ok := p.Index[t]; !ok {
+		return 0
 	}
-
-	return tf
+	if _, ok := p.Index[t][f]; !ok {
+		return 0
+	}
+	if _, ok := p.Index[t][f][d]; !ok {
+		return 0
+	}
+	return p.Index[t][f][d].Tf
 }
 
 func (p *Posting) Pos(term, field, pmid string) float64 {
-	var terms []uint32
-	if strings.Contains(term, "*") {
-		tt := strings.Replace(term, "*", "", -1)
-		for _, suff := range suffixes {
-			t := hash(fmt.Sprintf("%s%s", tt, suff))
-			if _, ok := p.Index[t]; ok {
-				terms = append(terms, t)
-			}
-		}
-	} else {
-		terms = append(terms, hash(term))
-	}
+	//var terms []uint32
+	//if strings.Contains(term, "*") {
+	//	tt := strings.Replace(term, "*", "", -1)
+	//	for _, suff := range suffixes {
+	//		t := hash(fmt.Sprintf("%s%s", tt, suff))
+	//		if _, ok := p.Index[t]; ok {
+	//			terms = append(terms, t)
+	//		}
+	//	}
+	//} else {
+	//	terms = append(terms, hash(term))
+	//}
 
+	t := hash(term)
 	f := hash(field)
 	d := hash(pmid)
-	var pos float64
-	for _, term := range terms {
-		if _, ok := p.Index[term]; !ok {
-			continue
-		}
-		if _, ok := p.Index[term][f]; !ok {
-			continue
-		}
-		if _, ok := p.Index[term][f][d]; !ok {
-			continue
-		}
-		pos += p.Index[term][f][d].Pos
+	//var pos float64
+	//for _, term := range terms {
+	if _, ok := p.Index[t]; !ok {
+		return 0
 	}
-	if len(terms) > 0 {
-		return pos / float64(len(terms))
+	if _, ok := p.Index[t][f]; !ok {
+		return 0
 	}
-	return pos
+	if _, ok := p.Index[t][f][d]; !ok {
+		return 0
+	}
+	return p.Index[t][f][d].Pos
+	//}
+	//if len(terms) > 0 {
+	//	return pos / float64(len(terms))
+	//}
+	//return pos
 }
 
 func (p *Posting) DocLen(field string, pmid string) float64 {
