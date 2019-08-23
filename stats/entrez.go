@@ -14,6 +14,7 @@ import (
 	"github.com/hscells/trecresults"
 	"github.com/mailru/easyjson"
 	"gopkg.in/jdkato/prose.v2"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/url"
@@ -34,7 +35,7 @@ type EntrezStatisticsSource struct {
 	rank       bool
 	options    SearchOptions
 	// The size of PubMed.
-	n float64
+	N float64
 }
 
 type term struct {
@@ -265,9 +266,17 @@ func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Par
 	for _, option := range options {
 		option(p)
 	}
+	fails, nfails := 20, 20
 
+retry:
 	r, err := entrez.Fetch(e.db, p, e.tool, e.email, nil, pmids...)
 	if err != nil {
+		if fails > 0 {
+			log.Printf("error: %v, retrying %d more times for %f seconds", err, fails, time.Duration(((nfails - fails) * 5) * int(time.Second)).Seconds())
+			fails--
+			time.Sleep(time.Duration((nfails-fails)*5) * time.Second)
+			goto retry
+		}
 		return nil, err
 	}
 
@@ -453,7 +462,7 @@ func (e EntrezStatisticsSource) TotalTermFrequency(term, _ string) (float64, err
 
 func (e EntrezStatisticsSource) InverseDocumentFrequency(term, field string) (float64, error) {
 	nt := e.Count(term, field)
-	return idf(e.n, nt), nil
+	return idf(e.N, nt), nil
 }
 
 func (e EntrezStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentation) (float64, error) {
@@ -541,14 +550,32 @@ execute:
 }
 
 func (e EntrezStatisticsSource) CollectionSize() (float64, error) {
-	if e.n > 0 {
-		return e.n, nil
+	if e.N > 0 {
+		return e.N, nil
 	}
 	info, err := entrez.DoInfo(e.db, e.tool, e.email)
 	if err != nil {
 		return 0, err
 	}
 	return float64(info.DbInfo.Count), nil
+}
+
+func (e EntrezStatisticsSource) Translation(term string) ([]string, error) {
+	s, err := entrez.DoSearch("pubmed", term, nil, nil, e.tool, e.email)
+	if err != io.EOF && err != nil {
+		return nil, err
+	}
+	if s == nil || len(s.TranslationStack) == 0 {
+		return nil, nil
+	}
+	var translations []string
+	_, nodes := s.TranslationStack[0].Consume(s.TranslationStack)
+	for _, node := range nodes {
+		if t, ok := node.(*search.Term); ok {
+			translations = append(translations, strings.ReplaceAll(strings.ToLower(t.Term), "[all fields]", ""))
+		}
+	}
+	return translations, nil
 }
 
 // EntrezTool sets the tool name for entrez.
@@ -618,7 +645,7 @@ func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) 
 	}
 
 	var err error
-	e.n, err = e.CollectionSize()
+	e.N, err = e.CollectionSize()
 	if err != nil {
 		return EntrezStatisticsSource{}, err
 	}
