@@ -7,19 +7,37 @@ import (
 	"sort"
 )
 
-type DCG struct {
-	K int
+type DCG struct{ K int }
+type NDCG struct{ K int }
+
+var (
+	AP = ap{}
+)
+
+type ap struct{}
+
+func (e ap) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
+	R := NumRel.Score(results, qrels)
+	var sum float64
+	for i, res := range *results {
+		if _, ok := qrels[res.DocId]; ok {
+			if qrels[res.DocId].Score > RelevanceGrade {
+				sum += PrecisionAtK{K: i + 1}.Score(results, qrels)
+			}
+		}
+	}
+	return sum / R
 }
 
-type NDCG struct {
-	K int
+func (e ap) Name() string {
+	return "AP"
 }
 
 func (e DCG) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
 	var score float64
 	for i, item := range *results {
 		// Compute DCG at a cutoff.
-		if e.K != 0 && i > e.K {
+		if e.K != 0 && i >= e.K {
 			break
 		}
 		if _, ok := qrels[item.DocId]; ok {
