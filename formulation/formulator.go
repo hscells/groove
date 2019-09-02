@@ -217,7 +217,7 @@ func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Sup
 }
 
 func (o ObjectiveFormulator) Method() string {
-	return "objective"
+	return "objective" + o.optimisation.Name()
 }
 
 func (o ObjectiveFormulator) Topic() string {

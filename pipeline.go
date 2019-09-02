@@ -538,6 +538,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			}
 		}
 
+
 		// Create the folder that will contain the formulated query/queries.
 		err = os.MkdirAll(p.QueryFormulator.Method(), 0777)
 		if err != nil {
