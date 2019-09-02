@@ -59,7 +59,12 @@ type PubMedSet struct {
 }
 
 func (p PubMedSet) Statistic(term string) (float64, error) {
-	return p.e.DocumentFrequency(term, fields.TitleAbstract)
+doDf:
+	df, err := p.e.DocumentFrequency(term, fields.TitleAbstract)
+	if err != nil {
+		goto doDf
+	}
+	return df, nil
 }
 
 func (p PubMedSet) Size() (float64, error) {
