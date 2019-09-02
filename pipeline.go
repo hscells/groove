@@ -487,7 +487,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 		}
 		for _, s := range sup {
 			// Create the folder the data will be contained in.
-			err := os.MkdirAll(s.Name, 0777)
+			err := os.MkdirAll(path.Join(p.QueryFormulator.Method(), s.Name), 0777)
 			if err != nil {
 				c <- pipeline.Result{
 					Error: err,
@@ -497,10 +497,9 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			}
 
 			for _, d := range s.Data {
-				fmt.Printf("writing supplimentary file %s\n", path.Join(s.Name, d.Name))
-
+				fmt.Printf("writing supplimentary file %s\n", path.Join(p.QueryFormulator.Method(), s.Name, d.Name))
 				// Create and open the file that will contain the data.
-				f, err := os.OpenFile(path.Join(s.Name, d.Name), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
+				f, err := os.OpenFile(path.Join(p.QueryFormulator.Method(), s.Name, d.Name), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
 				if err != nil {
 					c <- pipeline.Result{
 						Error: err,
@@ -537,7 +536,6 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 				}
 			}
 		}
-
 
 		// Create the folder that will contain the formulated query/queries.
 		err = os.MkdirAll(p.QueryFormulator.Method(), 0777)
