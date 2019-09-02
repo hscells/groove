@@ -1035,8 +1035,8 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 			return nil, nil, err
 		}
 
-		if ev.Validation[eval.F1Measure.Name()] > bestEval {
-			bestEval = ev.Validation[eval.F1Measure.Name()]
+		if ev.Validation[m.Name()] > bestEval {
+			bestEval = ev.Validation[m.Name()]
 			bestQWithMesh = qWithMeSH
 			bestM = k
 		}
