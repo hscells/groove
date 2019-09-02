@@ -39,6 +39,7 @@ type QueryChain struct {
 	QueryCacher         combinator.QueryCacher
 	QrelsFile           trecresults.QrelsFile
 	GenerationExplorer  QueryChainGenerationExplorer
+	ComputeFeatures     bool
 }
 
 // Generate will create test data sampling using random stratified sampling.

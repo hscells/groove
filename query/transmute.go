@@ -20,7 +20,8 @@ var (
 			LexOptions: lexer.LexOptions{
 				FormatParenthesis: false,
 			},
-			RequiresLexing: true,
+			AddRedundantParenthesis: true,
+			RequiresLexing:          true,
 		})
 	// PubMedTransmutePipeline is a default pipeline for PubMed queries.
 	PubMedTransmutePipeline = tpipeline.NewPipeline(

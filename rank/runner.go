@@ -11,6 +11,7 @@ import (
 	"path"
 	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 )
 
@@ -22,20 +23,36 @@ type Runner struct {
 	scorer Scorer
 }
 
-func index(pmids []int, e stats.EntrezStatisticsSource) (*Posting, error) {
+var docCache = make(map[int]guru.MedlineDocument)
+
+func index(pmids []int, e stats.EntrezStatisticsSource, phrases ...string) (*Posting, error) {
 	var docs guru.MedlineDocuments
 	sem := make(chan bool, 1)
 	n := 10000
+
+	// Grab documents from cache.
+	var unseenPmids []int
+	for _, pmid := range pmids {
+		if d, ok := docCache[pmid]; ok {
+			docs = append(docs, d)
+		} else {
+			unseenPmids = append(unseenPmids, pmid)
+		}
+	}
+
+	fmt.Printf("hit %d docs in cache, fetching %d for a total of %d\n", len(docs), len(unseenPmids), len(pmids))
+
 	bar := pb.New(len(pmids))
+	bar.Add(len(docs))
 	bar.Start()
-	for i, j := 0, n; i < len(pmids); i, j = i+n, j+n {
+	for i, j := 0, n; i < len(unseenPmids); i, j = i+n, j+n {
 		sem <- true
 		go func(k, l int) {
 			defer func() { <-sem }()
-			if l > len(pmids) {
-				l = len(pmids)
+			if l > len(unseenPmids) {
+				l = len(unseenPmids)
 			}
-			d, err := e.Fetch(pmids[k:l])
+			d, err := e.Fetch(unseenPmids[k:l])
 			if err != nil {
 				panic(err)
 			}
@@ -50,7 +67,21 @@ func index(pmids []int, e stats.EntrezStatisticsSource) (*Posting, error) {
 	}
 	bar.Finish()
 
-	return Index(docs)
+	addedDocs := 0
+	for _, doc := range docs {
+		i, err := strconv.Atoi(doc.PMID)
+		if err != nil {
+			return &Posting{}, err
+		}
+		if _, ok := docCache[i]; !ok {
+			docCache[i] = doc
+			addedDocs++
+		}
+	}
+
+	fmt.Printf("added %d docs to cache\n", addedDocs)
+
+	return Index(docs, phrases...)
 }
 
 func newPostingFromPMIDS(pmids []int, topic string, indexPath string, e stats.EntrezStatisticsSource) (*Posting, error) {

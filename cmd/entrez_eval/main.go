@@ -27,8 +27,8 @@ type args struct {
 	ResultHandlers   []string `help:"Which run handlers to use" arg:"-r,separate"`
 	RunOutput        string   `help:"Name of processed run file" arg:"-o"`
 	EvaluationOutput string   `help:"Name of results file" arg:"-q"`
-	RunFile          string   `help:"Path to run file" arg:"required,positional"`
 	QrelsFile        string   `help:"Path to qrels file" arg:"required,positional"`
+	RunFile          string   `help:"Path to run file" arg:"required,positional"`
 }
 
 func (args) Version() string {
@@ -106,6 +106,14 @@ func main() {
 	evaluationMeasures["num_ret"] = eval.NumRet
 	evaluationMeasures["num_rel"] = eval.NumRel
 	evaluationMeasures["num_rel_ret"] = eval.NumRelRet
+	evaluationMeasures["ap"] = eval.AP
+	evaluationMeasures["p@10"] = eval.PrecisionAtK{K: 10}
+	evaluationMeasures["ndcg"] = eval.NDCG{}
+	evaluationMeasures["ndcg@5"] = eval.NDCG{K:5}
+	evaluationMeasures["ndcg@10"] = eval.NDCG{K:10}
+	evaluationMeasures["ndcg@100"] = eval.NDCG{K:100}
+	evaluationMeasures["ndcg@200"] = eval.NDCG{K:200}
+	evaluationMeasures["ndcg@500"] = eval.NDCG{K:500}
 
 	eval.RelevanceGrade = args.RelevanceGrade
 

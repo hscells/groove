@@ -4,6 +4,7 @@ package formulation
 import (
 	"fmt"
 	"github.com/hscells/cqr"
+	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/trecresults"
@@ -61,6 +62,7 @@ type ObjectiveFormulator struct {
 	splitter       Splitter
 	analyser       TermAnalyser
 	postProcessing []PostProcess
+	optimisation   eval.Evaluator
 }
 
 type ObjectiveOption func(o *ObjectiveFormulator)
@@ -91,24 +93,25 @@ func ObjectivePostProcessing(processes ...PostProcess) ObjectiveOption {
 	}
 }
 
-func NewObjectiveFormulator(query pipeline.Query, s stats.EntrezStatisticsSource, qrels trecresults.Qrels, population BackgroundCollection, folder, pubdates, semTypes, metamapURL string, options ...ObjectiveOption) *ObjectiveFormulator {
+func NewObjectiveFormulator(query pipeline.Query, s stats.EntrezStatisticsSource, qrels trecresults.Qrels, population BackgroundCollection, folder, pubdates, semTypes, metamapURL string, optimisation eval.Evaluator, options ...ObjectiveOption) *ObjectiveFormulator {
 	o := &ObjectiveFormulator{
-		s:          s,
-		qrels:      qrels,
-		population: population,
-		query:      query,
-		Folder:     folder,
-		Pubdates:   pubdates,
-		SemTypes:   semTypes,
-		MetaMapURL: metamapURL,
-		DevK:       []float64{0.20},
-		PopK:       []float64{0.02},
-		MeSHK:      []int{20},
-		splitter:   RandomSplitter(1000),
-		analyser:   TermFrequencyAnalyser,
-		//DevK:       []float64{0.05, 0.10, 0.15, 0.20, 0.25, 0.30},
-		//PopK:       []float64{0.001, 0.01, 0.02, 0.05, 0.10, 0.20},
-		//MeSHK:      []int{1, 5, 10, 15, 20, 25},
+		s:            s,
+		qrels:        qrels,
+		population:   population,
+		query:        query,
+		Folder:       folder,
+		Pubdates:     pubdates,
+		SemTypes:     semTypes,
+		MetaMapURL:   metamapURL,
+		splitter:     RandomSplitter(1000),
+		analyser:     TermFrequencyAnalyser,
+		optimisation: optimisation,
+		//DevK:         []float64{0.20},
+		//PopK:         []float64{0.02},
+		//MeSHK:        []int{20},
+		DevK:  []float64{0.05, 0.10, 0.15, 0.20, 0.25, 0.30},
+		PopK:  []float64{0.001, 0.01, 0.02, 0.05, 0.10, 0.20},
+		MeSHK: []int{1, 5, 10, 15, 20, 25},
 	}
 
 	for _, option := range options {
@@ -145,9 +148,11 @@ func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Sup
 		panic(err)
 	}
 
+	fmt.Printf("%d documents in test set\n", len(test))
+
 	// Split the 'test' set into dev, val, and unseen.
 	dev, val, unseen := o.splitter.Split(test)
-	fmt.Println(len(dev), len(val), len(unseen))
+	fmt.Printf("%d dev, %d val, %d unseen\n", len(dev), len(val), len(unseen))
 
 	// Perform 'term frequency analysis' on the development set.
 	devTerms, err := o.analyser(dev)
@@ -155,7 +160,10 @@ func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Sup
 		panic(err)
 	}
 
-	q1, q2, err := o.derive(devTerms, dev, val, o.population)
+	q1, q2, err := o.derive(devTerms, dev, val, o.population, o.optimisation)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Post-Processing.
 	for _, postProcessor := range o.postProcessing {
@@ -169,12 +177,38 @@ func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Sup
 		}
 	}
 
+	resNoMesh, err := o.s.Execute(pipeline.NewQuery("objective_nomesh", o.Topic(), q1), o.s.SearchOptions())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	resMesh, err := o.s.Execute(pipeline.NewQuery("objective_mesh", o.Topic(), q2), o.s.SearchOptions())
+	if err != nil {
+		return nil, nil, err
+	}
+
 	sup := SupplementalData{
 		Name: "objective",
 		Data: []Data{
 			{
 				Name:  "unseen.qrels",
-				Value: MakeQrels(unseen),
+				Value: MakeQrels(unseen, o.Topic()),
+			},
+			{
+				Name:  "dev.qrels",
+				Value: MakeQrels(dev, o.Topic()),
+			},
+			{
+				Name:  "val.qrels",
+				Value: MakeQrels(dev, o.Topic()),
+			},
+			{
+				Name:  "without_mesh.res",
+				Value: resNoMesh,
+			},
+			{
+				Name:  "with_mesh.res",
+				Value: resMesh,
 			},
 		},
 	}

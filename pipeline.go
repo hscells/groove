@@ -14,7 +14,9 @@ import (
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/preprocess"
 	"github.com/hscells/groove/query"
+	"github.com/hscells/groove/rank"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/merging"
 	"github.com/hscells/transmute"
 	"github.com/hscells/trecresults"
 	"github.com/peterbourgon/diskv"
@@ -44,6 +46,9 @@ type Pipeline struct {
 	Model                 learning.Model
 	ModelConfiguration    ModelConfiguration
 	QueryFormulator       formulation.Formulator
+
+	Merger merging.Merger
+	Scorer rank.Scorer
 }
 
 // ModelConfiguration specifies what actions of a model should be taken by the pipeline.
@@ -279,8 +284,67 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			}
 		}
 
-		// This section is run concurrently, since the results can sometimes get quite large and we don't want to eat ram.
-		if len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0 {
+		if (len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0) && p.Scorer != nil && p.Merger != nil {
+			// Store the measurements to be output later.
+
+			f, err := os.OpenFile(p.OutputTrec.Path, os.O_RDONLY, 0664)
+			if err != nil {
+				c <- pipeline.Result{
+					Error: err,
+					Type:  pipeline.Error,
+				}
+				return
+			}
+
+			r, err := trecresults.ResultsFromReader(f)
+			if err != nil {
+				c <- pipeline.Result{
+					Error: err,
+					Type:  pipeline.Error,
+				}
+				return
+			}
+			f.Close()
+
+			measurements := make(map[string]map[string]float64)
+			for _, q := range measurementQueries {
+				if _, ok := r.Results[q.Topic]; ok {
+					log.Printf("already completed topic %v, so skipping it\n", q.Topic)
+					continue
+				}
+				log.Printf("starting topic %v\n", q.Topic)
+				results, err := rank.CLF(q, p.QueryCache, p.Scorer, p.Merger, p.StatisticsSource.(stats.EntrezStatisticsSource))
+				if err != nil {
+					c <- pipeline.Result{
+						Error: err,
+						Type:  pipeline.Error,
+					}
+					return
+				}
+				// Set the evaluation results.
+				if len(p.Evaluations) > 0 {
+					measurements[q.Topic] = eval.Evaluate(p.Evaluations, &results, p.EvaluationFormatters.EvaluationQrels, q.Topic)
+				}
+
+				// MeasurementOutput the trec results.
+				if len(p.OutputTrec.Path) > 0 {
+					c <- pipeline.Result{
+						Topic:       q.Topic,
+						TrecResults: &results,
+						Type:        pipeline.TrecResult,
+					}
+				}
+
+				// Send the transformation through the channel.
+				c <- pipeline.Result{
+					Transformation: pipeline.QueryResult{Name: q.Name, Topic: q.Topic, Transformation: q.Query},
+					Type:           pipeline.Transformation,
+				}
+
+				log.Printf("completed topic %v\n", q.Topic)
+			}
+		} else if len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0 { // This section is run concurrently, since the results can sometimes get quite large and we don't want to eat ram.
+
 			// Store the measurements to be output later.
 			measurements := make(map[string]map[string]float64)
 
@@ -433,8 +497,10 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			}
 
 			for _, d := range s.Data {
+				fmt.Printf("writing supplimentary file %s\n", path.Join(s.Name, d.Name))
+
 				// Create and open the file that will contain the data.
-				f, err := os.OpenFile(path.Join(s.Name, d.Name), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+				f, err := os.OpenFile(path.Join(s.Name, d.Name), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
 				if err != nil {
 					c <- pipeline.Result{
 						Error: err,
@@ -482,6 +548,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			return
 		}
 		for i, q := range queries {
+			fmt.Println(q)
 			err := os.MkdirAll(path.Join(p.QueryFormulator.Method(), strconv.Itoa(i)), 0777)
 			if err != nil {
 				c <- pipeline.Result{

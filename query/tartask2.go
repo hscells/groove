@@ -18,7 +18,60 @@ import (
 type TARTask2QueriesSource struct {
 }
 
-func (TARTask2QueriesSource) Load(directory string) ([]pipeline.Query, error) {
+func (TARTask2QueriesSource) LoadSingle(file string) (pipeline.Query, error) {
+	source, err := ioutil.ReadFile(file)
+	if err != nil {
+		return pipeline.Query{}, err
+	}
+
+	s := bufio.NewScanner(bytes.NewBuffer(source))
+	n := 0
+	lines := 0
+	inQuery := false
+	var (
+		topic, title, query string
+		q                   cqr.CommonQueryRepresentation
+	)
+	for s.Scan() {
+		line := s.Text()
+		if n == 3 {
+			break
+		}
+		if (len(line) > 0 && line[0] == '\n') || len(line) == 0 {
+			n++
+			continue
+		}
+		if !inQuery {
+			t := strings.Split(line, ":")
+			if len(t) > 1 {
+				switch t[0] {
+				case "Topic":
+					topic = strings.TrimSpace(strings.Join(t[1:], " "))
+				case "Title":
+					title = strings.TrimSpace(strings.Join(t[1:], " "))
+				case "Query":
+					inQuery = true
+				}
+			}
+		} else {
+			query += fmt.Sprintln(line)
+			lines++
+		}
+	}
+	fmt.Println(topic)
+	query = strings.Replace(query, `“`, `"`, -1)
+	query = strings.Replace(query, `”`, `"`, -1)
+	if lines < 3 {
+		fmt.Println("pubmed")
+		q, _ = transmute.CompilePubmed2Cqr(query)
+	} else {
+		fmt.Println("medline")
+		q, _ = transmute.CompileMedline2Cqr(query)
+	}
+	return pipeline.NewQuery(title, topic, q), nil
+}
+
+func (t TARTask2QueriesSource) Load(directory string) ([]pipeline.Query, error) {
 	// First, get a list of files in the directory.
 	files, err := ioutil.ReadDir(directory)
 	if err != nil {
@@ -35,58 +88,12 @@ func (TARTask2QueriesSource) Load(directory string) ([]pipeline.Query, error) {
 		if len(f.Name()) == 0 {
 			continue
 		}
-
-		source, err := ioutil.ReadFile(directory + "/" + f.Name())
+		q, err := t.LoadSingle(path.Join(directory, f.Name()))
 		if err != nil {
 			return nil, err
 		}
 
-		s := bufio.NewScanner(bytes.NewBuffer(source))
-		n := 0
-		lines := 0
-		inQuery := false
-		var (
-			topic, title, query string
-			q                   cqr.CommonQueryRepresentation
-		)
-		for s.Scan() {
-			line := s.Text()
-			if n == 3 {
-				break
-			}
-			if (len(line) > 0 && line[0] == '\n') || len(line) == 0 {
-				n++
-				continue
-			}
-			if !inQuery {
-				t := strings.Split(line, ":")
-				if len(t) > 1 {
-					switch t[0] {
-					case "Topic":
-						topic = strings.TrimSpace(strings.Join(t[1:], " "))
-					case "Title":
-						title = strings.TrimSpace(strings.Join(t[1:], " "))
-					case "Query":
-						inQuery = true
-					}
-				}
-			} else {
-				query += fmt.Sprintln(line)
-				lines++
-			}
-		}
-		fmt.Println(topic)
-		query = strings.Replace(query, `“`, `"`, -1)
-		query = strings.Replace(query, `”`, `"`, -1)
-		if lines < 3 {
-			fmt.Println("pubmed")
-			q, _ = transmute.CompilePubmed2Cqr(query)
-		} else {
-			fmt.Println("medline")
-			q, _ = transmute.CompileMedline2Cqr(query)
-		}
-		//fmt.Println(transmute.CompileCqr2Medline(q))
-		queries = append(queries, pipeline.NewQuery(title, topic, q))
+		queries = append(queries, q)
 	}
 	return queries, nil
 }
@@ -207,4 +214,4 @@ Pids:
     25917801
     25896772
     25883525
- */
+*/

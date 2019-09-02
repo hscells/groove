@@ -46,7 +46,7 @@ func hash(s string) uint32 {
 	return H.Sum32()
 }
 
-func Index(documents guru.MedlineDocuments) (*Posting, error) {
+func Index(documents guru.MedlineDocuments, phrases ...string) (*Posting, error) {
 	ii := make(map[uint32]map[uint32]map[uint32]Statistics)
 	dl := make(map[string]map[uint32]float64, len(documents))
 	da := make(map[uint32]int64, len(documents))
@@ -73,14 +73,17 @@ func Index(documents guru.MedlineDocuments) (*Posting, error) {
 
 		dl[pmid] = make(map[uint32]float64)
 
+		tiLower := strings.ToLower(doc.TI)
+		abLower := strings.ToLower(doc.AB)
+
 		// Extract tokens for the title and abstract.
-		ti, err := prose.NewDocument(strings.ToLower(doc.TI), prose.WithTagging(false), prose.WithExtraction(false), prose.WithSegmentation(false))
+		ti, err := prose.NewDocument(tiLower, prose.WithTagging(false), prose.WithExtraction(false), prose.WithSegmentation(false))
 		if err != nil {
 			return nil, err
 		}
 		dl[pmid][TI] = float64(len(ti.Tokens()))
 
-		ab, err := prose.NewDocument(strings.ToLower(doc.AB), prose.WithTagging(false), prose.WithExtraction(false), prose.WithSegmentation(false))
+		ab, err := prose.NewDocument(abLower, prose.WithTagging(false), prose.WithExtraction(false), prose.WithSegmentation(false))
 		if err != nil {
 			return nil, err
 		}
@@ -123,6 +126,27 @@ func Index(documents guru.MedlineDocuments) (*Posting, error) {
 				if _, ok := abPos[t]; !ok {
 					abPos[t] = 1 + (1 - (float64(i) / float64(len(ab.Sentences()))))
 				}
+			}
+		}
+
+		// Compute statistics for phrases in the title and abstract.
+		for _, phrase := range phrases {
+			t := hash(phrase)
+			if strings.Contains(tiLower, phrase) {
+				if _, ok := ii[t]; !ok {
+					ii[t] = make(map[uint32]map[uint32]Statistics)
+					ii[t][TI] = make(map[uint32]Statistics)
+					ii[t][AB] = make(map[uint32]Statistics)
+				}
+				tiTf[t]++
+			}
+			if strings.Contains(abLower, phrase) {
+				if _, ok := ii[t]; !ok {
+					ii[t] = make(map[uint32]map[uint32]Statistics)
+					ii[t][TI] = make(map[uint32]Statistics)
+					ii[t][AB] = make(map[uint32]Statistics)
+				}
+				abTf[t]++
 			}
 		}
 

@@ -158,7 +158,7 @@ func (oc OracleQueryChainCandidateSelector) Select(query CandidateQuery, candida
 			bestRet = numRet
 			oc.bestRelRet = bestRelRet
 			oc.bestRet = bestRet
-			log.Printf("topic %v - P %v, R %v, %v %v, %v %v, %v %v\n", query.Topic, evaluation[eval.Precision.Name()], evaluation[eval.Recall.Name()], eval.NumRel.Name(), evaluation[eval.NumRel.Name()], eval.NumRet.Name(), evaluation[eval.NumRet.Name()], eval.NumRelRet.Name(), evaluation[eval.NumRelRet.Name()])
+			log.Printf("topic %v - K %v, R %v, %v %v, %v %v, %v %v\n", query.Topic, evaluation[eval.Precision.Name()], evaluation[eval.Recall.Name()], eval.NumRel.Name(), evaluation[eval.NumRel.Name()], eval.NumRet.Name(), evaluation[eval.NumRet.Name()], eval.NumRelRet.Name(), evaluation[eval.NumRelRet.Name()])
 			transformed = pipeline.NewQuery(query.Topic, query.Topic, applied.Query)
 		}
 

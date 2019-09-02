@@ -187,13 +187,21 @@ func (s TitleAbstractScorer) Score(query, pmid string, fields ...string) (float6
 		ab := s.p.Tf(token, "ab", pmid)
 		mh := s.p.Tf(token, "mh", pmid)
 		if ti > 0 && ab > 0 && mh > 0 {
-			score += 50
-		} else if ti > 0 && ab > 0 {
-			score += 25
-		} else if ti > 0 && mh > 0 {
+			score += 100
+		} else if mh == 0 && ti > 0 && ab > 0 {
+			score += 100
+		} else if ab == 0 && ti > 0 && mh > 0 {
 			score += 10
-		} else if ab > 0 && mh > 0 {
+		} else if ti == 0 && ab > 0 && mh > 0 {
 			score += 5
+		} else if ti > 0 && ab == 0 && mh == 0 {
+			score += 20
+		} else if ab > 0 && ti == 0 && mh == 0 {
+			score += 20
+		} else if ab == 0 && ti == 0 && mh > 0 {
+			score += 10
+		} else {
+			score -= 100
 		}
 	}
 	return score / float64(len(tokens)), nil

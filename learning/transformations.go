@@ -123,20 +123,25 @@ func NewMeshParentTransformer() Transformation {
 	return Transformation{ID: MeshParentTransformation, Transformer: meshParent{}}
 }
 
+var ComputeFeatures = true
+
 // variations creates the variations of an input candidate query in the transformation chain using the specified
 // transformations.
 func variations(query CandidateQuery, context TransformationContext, ss stats.StatisticsSource, me analysis.MeasurementExecutor, measurements []analysis.Measurement, transformations ...Transformation) ([]CandidateQuery, error) {
 	var (
 		candidates []CandidateQuery
 	)
-	// Compute Features (and pre-transformation Features) for the original Boolean query.
-	preDeltas, err := deltas(query.Query, ss, measurements, me)
-	if err != nil {
-		return nil, err
-	}
-	preFeatures := contextFeatures(context)
-	for feature, score := range preDeltas {
-		preFeatures = append(preFeatures, NewFeature(feature, score))
+	var preDeltas deltaFeatures
+	if ComputeFeatures {
+		// Compute Features (and pre-transformation Features) for the original Boolean query.
+		preDeltas, err := deltas(query.Query, ss, measurements, me)
+		if err != nil {
+			return nil, err
+		}
+		preFeatures := contextFeatures(context)
+		for feature, score := range preDeltas {
+			preFeatures = append(preFeatures, NewFeature(feature, score))
+		}
 	}
 
 	switch q := query.Query.(type) {
@@ -166,32 +171,36 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 				tmp.Children = children
 				tmp.Children[j] = applied.Query
 
-				features := applied.Features
-				if len(applied.Features) == 0 {
-					// Context Features.
-					features = contextFeatures(context)
+				if ComputeFeatures {
+					features := applied.Features
+					if len(applied.Features) == 0 {
+						// Context Features.
+						features = contextFeatures(context)
 
-					// Optional keyword Features.
-					switch applied.Query.(type) {
-					case cqr.Keyword:
-						features = append(features, keywordFeatures(applied.Query.(cqr.Keyword))...)
+						// Optional keyword Features.
+						switch applied.Query.(type) {
+						case cqr.Keyword:
+							features = append(features, keywordFeatures(applied.Query.(cqr.Keyword))...)
+						}
+
+						// Boolean Features.
+						features = append(features, booleanFeatures(tmp)...)
+
+						deltas, err := deltas(tmp, ss, measurements, me)
+						if err != nil {
+							panic(err)
+						}
+
+						for feature, score := range deltas {
+							features = append(features, NewFeature(feature, score))
+						}
+						features = append(features, computeDeltas(preDeltas, deltas)...)
 					}
-
-					// Boolean Features.
-					features = append(features, booleanFeatures(tmp)...)
-
-					deltas, err := deltas(tmp, ss, measurements, me)
-					if err != nil {
-						panic(err)
-					}
-
-					for feature, score := range deltas {
-						features = append(features, NewFeature(feature, score))
-					}
-					features = append(features, computeDeltas(preDeltas, deltas)...)
+					queries = append(queries, NewCandidateQuery(tmp, query.Topic, features).SetTransformationID(applied.TransformationID).Append(query))
+				} else {
+					queries = append(queries, NewCandidateQuery(tmp, query.Topic, nil).SetTransformationID(applied.TransformationID).Append(query))
 				}
 
-				queries = append(queries, NewCandidateQuery(tmp, query.Topic, features).SetTransformationID(applied.TransformationID).Append(query))
 			}
 		}
 
@@ -204,27 +213,32 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 					return nil, err
 				}
 
-				boolFeatures := transformation.BooleanFeatures(q, context)
+				if ComputeFeatures {
+					boolFeatures := transformation.BooleanFeatures(q, context)
+					for i, applied := range c {
+						features := contextFeatures(context)
+						features = append(features, booleanFeatures(applied.(cqr.BooleanQuery))...)
+						features = append(features, transformationFeature(transformation.Transformer))
+						if i < len(boolFeatures) {
+							features = append(features, boolFeatures[i]...)
+						}
 
-				for i, applied := range c {
-					features := contextFeatures(context)
-					features = append(features, booleanFeatures(applied.(cqr.BooleanQuery))...)
-					features = append(features, transformationFeature(transformation.Transformer))
-					if i < len(boolFeatures) {
-						features = append(features, boolFeatures[i]...)
+						deltas, err := deltas(applied, ss, measurements, me)
+						if err != nil {
+							return nil, err
+						}
+
+						for feature, score := range deltas {
+							features = append(features, NewFeature(feature, score))
+						}
+						features = append(features, computeDeltas(preDeltas, deltas)...)
+
+						queries = append(queries, NewCandidateQuery(applied, query.Topic, features).SetTransformationID(transformation.ID).Append(query))
 					}
-
-					deltas, err := deltas(applied, ss, measurements, me)
-					if err != nil {
-						return nil, err
+				} else {
+					for _, applied := range c {
+						queries = append(queries, NewCandidateQuery(applied, query.Topic, nil).SetTransformationID(transformation.ID).Append(query))
 					}
-
-					for feature, score := range deltas {
-						features = append(features, NewFeature(feature, score))
-					}
-					features = append(features, computeDeltas(preDeltas, deltas)...)
-
-					queries = append(queries, NewCandidateQuery(applied, query.Topic, features).SetTransformationID(transformation.ID).Append(query))
 				}
 			}
 		}
@@ -259,26 +273,30 @@ func variations(query CandidateQuery, context TransformationContext, ss stats.St
 				}
 
 				for _, applied := range c {
-					deltas, err := deltas(applied, ss, measurements, me)
-					if err != nil {
-						return nil, err
-					}
+					if ComputeFeatures {
+						deltas, err := deltas(applied, ss, measurements, me)
+						if err != nil {
+							return nil, err
+						}
 
-					features := contextFeatures(context)
-					for feature, score := range deltas {
-						features = append(features, NewFeature(feature, score))
-					}
+						features := contextFeatures(context)
+						for feature, score := range deltas {
+							features = append(features, NewFeature(feature, score))
+						}
 
-					features = append(features, computeDeltas(preDeltas, deltas)...)
-					switch appliedQuery := applied.(type) {
-					case cqr.Keyword:
-						features = append(features, keywordFeatures(appliedQuery)...)
-					case cqr.BooleanQuery:
-						features = append(features, booleanFeatures(appliedQuery)...)
+						features = append(features, computeDeltas(preDeltas, deltas)...)
+						switch appliedQuery := applied.(type) {
+						case cqr.Keyword:
+							features = append(features, keywordFeatures(appliedQuery)...)
+						case cqr.BooleanQuery:
+							features = append(features, booleanFeatures(appliedQuery)...)
+						}
+						features = append(features, transformation.Features(applied, context)...)
+						features = append(features, transformationFeature(transformation.Transformer))
+						candidates = append(candidates, NewCandidateQuery(applied, query.Topic, features).SetTransformationID(transformation.ID).Append(query))
+					} else {
+						candidates = append(candidates, NewCandidateQuery(applied, query.Topic, nil).SetTransformationID(transformation.ID).Append(query))
 					}
-					features = append(features, transformation.Features(applied, context)...)
-					features = append(features, transformationFeature(transformation.Transformer))
-					candidates = append(candidates, NewCandidateQuery(applied, query.Topic, features).SetTransformationID(transformation.ID).Append(query))
 				}
 			}
 		}

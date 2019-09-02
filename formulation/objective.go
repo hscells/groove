@@ -66,6 +66,12 @@ func (p PubMedSet) Size() (float64, error) {
 	return p.e.CollectionSize()
 }
 
+func NewPubMedSet(e stats.EntrezStatisticsSource) PubMedSet {
+	return PubMedSet{
+		e: e,
+	}
+}
+
 type mappingPair struct {
 	CUI  string
 	Abbr string
@@ -167,11 +173,11 @@ func fetchDocuments(refs []int, e stats.EntrezStatisticsSource) ([]guru.MedlineD
 
 		// Put the docs in the store.
 		for _, d := range docs {
-			//err := g.Put(d.PMID, d)
-			//if err != nil {
-			//	return nil, err
-			//}
-			fmt.Println("put", d.PMID)
+			err := g.Put(d.PMID, d)
+			if err != nil {
+				return nil, err
+			}
+			//fmt.Println("put", d.PMID)
 		}
 	}
 	// Close the document store.
@@ -338,7 +344,7 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 			if err != nil {
 				return nil, err
 			}
-			//found := false
+			found := false
 			for _, candidate := range candidates {
 				if strings.ToLower(candidate.CandidateMatched) == term {
 					p := mappingPair{
@@ -346,22 +352,22 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 						Abbr: candidate.SemTypes[0],
 					}
 					cuis[term] = p
-					//err := g.Put(term, p)
-					//if err != nil {
-					//	panic(err)
-					//}
-					//found = true
+					err := g.Put(term, p)
+					if err != nil {
+						panic(err)
+					}
+					found = true
 					fmt.Println("put term", term)
 					break
 				}
 			}
 
-			//if !found {
-			//	err := g.Put(term, MappingPair{})
-			//	if err != nil {
-			//		panic(err)
-			//	}
-			//}
+			if !found {
+				err := g.Put(term, mappingPair{})
+				if err != nil {
+					panic(err)
+				}
+			}
 		} else {
 			var p mappingPair
 			err := g.Get(term, &p)
@@ -379,17 +385,17 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 							Abbr: candidate.SemTypes[0],
 						}
 						cuis[term] = p
-						//err := g.Put(term, p)
-						//if err != nil {
-						//	panic(err)
-						//}
+						err := g.Put(term, p)
+						if err != nil {
+							panic(err)
+						}
 						//found = true
 						fmt.Println("put term", term)
 						break
 					}
 				}
 			}
-			//cuis[term] = p
+			cuis[term] = p
 			fmt.Println("get term", term)
 		}
 	}
@@ -466,6 +472,9 @@ type res struct {
 	relret []string
 }
 
+var rejectMeSH = []string{"humans", "animals", "aged", "adult", "male", "female", "adolescent", "child", "child, preschool", "middle aged", "Young Adult", "Infant", "time factors",
+	"off", "positive", "negative", "suspicious", "true", "false"}
+
 // FilterQueryTerms reduces further query TermStatistics by identifying the best combination
 // of TermStatistics based on how many relevant documents they retrieve from the development set.
 func FilterQueryTerms(conditions, treatments, studyTypes []string, field string, development trecresults.Qrels, e stats.EntrezStatisticsSource) ([]string, []string, []string, error) {
@@ -486,8 +495,17 @@ func FilterQueryTerms(conditions, treatments, studyTypes []string, field string,
 
 	// Identify how many relevant documents from the development set each term in each category retrieves.
 	for i := 0; i < len(terms); i++ {
-		results[i] = make([]res, len(terms[i]))
+		//results[i] = []res
 		for j := 0; j < len(terms[i]); j++ {
+			skip := false
+			for _, v := range rejectMeSH {
+				if strings.ToLower(terms[i][j]) == strings.ToLower(v) {
+					skip = true
+				}
+			}
+			if skip {
+				continue
+			}
 			pq := pipeline.NewQuery("0", "0", cqr.NewKeyword(terms[i][j], field))
 			tree, _, err := combinator.NewLogicalTree(pq, e, fileCache)
 			if err != nil {
@@ -499,10 +517,10 @@ func FilterQueryTerms(conditions, treatments, studyTypes []string, field string,
 					relret = append(relret, result.DocId)
 				}
 			}
-			results[i][j] = res{
+			results[i] = append(results[i], res{
 				name:   terms[i][j],
 				relret: relret,
-			}
+			})
 		}
 	}
 
@@ -675,11 +693,11 @@ func makeKeywords(conditions, treatments, studyTypes []string) ([]cqr.Keyword, [
 }
 
 // MakeQrels creates a set of relevance assessments from some medline documents.
-func MakeQrels(docs []guru.MedlineDocument) trecresults.Qrels {
+func MakeQrels(docs []guru.MedlineDocument, topic string) trecresults.Qrels {
 	qrels := make(trecresults.Qrels)
 	for _, doc := range docs {
 		qrels[doc.PMID] = &trecresults.Qrel{
-			Topic:     "0",
+			Topic:     topic,
 			Iteration: "0",
 			DocId:     doc.PMID,
 			Score:     1,
@@ -692,12 +710,18 @@ func addMeSHTerms(conditions, treatments, studyTypes []cqr.Keyword, dev []guru.M
 	subheadingsFreq := make(map[string]int)
 	for _, doc := range dev {
 		for _, mh := range doc.MH {
+			for _, reject := range rejectMeSH {
+				if strings.ToLower(reject) == strings.ToLower(mh) {
+					goto skip
+				}
+			}
 			if strings.Contains(mh, "/") {
 				mh = strings.Split(mh, "/")[0]
 			}
 			mh = strings.Replace(mh, "*", "", -1)
 			fmt.Println(mh)
 			subheadingsFreq[mh]++
+		skip:
 		}
 	}
 
@@ -729,7 +753,9 @@ func addMeSHTerms(conditions, treatments, studyTypes []cqr.Keyword, dev []guru.M
 	}
 
 	fmt.Println("top subheadings:")
-	fmt.Println(topSubheadings)
+	for i, sh := range topSubheadings {
+		fmt.Println(i, sh)
+	}
 
 	f, err := os.OpenFile(path.Join("./top_subheadings", folder, topic), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
 	if err != nil {
@@ -766,7 +792,7 @@ func addMeSHTerms(conditions, treatments, studyTypes []cqr.Keyword, dev []guru.M
 		}
 	}
 
-	c, t, s, err = FilterQueryTerms(c, t, s, fields.MeshHeadings, MakeQrels(dev), e)
+	c, t, s, err = FilterQueryTerms(c, t, s, fields.MeshHeadings, MakeQrels(dev, topic), e)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -852,24 +878,28 @@ func constructQuery(conditions, treatments, studyTypes []cqr.Keyword) cqr.Common
 }
 
 // evaluate computes evaluation measures for each of the dev, val, and unseen sets.
-func evaluate(query cqr.CommonQueryRepresentation, e stats.EntrezStatisticsSource, dev, val, unseen []guru.MedlineDocument) (evaluation, error) {
+func evaluate(query cqr.CommonQueryRepresentation, e stats.EntrezStatisticsSource, dev, val, unseen []guru.MedlineDocument, topic string) (evaluation, error) {
 	// Execute the query and find the effectiveness.
-	d, err := os.UserCacheDir()
+	//d, err := os.UserCacheDir()
+	//if err != nil {
+	//	return evaluation{}, err
+	//}
+	//filecache := combinator.NewFileQueryCache(path.Join(d, "filecache"))
+	//pq := pipeline.NewQuery("0", "0", query)
+	//tree, _, err := combinator.NewLogicalTree(pq, e, filecache)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//results := tree.Documents(filecache).Results(pq, "0")
+	results, err := e.Execute(pipeline.NewQuery("", "", query), e.SearchOptions())
 	if err != nil {
 		return evaluation{}, err
 	}
-	filecache := combinator.NewFileQueryCache(path.Join(d, "filecache"))
-	pq := pipeline.NewQuery("0", "0", query)
-	tree, _, err := combinator.NewLogicalTree(pq, e, filecache)
-	if err != nil {
-		panic(err)
-	}
-	results := tree.Documents(filecache).Results(pq, "0")
 	eval.RelevanceGrade = 0
 	ev := []eval.Evaluator{eval.NumRel, eval.NumRet, eval.NumRelRet, eval.Recall, eval.Precision, eval.F1Measure, eval.F05Measure, eval.F3Measure, eval.NNR}
-	devEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": MakeQrels(dev)}}, "0")
-	valEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": MakeQrels(val)}}, "0")
-	unseenEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": MakeQrels(unseen)}}, "0")
+	devEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": MakeQrels(dev, topic)}}, "0")
+	valEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": MakeQrels(val, topic)}}, "0")
+	unseenEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": MakeQrels(unseen, topic)}}, "0")
 	return evaluation{
 		Development: devEval,
 		Validation:  valEval,
@@ -913,7 +943,7 @@ func rankTerms(t TermStatistics, dev []guru.MedlineDocument, topic, folder strin
 }
 
 // derive actually performs the objective derivation for the objective method.
-func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.MedlineDocument, population BackgroundCollection) (cqr.CommonQueryRepresentation, cqr.CommonQueryRepresentation, error) {
+func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.MedlineDocument, population BackgroundCollection, m eval.Evaluator) (cqr.CommonQueryRepresentation, cqr.CommonQueryRepresentation, error) {
 	var (
 		bestEval float64
 		bestD    float64
@@ -928,13 +958,13 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 		bestQWithMesh cqr.CommonQueryRepresentation
 	)
 
-	m := eval.Recall
-
 	// Load the sem type mapping.
 	semTypes, err := loadSemTypesMapping(o.SemTypes)
 	if err != nil {
 		return nil, nil, err
 	}
+
+	fmt.Printf("grid search over %v, %v\n", o.DevK, o.PopK)
 
 	// Grid search over dev and pop values for the best query on validation.
 	for _, d := range o.DevK {
@@ -961,16 +991,18 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 			conditionsKeywords, treatmentsKeywords, studyTypesKeywords := makeKeywords(conditions, treatments, studyTypes)
 
 			// And then filter the query TermStatistics.
-			conditions, treatments, studyTypes, err = FilterQueryTerms(conditions, treatments, studyTypes, fields.TitleAbstract, MakeQrels(dev), o.s)
+			conditions, treatments, studyTypes, err = FilterQueryTerms(conditions, treatments, studyTypes, fields.TitleAbstract, MakeQrels(dev, o.Topic()), o.s)
 			if err != nil {
 				return nil, nil, err
 			}
 
 			// Create the query from the three categories.
 			q := constructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords)
+			fmt.Println(q)
 			q = preprocess.DateRestrictions(o.Pubdates)(q, o.query.Topic)()
+			fmt.Println(q)
 
-			ev, err := evaluate(q, o.s, dev, val, nil)
+			ev, err := evaluate(q, o.s, dev, val, nil, o.Topic())
 			if err != nil {
 				return nil, nil, err
 			}
@@ -998,7 +1030,7 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 		qWithMeSH := constructQuery(conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH)
 		qWithMeSH = preprocess.DateRestrictions(o.Pubdates)(qWithMeSH, o.query.Topic)()
 
-		ev, err := evaluate(qWithMeSH, o.s, dev, val, nil)
+		ev, err := evaluate(qWithMeSH, o.s, dev, val, nil, o.Topic())
 		if err != nil {
 			return nil, nil, err
 		}

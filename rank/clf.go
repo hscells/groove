@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"github.com/bbalet/stopwords"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
@@ -14,7 +15,9 @@ import (
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
 	"github.com/hscells/trecresults"
+	"gopkg.in/jdkato/prose.v2"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"path"
 	"sort"
@@ -26,15 +29,16 @@ var cm = merging.CoordinationLevelMatching{
 	Occurances: make(map[string]float64),
 }
 
-func boolCOMB(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource) (trecresults.ResultList, error) {
-	//norm := merging.MinMaxNorm
+// clf is the actual implementation of coordination level fusion. The exported function is simply a wrapper.
+func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource) (trecresults.ResultList, error) {
+	norm := merging.MinMaxNorm
 	switch q := query.Query.(type) {
 	case cqr.BooleanQuery:
 		r := make([]trecresults.ResultList, len(q.Children))
 		lists := make([]merging.Items, len(r))
 		for i, child := range q.Children {
 			var err error
-			r[i], err = boolCOMB(pipeline.NewQuery(query.Name, query.Topic, child), posting, e)
+			r[i], err = clf(pipeline.NewQuery(query.Name, query.Topic, child), posting, e)
 			if err != nil {
 				return nil, err
 			}
@@ -52,12 +56,12 @@ func boolCOMB(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSo
 
 		var items merging.Items
 		if q.Operator == cqr.AND {
-			items = merging.CombMNZ{}.Merge(lists)
-		} else {
 			items = merging.CombSUM{}.Merge(lists)
+		} else {
+			items = merging.CombMNZ{}.Merge(lists)
 		}
-		//norm.Init(items)
-		//items = merging.Normalise(norm, items)
+		norm.Init(items)
+		items = merging.Normalise(norm, items)
 
 		sort.Slice(items, func(i, j int) bool {
 			if items[i].Score != items[j].Score {
@@ -67,7 +71,6 @@ func boolCOMB(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSo
 			n := float64(time.Now().Unix())
 			a := (n - float64(posting.DocDates[hash(items[i].Id)]+1)) / n
 			b := (n - float64(posting.DocDates[hash(items[j].Id)]+1)) / n
-			//fmt.Printf("[%f,%f]", a, b)
 			return a+items[i].Score > b+items[i].Score
 		})
 		list := items.TRECResults(query.Topic)
@@ -79,9 +82,10 @@ func boolCOMB(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSo
 		return list, nil
 	case cqr.Keyword:
 		scorers := []Scorer{
-			&TFIDFScorer{s: e, p: posting},
+			&BM25Scorer{s: e, p: posting, B: 0.3, K1: 1.2},
+			//&TFIDFScorer{s: e, p: posting},
 			&TitleAbstractScorer{s: e, p: posting},
-			&PubDateScorer{s: e, p: posting},
+			//&PubDateScorer{s: e, p: posting},
 			&PosScorer{s: e, p: posting},
 			&DocLenScorer{s: e, p: posting},
 		}
@@ -123,6 +127,9 @@ func boolCOMB(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSo
 			}
 
 			list := lists[i]
+			R := merging.FromTRECResults(list)
+			norm.Init(R)
+			list = merging.Normalise(norm, R).TRECResults(query.Topic)
 
 			sort.Slice(list, func(i, j int) bool {
 				return list[i].Score > list[j].Score
@@ -130,6 +137,10 @@ func boolCOMB(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSo
 
 			for i := range list {
 				list[i].Rank = int64(i + 1)
+			}
+
+			if len(list) > 1000 {
+				list = list[:1000]
 			}
 
 			lists[i] = list
@@ -141,7 +152,7 @@ func boolCOMB(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSo
 			items[i] = merging.FromTRECResults(list)
 		}
 
-		merger := merging.Borda{}
+		merger := merging.CombMNZ{}
 		res := merger.Merge(items).TRECResults(query.Topic)
 		return res, nil
 	}
@@ -156,7 +167,7 @@ func boolCOMB_CoordinationLevelMatching(query pipeline.Query, posting *Posting, 
 		lists := make([]merging.Items, len(r))
 		for i, child := range q.Children {
 			var err error
-			r[i], err = boolCOMB(pipeline.NewQuery(query.Name, query.Topic, child), posting, e)
+			r[i], err = clf(pipeline.NewQuery(query.Name, query.Topic, child), posting, e)
 			if err != nil {
 				return nil, err
 			}
@@ -255,7 +266,7 @@ func writeResults(list trecresults.ResultList, dir string) error {
 	return nil
 }
 
-func boolCOMBVariations(query cqr.CommonQueryRepresentation, topic string, idealPosting *Posting, e stats.EntrezStatisticsSource) error {
+func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosting *Posting, e stats.EntrezStatisticsSource) error {
 	candidates, err := learning.Variations(learning.CandidateQuery{
 		TransformationID: -1,
 		Topic:            topic,
@@ -287,26 +298,36 @@ func boolCOMBVariations(query cqr.CommonQueryRepresentation, topic string, ideal
 		return err
 	}
 
+	rand.Shuffle(len(candidates), func(i, j int) {
+		candidates[i], candidates[j] = candidates[j], candidates[i]
+	})
+
 	for i, candidate := range candidates {
+		fmt.Printf("[%s] variation %d/%d\n", topic, i+1, len(candidates))
+
 		// String-ify the query.
 		s, err := transmute.CompileCqr2PubMed(candidate.Query)
 		if err != nil {
 			return err
 		}
+	r:
 		// Skip this candidate if it retrieves more than the original query.
 		n, err := e.RetrievalSize(candidate.Query)
 		if err != nil {
-			return err
+			fmt.Println(err)
+			goto r
 		}
-		if n > N*2 || n == 0 {
-			fmt.Printf("skipping variation %d/%d, retrieved no documents\n", i+1, len(candidates))
+		if n < N/2 || n > N*2 || n == 0 {
+			fmt.Printf("skipping variation %d, retrieved no documents\n", i+1)
 			fmt.Println(s)
 			continue
 		}
+	s:
 		// Obtain list of pmids.
 		pmids, err := e.Search(s)
 		if err != nil {
-			return err
+			fmt.Println(err)
+			goto s
 		}
 		// Create posting list for query.
 	f:
@@ -316,7 +337,7 @@ func boolCOMBVariations(query cqr.CommonQueryRepresentation, topic string, ideal
 			goto f
 		}
 		// Use fusion technique to rank retrieved results and write results to file.
-		res, err := boolCOMB(pipeline.NewQuery(topic, topic, candidate.Query), posting, e)
+		res, err := clf(pipeline.NewQuery(topic, topic, candidate.Query), posting, e)
 		if err != nil {
 			return err
 		}
@@ -325,7 +346,7 @@ func boolCOMBVariations(query cqr.CommonQueryRepresentation, topic string, ideal
 			return err
 		}
 		// Use fusion technique to rank only the relevant results and write to file.
-		idealRes, err := boolCOMB(pipeline.NewQuery(topic, topic, candidate.Query), idealPosting, e)
+		idealRes, err := clf(pipeline.NewQuery(topic, topic, candidate.Query), idealPosting, e)
 		if err != nil {
 			return err
 		}
@@ -350,7 +371,9 @@ func boolCOMBVariations(query cqr.CommonQueryRepresentation, topic string, ideal
 	return nil
 }
 
-func BoolCOMB(query pipeline.Query, cacher combinator.QueryCacher, scorer Scorer, merger merging.Merger, e stats.EntrezStatisticsSource) (trecresults.ResultList, error) {
+// CLF performs coordination-level fusion given a query. It ranks the documents retrieved for a query according to ...TODO?
+// This wrapper function performs some pre-processing steps before actually ranking the documents for the query.
+func CLF(query pipeline.Query, cacher combinator.QueryCacher, scorer Scorer, merger merging.Merger, e stats.EntrezStatisticsSource) (trecresults.ResultList, error) {
 	cd, err := os.UserCacheDir()
 	if err != nil {
 		return nil, err
@@ -374,81 +397,107 @@ func BoolCOMB(query pipeline.Query, cacher combinator.QueryCacher, scorer Scorer
 	}
 	posting, err := newPostingFromPMIDS(pmids, query.Topic, indexPath, e)
 
-	//c := query.Query.(cqr.BooleanQuery).Children
-	//c = append(c, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{
-	//	cqr.NewKeyword("sensitivity", fields.TitleAbstract),
-	//	cqr.NewKeyword("specificity", fields.TitleAbstract),
-	//	cqr.NewKeyword("diagnos*", fields.TitleAbstract),
-	//	cqr.NewKeyword("diagnosis", fields.TitleAbstract),
-	//	cqr.NewKeyword("predictive", fields.TitleAbstract),
-	//	cqr.NewKeyword("accuracy", fields.TitleAbstract),
-	//}))
-	//c = append(c, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{
-	//	cqr.NewKeyword("sensitivity and specificity", fields.MeSHTerms),
-	//	cqr.NewKeyword("mass screening", fields.MeSHTerms),
-	//	cqr.NewKeyword("reference values", fields.MeSHTerms),
-	//	cqr.NewKeyword("false positive reactions", fields.MeSHTerms),
-	//	cqr.NewKeyword("false negative reactions", fields.MeSHTerms),
-	//	cqr.NewKeyword("specificit*", fields.TitleAbstract),
-	//	cqr.NewKeyword("screening", fields.TitleAbstract),
-	//	cqr.NewKeyword("false positive*", fields.TitleAbstract),
-	//	cqr.NewKeyword("false negative*", fields.TitleAbstract),
-	//	cqr.NewKeyword("accuracy", fields.TitleAbstract),
-	//	cqr.NewKeyword("predictive value*", fields.TitleAbstract),
-	//	cqr.NewKeyword("reference value*", fields.TitleAbstract),
-	//	cqr.NewKeyword("roc*", fields.TitleAbstract),
-	//	cqr.NewKeyword("likelihood ratio*", fields.TitleAbstract),
-	//	cqr.NewKeyword("predictive value*", fields.TitleAbstract),
-	//}))
-	//
-	//title, err := ioutil.ReadFile(fmt.Sprintf("/Users/s4558151/go/src/github.com/hscells/groove/scripts/testing_task2_titles/%s", query.Topic))
-	////title, err := ioutil.ReadFile(fmt.Sprintf("/Users/s4558151/go/src/github.com/hscells/groove/scripts/tar17_testing_titles/%s", query.Topic))
-	//if err != nil {
-	//	return nil, err
-	//}
-	//fmt.Println(string(title))
-	//
-	//titleParsed, err := prose.NewDocument(stopwords.CleanString(string(title), "en", false), prose.WithTagging(false), prose.WithExtraction(false), prose.WithSegmentation(false))
-	//if err != nil {
-	//	return nil, err
-	//}
-	//titleKeywords := make([]cqr.CommonQueryRepresentation, len(titleParsed.Tokens()))
-	//for i, tok := range titleParsed.Tokens() {
-	//	titleKeywords[i] = cqr.NewKeyword(tok.Text, fields.TitleAbstract)
-	//}
-	//fmt.Println(titleKeywords)
-	//c = append(c, cqr.NewBooleanQuery(cqr.AND, titleKeywords))
-	//
-	//q := query.Query.(cqr.BooleanQuery)
-	//q.Children = c
-	//query.Query = q
+	QueryExpansion := false
+	CLFVariations := false
+	RankCLF := true
 
-	scorer.posting(posting)
-	scorer.entrez(e)
+	if QueryExpansion {
+		c := query.Query.(cqr.BooleanQuery).Children
+		c = append(c, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{
+			cqr.NewKeyword("sensitivity", fields.TitleAbstract),
+			cqr.NewKeyword("specificity", fields.TitleAbstract),
+			cqr.NewKeyword("diagnos*", fields.TitleAbstract),
+			cqr.NewKeyword("diagnosis", fields.TitleAbstract),
+			cqr.NewKeyword("predictive", fields.TitleAbstract),
+			cqr.NewKeyword("accuracy", fields.TitleAbstract),
+		}))
+		c = append(c, cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{
+			cqr.NewKeyword("sensitivity and specificity", fields.MeSHTerms),
+			cqr.NewKeyword("mass screening", fields.MeSHTerms),
+			cqr.NewKeyword("reference values", fields.MeSHTerms),
+			cqr.NewKeyword("false positive reactions", fields.MeSHTerms),
+			cqr.NewKeyword("false negative reactions", fields.MeSHTerms),
+			cqr.NewKeyword("specificit*", fields.TitleAbstract),
+			cqr.NewKeyword("screening", fields.TitleAbstract),
+			cqr.NewKeyword("false positive*", fields.TitleAbstract),
+			cqr.NewKeyword("false negative*", fields.TitleAbstract),
+			cqr.NewKeyword("accuracy", fields.TitleAbstract),
+			cqr.NewKeyword("predictive value*", fields.TitleAbstract),
+			cqr.NewKeyword("reference value*", fields.TitleAbstract),
+			cqr.NewKeyword("roc*", fields.TitleAbstract),
+			cqr.NewKeyword("likelihood ratio*", fields.TitleAbstract),
+			cqr.NewKeyword("predictive value*", fields.TitleAbstract),
+		}))
 
-	f, err := os.OpenFile("/Users/s4558151/Repositories/tar/2018-TAR/Task2/Testing/qrels/qrel_abs_task2", os.O_RDONLY, 0664)
-	if err != nil {
-		return nil, err
+		title, err := ioutil.ReadFile(fmt.Sprintf("/Users/s4558151/go/src/github.com/hscells/groove/scripts/testing_task2_titles/%s", query.Topic))
+		//title, err := ioutil.ReadFile(fmt.Sprintf("/Users/s4558151/go/src/github.com/hscells/groove/scripts/tar17_testing_titles/%s", query.Topic))
+		if err != nil {
+			return nil, err
+		}
+		fmt.Println(string(title))
+
+		titleParsed, err := prose.NewDocument(stopwords.CleanString(string(title), "en", false), prose.WithTagging(false), prose.WithExtraction(false), prose.WithSegmentation(false))
+		if err != nil {
+			return nil, err
+		}
+		titleKeywords := make([]cqr.CommonQueryRepresentation, len(titleParsed.Tokens()))
+		for i, tok := range titleParsed.Tokens() {
+			titleKeywords[i] = cqr.NewKeyword(tok.Text, fields.TitleAbstract)
+		}
+		fmt.Println(titleKeywords)
+		c = append(c, cqr.NewBooleanQuery(cqr.AND, titleKeywords))
+
+		q := query.Query.(cqr.BooleanQuery)
+		q.Children = c
+		query.Query = q
 	}
-	qrels, err := trecresults.QrelsFromReader(f)
-	if err != nil {
-		return nil, err
-	}
-	rels := qrels.Qrels[query.Topic]
-	var pmidsIdeal []int
-	for _, rel := range rels {
-		if rel.Score > 0 {
-			i, err := strconv.Atoi(rel.DocId)
+
+	if CLFVariations {
+		scorer.posting(posting)
+		scorer.entrez(e)
+
+		f, err := os.OpenFile("/Users/s4558151/Repositories/tar/2018-TAR/Task2/Testing/qrels/qrel_abs_task2", os.O_RDONLY, 0664)
+		if err != nil {
+			return nil, err
+		}
+		qrels, err := trecresults.QrelsFromReader(f)
+		if err != nil {
+			return nil, err
+		}
+		rels := qrels.Qrels[query.Topic]
+		var pmidsIdeal []int
+		for _, rel := range rels {
+			if rel.Score > 0 {
+				i, err := strconv.Atoi(rel.DocId)
+				if err != nil {
+					return nil, err
+				}
+				pmidsIdeal = append(pmids, i)
+			}
+		}
+		idealPosting, err := newPostingFromPMIDS(pmidsIdeal, query.Topic, idealIndexPath, e)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, err := os.Stat("/Users/s4558151/go/src/github.com/hscells/groove/scripts/tar18t2_variations/" + query.Topic); os.IsNotExist(err) {
+			res, err := e.Execute(query, e.SearchOptions())
 			if err != nil {
 				return nil, err
 			}
-			pmidsIdeal = append(pmids, i)
+			err = writeResults(res, path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/tar18t2_orig/"+query.Topic))
+			if err != nil {
+				return nil, err
+			}
+			return nil, clfVariations(query.Query, query.Topic, idealPosting, e)
+		} else {
+			fmt.Printf("skipping topic %s, already exists\n", query.Topic)
 		}
 	}
-	idealPosting, err := newPostingFromPMIDS(pmidsIdeal, query.Topic, idealIndexPath, e)
-	if err != nil {
-		return nil, err
+
+	if RankCLF {
+		return clf(query, posting, e)
 	}
 
-	return nil, boolCOMBVariations(query.Query, query.Topic, idealPosting, e)
+	return nil, err
 }
