@@ -110,16 +110,16 @@ func (rec precision) Score(results *trecresults.ResultList, qrels trecresults.Qr
 
 func (e PrecisionAtK) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
 	if results.Len() < e.K {
+		for i := results.Len(); i < e.K; i++ {
+			*results = append(*results, &trecresults.Result{
+				Score: 0,
+				Rank:  int64(i),
+			})
+		}
 		return Precision.Score(results, qrels)
 	} else {
-		r := make(trecresults.ResultList, e.K)
-		for i, res := range *results {
-			if i >= e.K {
-				break
-			}
-			r[i] = res
-		}
-		return Precision.Score(&r, qrels)
+		rl := (*results)[:e.K]
+		return Precision.Score(&rl, qrels)
 	}
 }
 

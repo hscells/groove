@@ -17,16 +17,23 @@ var (
 type ap struct{}
 
 func (e ap) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
-	R := NumRel.Score(results, qrels)
 	var sum float64
+	var numRelSeen float64
+
+	nr := NumRel.Score(results, qrels)
+
 	for i, res := range *results {
+		if numRelSeen == nr {
+			break
+		}
 		if _, ok := qrels[res.DocId]; ok {
 			if qrels[res.DocId].Score > RelevanceGrade {
+				numRelSeen++
 				sum += PrecisionAtK{K: i + 1}.Score(results, qrels)
 			}
 		}
 	}
-	return sum / R
+	return sum / nr
 }
 
 func (e ap) Name() string {

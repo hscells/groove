@@ -16,7 +16,6 @@ import (
 	"github.com/hscells/groove/query"
 	"github.com/hscells/groove/rank"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/merging"
 	"github.com/hscells/transmute"
 	"github.com/hscells/trecresults"
 	"github.com/peterbourgon/diskv"
@@ -47,8 +46,7 @@ type Pipeline struct {
 	ModelConfiguration    ModelConfiguration
 	QueryFormulator       formulation.Formulator
 
-	Merger merging.Merger
-	Scorer rank.Scorer
+	CLF rank.CLFOptions
 }
 
 // ModelConfiguration specifies what actions of a model should be taken by the pipeline.
@@ -284,7 +282,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			}
 		}
 
-		if (len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0) && p.Scorer != nil && p.Merger != nil {
+		if (len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0) && p.CLF.CLF {
 			// Store the measurements to be output later.
 
 			f, err := os.OpenFile(p.OutputTrec.Path, os.O_RDONLY, 0664)
@@ -313,7 +311,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 					continue
 				}
 				log.Printf("starting topic %v\n", q.Topic)
-				results, err := rank.CLF(q, p.QueryCache, p.Scorer, p.Merger, p.StatisticsSource.(stats.EntrezStatisticsSource))
+				results, err := rank.CLF(q, p.QueryCache, p.StatisticsSource.(stats.EntrezStatisticsSource), p.CLF)
 				if err != nil {
 					c <- pipeline.Result{
 						Error: err,

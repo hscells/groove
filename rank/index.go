@@ -6,6 +6,7 @@ import (
 	"gopkg.in/cheggaaa/pb.v1"
 	"gopkg.in/jdkato/prose.v2"
 	"hash/fnv"
+	"math"
 	"strings"
 	"time"
 )
@@ -23,17 +24,19 @@ type Posting struct {
 	DocDates  map[uint32]int64
 	TermIdx   map[uint32]int
 	MaxDocLen float64
+
+	dvCache map[uint32][]float64
 }
 
 var (
 	H        = fnv.New32a()
 	suffixes = []string{
 		// Noun suffixes.
-		"acy", "al", "ance", "ence", "dom", "er", "or", "ism", "ist", "ity", "ty", "ment", "ness", "ship", "st", "ty", "sion", "tion",
+		"acy", "al", "ance", "ence", "dom", "er", "or", "ism", "ist", "ity", "ty", "ment", "ness", "ship", "st", "ty", "sion", "tion", "ion",
 		// Verb suffixes.
-		"ate", "en", "ify", "fy", "ise", "ize", "se", "ze",
+		"ate", "en", "ify", "fy", "ise", "ize", "se", "ze", "s", "i", "oma", "osis", "otic", "um", "tic", "cy", "es",
 		// Adjective suffixes.
-		"able", "ible", "al", "esque", "ful", "ic", "ical", "ious", "ous", "us", "ish", "sh", "ive", "ve", "e", "less", "y",
+		"able", "ible", "al", "ographic", "ful", "ic", "ical", "ious", "ous", "us", "ish", "sh", "ive", "ve", "e", "less", "y",
 	}
 )
 
@@ -46,7 +49,7 @@ func hash(s string) uint32 {
 	return H.Sum32()
 }
 
-func Index(documents guru.MedlineDocuments, phrases ...string) (*Posting, error) {
+func Index(documents guru.MedlineDocuments) (*Posting, error) {
 	ii := make(map[uint32]map[uint32]map[uint32]Statistics)
 	dl := make(map[string]map[uint32]float64, len(documents))
 	da := make(map[uint32]int64, len(documents))
@@ -129,27 +132,6 @@ func Index(documents guru.MedlineDocuments, phrases ...string) (*Posting, error)
 			}
 		}
 
-		// Compute statistics for phrases in the title and abstract.
-		for _, phrase := range phrases {
-			t := hash(phrase)
-			if strings.Contains(tiLower, phrase) {
-				if _, ok := ii[t]; !ok {
-					ii[t] = make(map[uint32]map[uint32]Statistics)
-					ii[t][TI] = make(map[uint32]Statistics)
-					ii[t][AB] = make(map[uint32]Statistics)
-				}
-				tiTf[t]++
-			}
-			if strings.Contains(abLower, phrase) {
-				if _, ok := ii[t]; !ok {
-					ii[t] = make(map[uint32]map[uint32]Statistics)
-					ii[t][TI] = make(map[uint32]Statistics)
-					ii[t][AB] = make(map[uint32]Statistics)
-				}
-				abTf[t]++
-			}
-		}
-
 		// Add the title terms to the newPosting.
 		for token, count := range tiTf {
 			ii[token][TI][hash(pmid)] = Statistics{
@@ -214,6 +196,13 @@ func Index(documents guru.MedlineDocuments, phrases ...string) (*Posting, error)
 }
 
 func (p *Posting) DocumentVector(pmid uint32) []float64 {
+	if p.dvCache == nil {
+		p.dvCache = make(map[uint32][]float64)
+	}
+	if dv, ok := p.dvCache[pmid]; ok {
+		return dv
+	}
+
 	TI := hash("ti")
 	AB := hash("ab")
 	MH := hash("mh")
@@ -239,6 +228,7 @@ func (p *Posting) DocumentVector(pmid uint32) []float64 {
 		}
 		i++
 	}
+	p.dvCache[pmid] = dv
 	return dv
 }
 
@@ -400,5 +390,7 @@ func (p *Posting) DirichlectTermProbability(term, field, pmid string, mu float64
 	if _, ok := p.Index[t][f]; !ok {
 		return 0
 	}
-	return (float64(len(p.Index[t][f])) + mu*p.CollectionTermProbability(term, field)) / (p.DocLen(field, pmid) + mu)
+	//return (float64(len(p.Index[t][f])) + mu*p.CollectionTermProbability(term, field)) / (p.DocLen(field, pmid) + mu)
+	tf := p.Tf(term, field, pmid)
+	return math.Log(1 + (tf / p.CollectionTermProbability(term, field)) + math.Log(mu/(p.DocLen(field, pmid)+mu)))
 }

@@ -155,7 +155,7 @@ type esearchresult struct {
 
 // Search uses the entrez eutils to get the pmids for a given query.
 func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.Parameters)) ([]int, error) {
-	fmt.Printf("%s", query)
+	//fmt.Printf("%s", query)
 	p := &entrez.Parameters{}
 	p.RetMax = e.options.Size
 	for _, option := range options {
@@ -192,6 +192,7 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	fmt.Print(".")
 	err = easyjson.Unmarshal(b, &s)
 	if err != nil {
+		fmt.Println(string(b))
 		return nil, err
 	}
 	fmt.Print(".")
@@ -211,7 +212,7 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 	}
 
 	//pmids = s.EsearchResult.Idlist
-	fmt.Printf("%d/%s\n", retstart+len(pmids), s.EsearchResult.Count)
+	fmt.Printf("[%d/%s]", retstart+len(pmids), s.EsearchResult.Count)
 	//log.Println(len(pmids) == e.options.Size, len(pmids), e.options.Size)
 	// If the number of pmids equals the execute size, there might be more to come.
 	if e.rank || (e.Limit > 0 && len(pmids) >= e.Limit) {

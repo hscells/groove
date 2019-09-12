@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/meshexp"
 	"math"
 	"strings"
 	"sync"
@@ -57,43 +58,133 @@ type PosScorer struct {
 	p *Posting
 }
 
-type AppearScorer struct {
+type SumIDFScorer struct {
 	s stats.EntrezStatisticsSource
 	p *Posting
 }
 
-func (s AppearScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	tokens, err := fastTokenise(query, fields...)
+type LnL2Scorer struct {
+	s stats.EntrezStatisticsSource
+	p *Posting
+}
+
+type DirichletTermProbScorer struct {
+	s  stats.EntrezStatisticsSource
+	p  *Posting
+	Mu float64
+}
+
+type SumTFScorer struct {
+	s stats.EntrezStatisticsSource
+	p *Posting
+}
+
+func (s SumTFScorer) Score(query, pmid string, fields ...string) (float64, error) {
+	tokens, err := fastTokenise(s.p, query, fields...)
 	if err != nil {
 		return 0, err
 	}
-	var sumTf float64
+	var tf float64
 	for _, token := range tokens {
+		if _, ok := s.p.Index[hash(token)]; !ok {
+			continue
+		}
 		for _, field := range fields {
-			sumTf += s.p.Tf(token, field, pmid)
+			tf += s.p.Tf(token, field, pmid)
 		}
 	}
-	if sumTf == 0 {
-		return 0, nil
-	}
-	return 1, nil
+	return tf, nil
 }
 
-func (s AppearScorer) posting(p *Posting) {
+func (s SumTFScorer) posting(p *Posting) {
 	s.p = p
 }
 
-func (s AppearScorer) entrez(e stats.EntrezStatisticsSource) {
+func (s SumTFScorer) entrez(e stats.EntrezStatisticsSource) {
+	s.s = e
+}
+
+func (s LnL2Scorer) Score(query, pmid string, fields ...string) (float64, error) {
+	tokens, err := fastTokenise(s.p, query, fields...)
+	if err != nil {
+		return 0, err
+	}
+	var lnl2 float64
+	for _, token := range tokens {
+		if _, ok := s.p.Index[hash(token)]; !ok {
+			continue
+		}
+		for _, field := range fields {
+			tf := s.p.Tf(token, field, pmid)
+			norm := 1 / (tf + 1)
+			lnl2 += tf * idfDFR(token, field, pmid, s.p, s.s) * norm
+		}
+	}
+	return lnl2, nil
+}
+
+func (s LnL2Scorer) posting(p *Posting) {
+	s.p = p
+}
+
+func (s LnL2Scorer) entrez(e stats.EntrezStatisticsSource) {
+	s.s = e
+}
+
+func idfDFR(term, field, pmid string, p *Posting, e stats.EntrezStatisticsSource) float64 {
+	t := hash(term)
+	f := hash(field)
+
+	if _, ok := p.Index[t]; !ok {
+		return 0
+	}
+	if _, ok := p.Index[t][f]; !ok {
+		return 0
+	}
+
+	df := float64(len(p.Index[t][f]))
+	return (math.Log(e.N+1) / (df + 0.5)) * (1 / math.Log(2))
+}
+
+func (s SumIDFScorer) Score(query, pmid string, fields ...string) (float64, error) {
+	tokens, err := fastTokenise(s.p, query, fields...)
+	if err != nil {
+		return 0, err
+	}
+	var idf float64
+	for _, token := range tokens {
+		if _, ok := s.p.Index[hash(token)]; !ok {
+			continue
+		}
+		for _, field := range fields {
+			v, err := fastIDF(token, field, s.s, s.p)
+			if err != nil {
+				return 0, err
+			}
+			idf += v
+		}
+	}
+	return idf, nil
+}
+
+func (s SumIDFScorer) posting(p *Posting) {
+	s.p = p
+}
+
+func (s SumIDFScorer) entrez(e stats.EntrezStatisticsSource) {
 	s.s = e
 }
 
 func (s PubDateScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	tokens, err := fastTokenise(query, fields...)
+	tokens, err := fastTokenise(s.p, query, fields...)
 	if err != nil {
 		return 0, err
 	}
 	var sumTf float64
 	for _, token := range tokens {
+		if _, ok := s.p.Index[hash(token)]; !ok {
+			continue
+		}
 		for _, field := range fields {
 			sumTf += s.p.Tf(token, field, pmid)
 		}
@@ -113,12 +204,15 @@ func (s PubDateScorer) entrez(e stats.EntrezStatisticsSource) {
 }
 
 func (s PosScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	tokens, err := fastTokenise(query, fields...)
+	tokens, err := fastTokenise(s.p, query, fields...)
 	if err != nil {
 		return 0, err
 	}
 	var sumTf float64
 	for _, token := range tokens {
+		if _, ok := s.p.Index[hash(token)]; !ok {
+			continue
+		}
 		for _, field := range fields {
 			sumTf += s.p.Pos(token, field, pmid)
 		}
@@ -135,7 +229,7 @@ func (s PosScorer) entrez(e stats.EntrezStatisticsSource) {
 }
 
 func (s VectorSpaceScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	terms, err := fastTokenise(query, fields...)
+	terms, err := fastTokenise(s.p, query, fields...)
 	if err != nil {
 		return 0, err
 	}
@@ -146,6 +240,9 @@ func (s VectorSpaceScorer) Score(query, pmid string, fields ...string) (float64,
 
 	qv := make([]float64, len(s.p.Index)*3)
 	for _, term := range terms {
+		if _, ok := s.p.Index[hash(term)]; !ok {
+			continue
+		}
 		for _, field := range fields {
 			var j int
 			switch hash(field) {
@@ -176,35 +273,42 @@ func (s VectorSpaceScorer) entrez(e stats.EntrezStatisticsSource) {
 }
 
 func (s TitleAbstractScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	tokens, err := fastTokenise(query, fields...)
+	tokens, err := fastTokenise(s.p, query, fields...)
 	if err != nil {
 		return 0, err
 	}
 
+	//t := 0.0
 	var score float64
 	for _, token := range tokens {
+		if _, ok := s.p.Index[hash(token)]; !ok {
+			continue
+		}
+		//t++
 		ti := s.p.Tf(token, "ti", pmid)
 		ab := s.p.Tf(token, "ab", pmid)
 		mh := s.p.Tf(token, "mh", pmid)
+
 		if ti > 0 && ab > 0 && mh > 0 {
 			score += 100
 		} else if mh == 0 && ti > 0 && ab > 0 {
-			score += 100
+			score += 90
 		} else if ab == 0 && ti > 0 && mh > 0 {
 			score += 10
 		} else if ti == 0 && ab > 0 && mh > 0 {
-			score += 5
+			score += 10
 		} else if ti > 0 && ab == 0 && mh == 0 {
 			score += 20
 		} else if ab > 0 && ti == 0 && mh == 0 {
 			score += 20
 		} else if ab == 0 && ti == 0 && mh > 0 {
-			score += 10
+			score += 90
 		} else {
 			score -= 100
 		}
 	}
-	return score / float64(len(tokens)), nil
+	//score *=
+	return score, nil
 }
 
 func (s TitleAbstractScorer) posting(p *Posting) {
@@ -216,12 +320,15 @@ func (s TitleAbstractScorer) entrez(e stats.EntrezStatisticsSource) {
 }
 
 func (s DocLenScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	tokens, err := fastTokenise(query, fields...)
+	tokens, err := fastTokenise(s.p, query, fields...)
 	if err != nil {
 		return 0, err
 	}
 	var sumTf float64
 	for _, token := range tokens {
+		if _, ok := s.p.Index[hash(token)]; !ok {
+			continue
+		}
 		for _, field := range fields {
 			sumTf += s.p.Tf(token, field, pmid)
 		}
@@ -231,9 +338,10 @@ func (s DocLenScorer) Score(query, pmid string, fields ...string) (float64, erro
 	}
 	var l float64
 	for _, field := range fields {
-		l += s.p.MaxDocLen - (s.p.MaxDocLen - s.p.DocLens[pmid][hash(field)])
+		//l += s.p.MaxDocLen - (s.p.MaxDocLen - s.p.DocLens[pmid][hash(field)])
+		l += s.p.DocLens[pmid][hash(field)]
 	}
-	return l / float64(len(fields)), nil
+	return l, nil
 }
 
 func (s DocLenScorer) posting(p *Posting) {
@@ -244,14 +352,8 @@ func (s DocLenScorer) entrez(e stats.EntrezStatisticsSource) {
 	s.s = e
 }
 
-type DirichlectTermProbScorer struct {
-	s  stats.EntrezStatisticsSource
-	p  *Posting
-	Mu float64
-}
-
-func (s DirichlectTermProbScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	terms, err := fastTokenise(query, fields...)
+func (s DirichletTermProbScorer) Score(query, pmid string, fields ...string) (float64, error) {
+	terms, err := fastTokenise(s.p, query, fields...)
 	if err != nil {
 		return 0, err
 	}
@@ -264,22 +366,25 @@ func (s DirichlectTermProbScorer) Score(query, pmid string, fields ...string) (f
 	return sumProb, nil
 }
 
-func (s DirichlectTermProbScorer) posting(p *Posting) {
+func (s DirichletTermProbScorer) posting(p *Posting) {
 	s.p = p
 }
 
-func (s DirichlectTermProbScorer) entrez(e stats.EntrezStatisticsSource) {
+func (s DirichletTermProbScorer) entrez(e stats.EntrezStatisticsSource) {
 	s.s = e
 }
 
 func (s *TFIDFScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	tokens, err := fastTokenise(query, fields...)
+	tokens, err := fastTokenise(s.p, query, fields...)
 	if err != nil {
 		return 0, err
 	}
 	var sumTf float64
 	var sumIdf float64
 	for _, token := range tokens {
+		if _, ok := s.p.Index[hash(token)]; !ok {
+			continue
+		}
 		for _, field := range fields {
 			tf := s.p.Tf(token, field, pmid)
 			sumTf += tf
@@ -305,7 +410,7 @@ func (s *TFIDFScorer) entrez(e stats.EntrezStatisticsSource) {
 }
 
 func (s *IDFScorer) Score(query, pmid string, fields ...string) (float64, error) {
-	tokens, err := fastTokenise(query, fields...)
+	tokens, err := fastTokenise(s.p, query, fields...)
 	if err != nil {
 		return 0, err
 	}
@@ -331,7 +436,7 @@ func (s *IDFScorer) entrez(e stats.EntrezStatisticsSource) {
 }
 
 func (s *BM25Scorer) Score(query, pmid string, fields ...string) (float64, error) {
-	tokens, err := fastTokenise(query, fields...)
+	tokens, err := fastTokenise(s.p, query, fields...)
 	if err != nil {
 		return 0, err
 	}
@@ -341,6 +446,9 @@ func (s *BM25Scorer) Score(query, pmid string, fields ...string) (float64, error
 	for _, field := range fields {
 		docLen := s.p.DocLen(field, pmid)
 		for _, token := range tokens {
+			if _, ok := s.p.Index[hash(token)]; !ok {
+				continue
+			}
 			idf, err := fastIDF(token, field, s.s, s.p)
 			if err != nil {
 				return 0, err
@@ -367,10 +475,14 @@ var (
 	idfCache       map[uint32]float64
 	idfCacheMu     sync.Mutex
 	avgDocLenCache map[uint32]float64
+	avgDocLenMu    sync.Mutex
 	tokensCache    map[uint32][]string
+	tokensMu       sync.Mutex
 )
 
 func fastDocLen(posting *Posting, fields []string) map[uint32]float64 {
+	avgDocLenMu.Lock()
+	defer avgDocLenMu.Unlock()
 	if avgDocLenCache == nil {
 		// Pre-compute the average document lengths for fields.
 		avgDocLenCache = make(map[uint32]float64, len(fields))
@@ -387,33 +499,43 @@ func fastDocLen(posting *Posting, fields []string) map[uint32]float64 {
 	return avgDocLenCache
 }
 
-func fastTokenise(query string, fields ...string) ([]string, error) {
+var MESH, _ = meshexp.Default()
+
+func fastTokenise(p *Posting, query string, fields ...string) ([]string, error) {
+	tokensMu.Lock()
+	defer tokensMu.Unlock()
 	query = strings.ReplaceAll(strings.ToLower(query), `"`, "")
 	q := hash(query)
 	if tokensCache == nil {
 		tokensCache = make(map[uint32][]string)
 	}
 	if _, ok := tokensCache[q]; !ok {
-		if len(fields) == 1 {
-			if fields[0] == "mh" {
-				tokensCache[q] = []string{query}
-			}
-		} else {
-			terms := strings.Split(query, " ")
-			var toks []string
-			for _, term := range terms {
-				if strings.Contains(term, "*") {
-					wc := strings.ReplaceAll(term, "*", "")
-					for _, t := range suffixes {
-						toks = append(toks, fmt.Sprintf("%s%s", wc, t))
-					}
-					toks = append(toks, wc)
+		for _, field := range fields {
+			if field == "mh" {
+				if query[len(query)-1] == '#' {
+					qq := strings.Replace(query, `#`, "", -1)
+					tokensCache[q] = append(MESH.Explode(qq), qq)
 				} else {
-					toks = append(toks, term)
+					tokensCache[q] = []string{query}
 				}
+				break
 			}
-			tokensCache[q] = toks
 		}
+		terms := strings.Split(query, " ")
+		var toks []string
+		for _, term := range terms {
+			if strings.Contains(term, "*") {
+				wc := strings.ReplaceAll(term, "*", "")
+				for _, t := range suffixes {
+					toks = append(toks, fmt.Sprintf("%s%s", wc, t))
+				}
+				toks = append(toks, wc)
+			} else {
+				toks = append(toks, term)
+			}
+		}
+		tokensCache[q] = toks
+
 	}
 	return tokensCache[q], nil
 }

@@ -25,7 +25,7 @@ type Runner struct {
 
 var docCache = make(map[int]guru.MedlineDocument)
 
-func index(pmids []int, e stats.EntrezStatisticsSource, phrases ...string) (*Posting, error) {
+func index(pmids []int, e stats.EntrezStatisticsSource) (*Posting, error) {
 	var docs guru.MedlineDocuments
 	sem := make(chan bool, 1)
 	n := 10000
@@ -81,7 +81,7 @@ func index(pmids []int, e stats.EntrezStatisticsSource, phrases ...string) (*Pos
 
 	fmt.Printf("added %d docs to cache\n", addedDocs)
 
-	return Index(docs, phrases...)
+	return Index(docs)
 }
 
 func newPostingFromPMIDS(pmids []int, topic string, indexPath string, e stats.EntrezStatisticsSource) (*Posting, error) {

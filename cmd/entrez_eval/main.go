@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/BurntSushi/toml"
 	"github.com/alexflint/go-arg"
@@ -9,6 +10,7 @@ import (
 	"github.com/hscells/groove/retrieval"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/trecresults"
+	"gonum.org/v1/gonum/stat"
 	"log"
 	"os"
 	"path"
@@ -27,6 +29,7 @@ type args struct {
 	ResultHandlers   []string `help:"Which run handlers to use" arg:"-r,separate"`
 	RunOutput        string   `help:"Name of processed run file" arg:"-o"`
 	EvaluationOutput string   `help:"Name of results file" arg:"-q"`
+	Summary          bool     `help:"Only output summary information" arg:"-s"`
 	QrelsFile        string   `help:"Path to qrels file" arg:"required,positional"`
 	RunFile          string   `help:"Path to run file" arg:"required,positional"`
 }
@@ -108,12 +111,13 @@ func main() {
 	evaluationMeasures["num_rel_ret"] = eval.NumRelRet
 	evaluationMeasures["ap"] = eval.AP
 	evaluationMeasures["p@10"] = eval.PrecisionAtK{K: 10}
+	evaluationMeasures["p@1000"] = eval.PrecisionAtK{K: 1000}
 	evaluationMeasures["ndcg"] = eval.NDCG{}
-	evaluationMeasures["ndcg@5"] = eval.NDCG{K:5}
-	evaluationMeasures["ndcg@10"] = eval.NDCG{K:10}
-	evaluationMeasures["ndcg@100"] = eval.NDCG{K:100}
-	evaluationMeasures["ndcg@200"] = eval.NDCG{K:200}
-	evaluationMeasures["ndcg@500"] = eval.NDCG{K:500}
+	evaluationMeasures["ndcg@5"] = eval.NDCG{K: 5}
+	evaluationMeasures["ndcg@10"] = eval.NDCG{K: 10}
+	evaluationMeasures["ndcg@100"] = eval.NDCG{K: 100}
+	evaluationMeasures["ndcg@200"] = eval.NDCG{K: 200}
+	evaluationMeasures["ndcg@500"] = eval.NDCG{K: 500}
 
 	eval.RelevanceGrade = args.RelevanceGrade
 
@@ -138,7 +142,6 @@ func main() {
 	evaluation := make(map[string]map[string]float64)
 	size := 0
 	for k, v := range results.Results {
-		log.Println(k)
 		// Process all the results handlers first.
 		for _, h := range args.ResultHandlers {
 			size += v.Len()
@@ -180,23 +183,56 @@ func main() {
 		}
 	}
 
-	v, err := output.JsonEvaluationFormatter(evaluation)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	if len(args.EvaluationOutput) > 0 {
-		o, err := os.OpenFile(args.EvaluationOutput, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+	if args.Summary {
+		summary := make(map[string][]float64)
+		for _, evals := range evaluation {
+			for measure, value := range evals {
+				summary[measure] = append(summary[measure], value)
+			}
+		}
+		avgs := make(map[string]float64)
+		for measure, values := range summary {
+			avgs[measure] = stat.Mean(values, nil)
+		}
+		avgs["NumQ"] = float64(len(evaluation))
+		v, err := json.Marshal(avgs)
 		if err != nil {
 			log.Fatalln(err)
 		}
-		_, err = o.WriteString(v)
-		if err != nil {
-			log.Fatalln(err)
+		if len(args.EvaluationOutput) > 0 {
+			o, err := os.OpenFile(args.EvaluationOutput, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			_, err = o.Write(v)
+			if err != nil {
+				log.Fatalln(err)
+			}
+		} else {
+			_, err = os.Stdout.Write(v)
+			if err != nil {
+				log.Fatalln(err)
+			}
 		}
 	} else {
-		_, err = os.Stdout.WriteString(v)
+		v, err := output.JsonEvaluationFormatter(evaluation)
 		if err != nil {
 			log.Fatalln(err)
+		}
+		if len(args.EvaluationOutput) > 0 {
+			o, err := os.OpenFile(args.EvaluationOutput, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			_, err = o.WriteString(v)
+			if err != nil {
+				log.Fatalln(err)
+			}
+		} else {
+			_, err = os.Stdout.WriteString(v)
+			if err != nil {
+				log.Fatalln(err)
+			}
 		}
 	}
 }
