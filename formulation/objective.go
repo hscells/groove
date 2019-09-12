@@ -159,9 +159,10 @@ func fetchDocuments(refs []int, e stats.EntrezStatisticsSource) ([]guru.MedlineD
 			var d guru.MedlineDocument
 			err := g.Get(pmid, &d)
 			if err != nil {
-				panic(err)
+				fetching = append(fetching, ref)
+			} else {
+				references = append(references, d)
 			}
-			references = append(references, d)
 		} else {
 			fetching = append(fetching, ref)
 		}
