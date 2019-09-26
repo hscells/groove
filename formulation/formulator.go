@@ -200,7 +200,7 @@ func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Sup
 			},
 			{
 				Name:  "val.qrels",
-				Value: MakeQrels(dev, o.Topic()),
+				Value: MakeQrels(val, o.Topic()),
 			},
 			{
 				Name:  "without_mesh.res",

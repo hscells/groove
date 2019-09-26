@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-TOPICS=/Users/s4558151/Repositories/infs7410/2019/assessments/project/phase-1/tar/2018-TAR/training/topics
-OUTPUT=tar2_training_pmids
+TOPICS=/Users/s4558151/Repositories/infs7410/2019/assessments/project/phase-1/tar/2017-TAR/training/topics
+OUTPUT=tar17_training_pmids
 
 mkdir -p ${OUTPUT}
 

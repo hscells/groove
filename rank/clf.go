@@ -34,6 +34,9 @@ var cm = merging.CoordinationLevelMatching{
 	Occurances: make(map[string]float64),
 }
 
+var rCacher, _ = ghost.Open("./queries_cache_r", ghost.NewGobSchema(combinator.Documents{}), ghost.WithIndexCache(1e4))
+var nrCacher, _ = ghost.Open("./queries_cache_nr", ghost.NewGobSchema(combinator.Documents{}), ghost.WithIndexCache(1e4))
+
 var writeMu sync.Mutex
 
 // clf is the actual implementation of coordination level fusion. The exported function is simply a wrapper.
@@ -193,7 +196,7 @@ func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource,
 			if err != nil {
 				return nil, err
 			}
-			fmt.Printf("$%d$", len(pmRes))
+			//fmt.Printf("$%d$", len(pmRes))
 
 			if options.OnlyScorePubMed {
 				norm.Init(merging.FromTRECResults(pmRes))
@@ -205,21 +208,40 @@ func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource,
 		}
 
 		merger := merging.CombMNZ{}
-		res := merger.Merge(items).TRECResults(query.Topic)
-		norm.Init(merging.FromTRECResults(res))
-		fusion := merging.Normalise(norm, merging.FromTRECResults(res)).TRECResults(query.Topic)
+		res := merger.Merge(items)
+
+		norm.Init(res)
+		fusion := merging.Normalise(norm, res)
 
 		if options.RetrievalModel {
-			var rm trecresults.ResultList
-			for _, row := range fusion {
-				if row.Score >= 0.1 {
-					rm = append(rm, row)
+			fmt.Printf("|o=%d", len(fusion))
+
+			// Option 1: set cut-off.
+			//fmt.Printf("{k:0.05;r:%d}{k:0.3;r:%d}", len(fusion.Cut(0.05)), len(fusion.Cut(0.3)))
+			//fusion = fusion.Cut(options.Cutoff)
+
+			// Option 2: gain-based cut-off.
+			totalGain := fusion.Sum()
+			if totalGain == 0 {
+				fmt.Printf("XXXX|")
+				return trecresults.ResultList{}, nil
+			}
+			allowedGain := totalGain * options.Cutoff
+			var cumGain float64
+			var items merging.Items
+			for _, item := range fusion {
+				items = append(items, item)
+				cumGain += item.Score
+				if cumGain > allowedGain {
+					break
 				}
 			}
-			return rm, nil
+			fusion = items
+
+			fmt.Printf("{k:%f;r:%d;t:%f;a:%f;c:%f}|", options.Cutoff, len(fusion), totalGain, allowedGain, cumGain)
 		}
 
-		return fusion, nil
+		return fusion.TRECResults(query.Topic), nil
 	}
 	return nil, nil
 }
@@ -320,19 +342,12 @@ func scoreWithPubMed(pmids []string, query cqr.CommonQueryRepresentation, topic 
 	//rCacher := combinator.NewFileQueryCache("./queries_cache_r")
 	//nrCacher := combinator.NewFileQueryCache("./queries_cache_nr")
 
-	rCacher, err := ghost.Open("./queries_cache_r", ghost.NewGobSchema(combinator.Documents{}), ghost.WithIndexCache(1e4))
-	if err != nil {
-		return nil, err
-	}
-	nrCacher, err := ghost.Open("./queries_cache_nr", ghost.NewGobSchema(combinator.Documents{}), ghost.WithIndexCache(1e4))
-	if err != nil {
-		return nil, err
-	}
-
 	seen := make(map[string]struct{})
 
-	if topic == "CD009263" || topic == "CD010409" {
-		pmids = pmids[:4000]
+	{
+		if topic == "CD009263" || topic == "CD010409" {
+			pmids = pmids[:4000]
+		}
 	}
 
 	pmidKeywords := make([]cqr.CommonQueryRepresentation, len(pmids))
@@ -376,7 +391,10 @@ func scoreWithPubMed(pmids []string, query cqr.CommonQueryRepresentation, topic 
 			j++
 		}
 		return results, nil
+	} else if err == nil && len(r) == 0 {
+		return trecresults.ResultList{}, nil
 	}
+
 
 research:
 	q, err := transmute.CompileCqr2PubMed(tq)
@@ -428,9 +446,9 @@ research:
 			}
 		}
 	}
-	fmt.Println()
-	fmt.Println(len(ranking), len(rD), len(nrD))
-	fmt.Println()
+	//fmt.Println()
+	//fmt.Println(len(ranking), len(rD), len(nrD))
+	//fmt.Println()
 	err = rCacher.Put(key, rD)
 	if err != nil {
 		return nil, err

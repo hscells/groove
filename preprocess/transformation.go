@@ -2,6 +2,8 @@ package preprocess
 
 import (
 	"github.com/hscells/cqr"
+	"github.com/hscells/transmute/fields"
+	"strings"
 )
 
 // Transformation is an major modification to a query.
@@ -40,6 +42,51 @@ func Simplify(query cqr.CommonQueryRepresentation, topic string) Transformation 
 			return q
 		default:
 			return q
+		}
+	}
+}
+
+// RelaxPhrases replaces phrase queries with OR clauses.
+func RelaxPhrases(query cqr.CommonQueryRepresentation, topic string) Transformation {
+	return func() cqr.CommonQueryRepresentation {
+		switch q := query.(type) {
+		case cqr.Keyword:
+			switch q.Fields[0] {
+			case fields.MeshHeadings, fields.MeSHMajorTopic, fields.FloatingMeshHeadings, fields.MeSHSubheading, fields.MajorFocusMeshHeading:
+				return q
+			}
+			t := strings.Split(strings.Replace(q.QueryString, `"`, "", -1), " ")
+			kw := make([]cqr.CommonQueryRepresentation, len(t))
+			for i, term := range t {
+				kw[i] = cqr.NewKeyword(term, q.Fields...)
+			}
+			return cqr.NewBooleanQuery(cqr.OR, kw)
+		case cqr.BooleanQuery:
+			for i, child := range q.Children {
+				q.Children[i] = RelaxPhrases(child, topic)()
+			}
+			return q
+		default:
+			return q
+		}
+	}
+}
+
+// RemoveExplosionMeSH removes the explosion from MeSH terms.
+func RemoveExplosionMeSH(query cqr.CommonQueryRepresentation, topic string) Transformation {
+	return func() cqr.CommonQueryRepresentation {
+		switch q := query.(type) {
+		case cqr.Keyword:
+			q.SetOption(cqr.ExplodedString, false)
+			return q
+		case cqr.BooleanQuery:
+			for i, child := range q.Children {
+				q.Children[i] = RemoveExplosionMeSH(child, topic)()
+			}
+			return q
+		default:
+			return q
+
 		}
 	}
 }

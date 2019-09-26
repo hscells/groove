@@ -245,16 +245,17 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 
 		// Only perform the measurements if there are some measurement formatters to output them to.
 		if len(p.MeasurementFormatters) > 0 {
-			// data[measurement][queryN]
-			for i, m := range measurementQueries {
-				//data[i] = make([]float64, len(queries))
-				data[i], err = p.MeasurementExecutor.Execute(m, p.StatisticsSource, p.Measurements...)
+			for _, m := range measurementQueries {
+				measurements, err := p.MeasurementExecutor.Execute(m, p.StatisticsSource, p.Measurements...)
 				if err != nil {
 					c <- pipeline.Result{
 						Error: err,
 						Type:  pipeline.Error,
 					}
 					return
+				}
+				for i, measurement := range measurements {
+					data[i] = append(data[i], measurement)
 				}
 			}
 
@@ -341,7 +342,9 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 
 				log.Printf("completed topic %v\n", q.Topic)
 			}
-		} else if len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0 { // This section is run concurrently, since the results can sometimes get quite large and we don't want to eat ram.
+
+		} else if len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0 {
+			// This section is run concurrently, since the results can sometimes get quite large and we don't want to eat ram.
 
 			// Store the measurements to be output later.
 			measurements := make(map[string]map[string]float64)
@@ -352,11 +355,34 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 
 			log.Printf("starting to execute queries with %d goroutines\n", concurrency)
 
+			f, err := os.OpenFile(p.OutputTrec.Path, os.O_RDONLY, 0664)
+			if err != nil {
+				c <- pipeline.Result{
+					Error: err,
+					Type:  pipeline.Error,
+				}
+				return
+			}
+
+			r, err := trecresults.ResultsFromReader(f)
+			if err != nil {
+				c <- pipeline.Result{
+					Error: err,
+					Type:  pipeline.Error,
+				}
+				return
+			}
+			f.Close()
+
 			sem := make(chan bool, concurrency)
 			for i, q := range measurementQueries {
 				sem <- true
 				go func(idx int, query pipeline.Query) {
 					defer func() { <-sem }()
+					if _, ok := r.Results[q.Topic]; ok {
+						log.Printf("already completed topic %v, so skipping it\n", q.Topic)
+						return
+					}
 					log.Printf("starting topic %v\n", query.Topic)
 					//
 					//tree, cache, err := combinator.NewLogicalTree(query, p.StatisticsSource, p.QueryCache)

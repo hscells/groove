@@ -2,7 +2,7 @@
 
 RANK_CLM=false
 RANK_CLF=true
-QUERY_EXPANSION=false
+QUERY_EXPANSION=true
 SCORE_PUBMED=true
 ONLY_SCORE_PUBMED=false
 RETRIEVAL_MODEL=true
@@ -13,7 +13,10 @@ QRELS=$3
 RUN=$4
 QUERY_PATH=$5
 
-CUTOFFS=(0.05 0.075 0.1 0.125 0.15 0.175 0.2 0.25 0.3)
+#CUTOFFS=(0.05 0.075 0.1 0.125 0.15 0.175 0.2 0.25 0.3 0.5 0.75 0.9)
+#CUTOFFS=(0.05 0.1 0.125 0.15 0.175)
+#CUTOFFS=(0.125 0.15 0.175)
+CUTOFFS=(0.2 0.5)
 
 for cut in ${CUTOFFS[@]}; do
     echo "running ${RUN} with cutoff ${cut}"
