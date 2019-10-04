@@ -16,6 +16,7 @@ import (
 type PostProcess func(query cqr.CommonQueryRepresentation) (cqr.CommonQueryRepresentation, error)
 
 func sumVecs(v1, v2 []float64) []float64 {
+	fmt.Println(len(v1), len(v2))
 	if len(v1) != len(v2) {
 		panic("slice lengths are not the same")
 	}
