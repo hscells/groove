@@ -228,7 +228,7 @@ func (o ObjectiveFormulator) Topic() string {
 	return o.query.Topic
 }
 
-func NewConceptualFormulator(title, topic string, logicComposer LogicComposer, entityExtractor EntityExtractor, entityExpander EntityExpander, keywordMapper KeywordMapper, postProcessing ...PostProcess) *ConceptualFormulator {
+func NewConceptualFormulator(title, topic string, logicComposer LogicComposer, entityExtractor EntityExtractor, entityExpander EntityExpander, keywordMapper KeywordMapper, rf []int, e stats.EntrezStatisticsSource, postProcessing ...PostProcess) *ConceptualFormulator {
 	return &ConceptualFormulator{
 		title:           title,
 		topic:           topic,
@@ -237,6 +237,8 @@ func NewConceptualFormulator(title, topic string, logicComposer LogicComposer, e
 		EntityExpander:  entityExpander,
 		KeywordMapper:   keywordMapper,
 		postProcessing:  postProcessing,
+		FeedbackDocs:    rf,
+		s:               e,
 	}
 }
 
