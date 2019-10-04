@@ -1,14 +1,132 @@
 package formulation
 
 import (
+	"fmt"
+	rake "github.com/afjoseph/RAKE.Go"
 	"github.com/hscells/cqr"
+	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/analysis"
+	"github.com/hscells/guru"
+	"github.com/hscells/metawrap"
 	"github.com/hscells/transmute/fields"
 	"strings"
 )
 
 // PostProcess applies any post-formatting to a query.
 type PostProcess func(query cqr.CommonQueryRepresentation) (cqr.CommonQueryRepresentation, error)
+
+func sumVecs(v1, v2 []float64) []float64 {
+	if len(v1) != len(v2) {
+		panic("slice lengths are not the same")
+	}
+	v := make([]float64, len(v1))
+	for i := range v1 {
+		v[i] = v1[i] + v2[i]
+	}
+	return v
+}
+
+func avgVecs(vs ...[]float64) []float64 {
+	if len(vs) < 2 {
+		return nil
+	}
+	v := vs[0]
+	for i := 1; i < len(vs); i++ {
+		v = sumVecs(v, vs[i])
+	}
+
+	N := float64(len(vs))
+	for i := range v {
+		v[i] = v[i] / N
+	}
+
+	return v
+}
+
+func RelevanceFeedback(query cqr.CommonQueryRepresentation, docs guru.MedlineDocuments, mm metawrap.HTTPClient) (cqr.CommonQueryRepresentation, error) {
+
+	// Open a connection to vector client.
+	client, err := cui2vec.NewVecClient("localhost:8003")
+	if err != nil {
+		return nil, err
+	}
+
+	// Function for embedding a clause by averaging child vectors.
+	var embed func(q cqr.CommonQueryRepresentation) []float64
+	embed = func(q cqr.CommonQueryRepresentation) []float64 {
+		switch x := q.(type) {
+		case cqr.Keyword:
+			v, _ := client.Vec(x.QueryString)
+			return v
+		case cqr.BooleanQuery:
+			vecs := make([][]float64, len(x.Children))
+			for i, child := range x.Children {
+				vecs[i] = embed(child)
+			}
+			return avgVecs(vecs...)
+		}
+		return nil
+	}
+
+	// The root node of the query.
+	bq := query.(cqr.BooleanQuery)
+
+	// Contains an embedding for each clause.
+	clauseVecs := make([][]float64, len(bq.Children))
+
+	// Create the embeddings for each child.
+	for i, child := range bq.Children {
+		clauseVecs[i] = embed(child)
+	}
+
+	keywords := make(map[string]struct{})
+	for _, doc := range docs {
+		list := rake.RunRake(fmt.Sprintf("%s %s", doc.TI, doc.AB))
+		for _, pair := range list {
+			if pair.Value > 1 {
+				keywords[pair.Key] = struct{}{}
+			}
+		}
+	}
+
+	// Loop over the extracted keywords.
+	for keyword := range keywords {
+
+		// Obtain CUIs for a keyword.
+		concepts, err := mm.Candidates(keyword)
+		if err != nil {
+			return nil, err
+		}
+
+		// For each of the extracted CUIs.
+		for _, concept := range concepts {
+
+			// Obtain an embedding for the CUI.
+			embedding, _ := client.Vec(concept.CandidateCUI)
+
+			// Find the clause to add the CUI to using the most similar clause.
+			var highestSim float64
+			var clause int
+			for i := range clauseVecs {
+				sim, err := cui2vec.Cosine(clauseVecs[i], embedding)
+				if err != nil {
+					return nil, err
+				}
+				if sim > highestSim {
+					highestSim = sim
+					clause = i
+				}
+			}
+
+			// Add the CUI into the Boolean query depending on the most similar clause.
+			child := bq.Children[clause].(cqr.BooleanQuery)
+			child.Children = append(child.Children, cqr.NewKeyword(concept.CandidateCUI, fields.TitleAbstract))
+			bq.Children[clause] = child
+		}
+	}
+
+	return bq, nil
+}
 
 // Stem uses already stemmed terms from the original query to
 // replace terms from the query that requires post-processing.
@@ -59,18 +177,18 @@ func stemQuery(query cqr.CommonQueryRepresentation, d map[string]bool, seen map[
 
 var (
 	/*
-	#1 randomized controlled trial [pt]
-	#2 controlled clinical trial [pt]
-	#3 randomized [tiab]
-	#4 placebo [tiab]
-	#5 drug therapy [sh]
-	#6 randomly [tiab]
-	#7 trial [tiab]
-	#8 groups [tiab]
-	#9 #1 OR #2 OR #3 OR #4 OR #5 OR #6 OR #7 OR #8
-	#10 animals [mh] NOT humans [mh]
-	#11 #9 NOT #10
-	 */
+		#1 randomized controlled trial [pt]
+		#2 controlled clinical trial [pt]
+		#3 randomized [tiab]
+		#4 placebo [tiab]
+		#5 drug therapy [sh]
+		#6 randomly [tiab]
+		#7 trial [tiab]
+		#8 groups [tiab]
+		#9 #1 OR #2 OR #3 OR #4 OR #5 OR #6 OR #7 OR #8
+		#10 animals [mh] NOT humans [mh]
+		#11 #9 NOT #10
+	*/
 	SensitivityFilter = cqr.NewBooleanQuery(cqr.NOT, []cqr.CommonQueryRepresentation{
 		cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{
 			cqr.NewKeyword("randomized controlled trial", fields.PublicationType),
@@ -89,17 +207,17 @@ var (
 	})
 
 	/*
-	#1 randomized controlled trial [pt]
-	#2 controlled clinical trial [pt]
-	#3 randomized [tiab]
-	#4 placebo [tiab]
-	#5 clinical trials as topic [mesh: noexp]
-	#6 randomly [tiab]
-	#7 trial [ti]
-	#8 #1 OR #2 OR #3 OR #4 OR #5 OR #6 OR #7
-	#9 animals [mh] NOT humans [mh]
-	#10 #8 NOT #9
-	 */
+		#1 randomized controlled trial [pt]
+		#2 controlled clinical trial [pt]
+		#3 randomized [tiab]
+		#4 placebo [tiab]
+		#5 clinical trials as topic [mesh: noexp]
+		#6 randomly [tiab]
+		#7 trial [ti]
+		#8 #1 OR #2 OR #3 OR #4 OR #5 OR #6 OR #7
+		#9 animals [mh] NOT humans [mh]
+		#10 #8 NOT #9
+	*/
 	PrecisionSensitivityFilter = cqr.NewBooleanQuery(cqr.NOT, []cqr.CommonQueryRepresentation{
 		cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{
 			cqr.NewKeyword("randomized controlled trial", fields.PublicationType),

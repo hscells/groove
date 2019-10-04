@@ -7,6 +7,7 @@ import (
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/metawrap"
 	"github.com/hscells/trecresults"
 	"strconv"
 )
@@ -44,6 +45,9 @@ type ConceptualFormulator struct {
 	EntityExtractor
 	EntityExpander
 	KeywordMapper
+
+	s              stats.EntrezStatisticsSource
+	FeedbackDocs   []int
 	postProcessing []PostProcess
 }
 
@@ -252,6 +256,19 @@ func (t ConceptualFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Su
 	// Entity Expansion.
 	if t.EntityExpander != nil {
 		q, err = EntityExpansion(q, t.EntityExpander)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	// Relevance Feedback.
+	if len(t.FeedbackDocs) > 0 {
+		docs, err := t.s.Fetch(t.FeedbackDocs)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		q, err = RelevanceFeedback(q, docs, metawrap.HTTPClient{URL: "http://ielab-metamap.uqcloud.net/"})
 		if err != nil {
 			return nil, nil, err
 		}
