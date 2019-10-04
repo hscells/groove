@@ -56,7 +56,7 @@ func RelevanceFeedback(query cqr.CommonQueryRepresentation, docs guru.MedlineDoc
 	embed = func(q cqr.CommonQueryRepresentation) []float64 {
 		switch x := q.(type) {
 		case cqr.Keyword:
-			v, _ := client.Vec(x.QueryString)
+			v, _ := client.Vec(x.GetOption("entity").(string))
 			return v
 		case cqr.BooleanQuery:
 			vecs := make([][]float64, len(x.Children))
