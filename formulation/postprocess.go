@@ -16,7 +16,6 @@ import (
 type PostProcess func(query cqr.CommonQueryRepresentation) (cqr.CommonQueryRepresentation, error)
 
 func sumVecs(v1, v2 []float64) []float64 {
-	fmt.Println(len(v1), len(v2))
 	if len(v1) != len(v2) {
 		panic("slice lengths are not the same")
 	}
@@ -98,6 +97,7 @@ func RelevanceFeedback(query cqr.CommonQueryRepresentation, docs guru.MedlineDoc
 	for keyword := range keywords {
 
 		// Obtain CUIs for a keyword.
+		fmt.Println(keyword)
 		concepts, err := mm.Candidates(keyword)
 		if err != nil {
 			return nil, err
