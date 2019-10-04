@@ -59,9 +59,13 @@ func RelevanceFeedback(query cqr.CommonQueryRepresentation, docs guru.MedlineDoc
 			v, _ := client.Vec(x.GetOption("entity").(string))
 			return v
 		case cqr.BooleanQuery:
-			vecs := make([][]float64, len(x.Children))
-			for i, child := range x.Children {
-				vecs[i] = embed(child)
+			var vecs [][]float64
+			for _, child := range x.Children {
+				v := embed(child)
+				if len(v) == 0 {
+					continue
+				}
+				vecs = append(vecs, v)
 			}
 			return avgVecs(vecs...)
 		}
