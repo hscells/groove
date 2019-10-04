@@ -72,6 +72,9 @@ func NewCui2VecEntityExpander(embeddings cui2vec.PrecomputedEmbeddings) *Cui2Vec
 }
 
 func (c Cui2VecEntityExpander) Expand(keyword cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
+	if keyword.GetOption(Entity) == nil {
+		return []cqr.CommonQueryRepresentation{}, nil
+	}
 	concepts, err := c.embeddings.Similar(keyword.GetOption(Entity).(string))
 	if err != nil {
 		return nil, err
