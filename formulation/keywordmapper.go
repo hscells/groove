@@ -9,6 +9,7 @@ import (
 	"github.com/hscells/metawrap"
 	"github.com/hscells/transmute/fields"
 	"strings"
+	"time"
 )
 
 // KeywordMapper transforms entities (e.g., CUIs into keywords).
@@ -32,12 +33,15 @@ func Matched() MetaMapMapper {
 	}
 }
 
-// Preferred uses the Preferred entity from MetaMap.
+// Preferred uses the Preferred entity from UMLS.
 func Preferred(client guru.UMLSClient) MetaMapMapper {
 	return func(keyword cqr.Keyword) (representations []cqr.CommonQueryRepresentation, err error) {
+	lookup:
 		preferred, err := client.Preferred(keyword.GetOption(Entity).(string))
 		if err != nil {
-			return
+			fmt.Println(err)
+			time.Sleep(5 * time.Second)
+			goto lookup
 		}
 		if len(preferred) == 0 {
 			return []cqr.CommonQueryRepresentation{keyword}, nil
