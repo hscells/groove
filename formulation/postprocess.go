@@ -56,6 +56,9 @@ func RelevanceFeedback(query cqr.CommonQueryRepresentation, docs guru.MedlineDoc
 	embed = func(q cqr.CommonQueryRepresentation) []float64 {
 		switch x := q.(type) {
 		case cqr.Keyword:
+			if x.GetOption("entity") == nil {
+				return []float64{}
+			}
 			v, _ := client.Vec(x.GetOption("entity").(string))
 			return v
 		case cqr.BooleanQuery:
