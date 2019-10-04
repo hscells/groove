@@ -25,6 +25,9 @@ func (m MetaMapEntityExtractor) Extract(query cqr.CommonQueryRepresentation) (cq
 		if err != nil {
 			return nil, err
 		}
+		if len(candidates) == 0 {
+			return q, nil
+		}
 
 		keywords := make([]cqr.CommonQueryRepresentation, len(candidates))
 		for i, c := range candidates {

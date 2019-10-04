@@ -97,7 +97,6 @@ func RelevanceFeedback(query cqr.CommonQueryRepresentation, docs guru.MedlineDoc
 	for keyword := range keywords {
 
 		// Obtain CUIs for a keyword.
-		fmt.Println(keyword)
 		concepts, err := mm.Candidates(keyword)
 		if err != nil {
 			return nil, err
