@@ -127,7 +127,9 @@ func RelevanceFeedback(query cqr.CommonQueryRepresentation, docs guru.MedlineDoc
 
 			// Add the CUI into the Boolean query depending on the most similar clause.
 			child := bq.Children[clause].(cqr.BooleanQuery)
-			child.Children = append(child.Children, cqr.NewKeyword(concept.CandidateCUI, fields.TitleAbstract))
+			kw := cqr.NewKeyword(keyword, fields.TitleAbstract)
+			kw.SetOption(Entity, concept.CandidateCUI)
+			child.Children = append(child.Children, kw)
 			bq.Children[clause] = child
 		}
 	}
