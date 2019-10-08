@@ -105,16 +105,24 @@ func RelevanceFeedback(query cqr.CommonQueryRepresentation, docs guru.MedlineDoc
 			return nil, err
 		}
 
-		fmt.Println(keyword, concepts)
+		fmt.Println(keyword)
 
 		// For each of the extracted CUIs.
 		for _, concept := range concepts {
 
+			if concept.CandidateScore != "-1000" {
+				fmt.Println(" - [x] (too low score)", concept.CandidateCUI)
+				continue
+			}
+
 			// Obtain an embedding for the CUI.
 			embedding, _ := client.Vec(concept.CandidateCUI)
 			if len(embedding) == 0 {
+				fmt.Println(" - [x] (no embeddings)", concept.CandidateCUI)
 				continue
 			}
+
+			fmt.Println(" - [√]", concept.CandidateCUI)
 
 			// Find the clause to add the CUI to using the most similar clause.
 			var highestSim float64
