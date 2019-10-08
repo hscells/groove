@@ -7,7 +7,6 @@ import (
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
-	"github.com/hscells/metawrap"
 	"github.com/hscells/trecresults"
 	"strconv"
 )
@@ -270,7 +269,7 @@ func (t ConceptualFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Su
 			return nil, nil, err
 		}
 
-		q, err = RelevanceFeedback(q, docs, metawrap.HTTPClient{URL: "http://ielab-metamap.uqcloud.net/"})
+		q, err = RelevanceFeedback(q, docs, t.EntityExtractor.(MetaMapEntityExtractor).client)
 		if err != nil {
 			return nil, nil, err
 		}
