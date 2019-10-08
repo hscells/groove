@@ -112,6 +112,9 @@ func RelevanceFeedback(query cqr.CommonQueryRepresentation, docs guru.MedlineDoc
 
 			// Obtain an embedding for the CUI.
 			embedding, _ := client.Vec(concept.CandidateCUI)
+			if len(embedding) == 0 {
+				continue
+			}
 
 			// Find the clause to add the CUI to using the most similar clause.
 			var highestSim float64
