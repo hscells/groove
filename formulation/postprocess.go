@@ -128,6 +128,9 @@ func RelevanceFeedback(query cqr.CommonQueryRepresentation, docs guru.MedlineDoc
 			var highestSim float64
 			var clause int
 			for i := range clauseVecs {
+				if len(clauseVecs[i]) == 0 {
+					continue
+				}
 				sim, err := cui2vec.Cosine(clauseVecs[i], embedding)
 				if err != nil {
 					return nil, err
