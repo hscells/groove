@@ -155,6 +155,9 @@ func RelevanceFeedback(query cqr.CommonQueryRepresentation, docs guru.MedlineDoc
 		}
 	}
 
+	fmt.Println("original", query)
+	fmt.Println("original+rf", bq)
+
 	return bq, nil
 }
 
