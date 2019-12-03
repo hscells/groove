@@ -6,6 +6,7 @@ import (
 	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
+	"github.com/hscells/groove/formulation"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/quickumlsrest"
 	"github.com/hscells/transmute/fields"
@@ -69,6 +70,7 @@ type cui2vecExpansion struct {
 	vector  cui2vec.Embeddings
 	mapping cui2vec.Mapping
 	cache   quickumlsrest.Cache
+	stats.EntrezStatisticsSource
 }
 
 type meshParent struct{}
@@ -108,13 +110,18 @@ func NewClauseRemovalTransformer() Transformation {
 }
 
 // NewClauseRemovalTransformer creates a clause removal transformer.
-func Newcui2vecExpansionTransformer(vector cui2vec.Embeddings, mapping cui2vec.Mapping, cache quickumlsrest.Cache) Transformation {
+func Newcui2vecExpansionTransformer(vector cui2vec.Embeddings, mapping cui2vec.Mapping, cache quickumlsrest.Cache, source ...stats.EntrezStatisticsSource) Transformation {
+	var s stats.EntrezStatisticsSource
+	if len(source) > 0 {
+		s = source[0]
+	}
 	return Transformation{
 		ID: Cui2vecExpansionTransformation,
 		Transformer: cui2vecExpansion{
-			vector:  vector,
-			mapping: mapping,
-			cache:   cache,
+			vector:                 vector,
+			mapping:                mapping,
+			cache:                  cache,
+			EntrezStatisticsSource: s,
 		},
 	}
 }
@@ -662,7 +669,7 @@ func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []
 				}
 			}
 		} else {
-			return []cqr.CommonQueryRepresentation{}, nil
+			return formulation.NewMedGenExpander(c.EntrezStatisticsSource).Expand(q)
 		}
 
 		return []cqr.CommonQueryRepresentation{cqr.NewBooleanQuery("or", append(children, q))}, nil

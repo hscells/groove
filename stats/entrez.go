@@ -87,6 +87,11 @@ type Search struct {
 	Count int `xml:"Count"`
 }
 
+func (e EntrezStatisticsSource) SetDB(db string) EntrezStatisticsSource {
+	e.db = db
+	return e
+}
+
 func (e EntrezStatisticsSource) Count(term, field string) float64 {
 	var s Search
 count:
@@ -241,15 +246,13 @@ func (e EntrezStatisticsSource) Summary(ids []string, value interface{}, options
 	for _, option := range options {
 		option(p)
 	}
+	v := url.Values{}
+	v["db"] = []string{e.db}
+	v["id"] = []string{strings.Join(ids, ",")}
+	fillParams(p, v)
 	p.RetMax = e.options.Size
 	p.RetMode = "xml"
 	p.APIKey = e.key
-	fmt.Println(e.db)
-	v := url.Values{}
-	v["db"] = []string{e.db}
-	v["id"] = ids
-	fillParams(p, v)
-
 	return entrez.SummaryURL.GetXML(v, e.tool, e.email, entrez.Limit, value)
 }
 

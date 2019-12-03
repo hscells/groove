@@ -25,7 +25,8 @@ type Posting struct {
 	TermIdx   map[uint32]int
 	MaxDocLen float64
 
-	dvCache map[uint32][]float64
+	dvCache    map[uint32][]float64
+	scoreCache map[uint32]float64
 }
 
 var (

@@ -23,7 +23,6 @@ import (
 	"log"
 	"os"
 	"path"
-	"runtime"
 	"sort"
 	"strconv"
 )
@@ -312,7 +311,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 					continue
 				}
 				log.Printf("starting topic %v\n", q.Topic)
-				results, err := rank.CLF(q, p.QueryCache, p.StatisticsSource.(stats.EntrezStatisticsSource), p.CLF)
+				results, err := rank.CLF(q, p.StatisticsSource.(stats.EntrezStatisticsSource), p.CLF)
 				if err != nil {
 					c <- pipeline.Result{
 						Error: err,
@@ -351,7 +350,9 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 
 			// Set the limit to how many goroutines can be run.
 			// http://jmoiron.net/blog/limiting-concurrency-in-go/
-			concurrency := runtime.NumCPU()
+			concurrency := 1 //runtime.NumCPU()
+
+			log.Println(p.OutputTrec)
 
 			log.Printf("starting to execute queries with %d goroutines\n", concurrency)
 

@@ -26,9 +26,7 @@ type MedGenEntityExpander struct {
 }
 
 func (m MedGenEntityExpander) Expand(q cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
-	cui := q.GetOption(Entity).(string)
-
-	ids, err := m.e.Search(cui)
+	ids, err := m.e.Search(q.QueryString)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +39,6 @@ func (m MedGenEntityExpander) Expand(q cqr.Keyword) ([]cqr.CommonQueryRepresenta
 	for i, id := range ids {
 		sids[i] = strconv.Itoa(id)
 	}
-
 	var summary guru.CeSummaryResult
 	err = m.e.Summary(sids, &summary)
 	if err != nil {
@@ -51,7 +48,7 @@ func (m MedGenEntityExpander) Expand(q cqr.Keyword) ([]cqr.CommonQueryRepresenta
 	var keywords []cqr.CommonQueryRepresentation
 	for _, docSum := range summary.CDocumentSummarySet.CDocumentSummary {
 		for _, name := range docSum.CConceptMeta.CNames.CName {
-			query := cqr.NewKeyword(name.Value)
+			query := cqr.NewKeyword(name.Value, fields.TitleAbstract)
 			// Add MeSH field restrictions to the query if it comes from a MeSH source.
 			if name.AttrSAB == "MSH" {
 				query.Fields = []string{fields.MeshHeadings}
@@ -64,7 +61,7 @@ func (m MedGenEntityExpander) Expand(q cqr.Keyword) ([]cqr.CommonQueryRepresenta
 }
 
 func NewMedGenExpander(e stats.EntrezStatisticsSource) *MedGenEntityExpander {
-	return &MedGenEntityExpander{e: e}
+	return &MedGenEntityExpander{e: e.SetDB("medgen")}
 }
 
 func NewCui2VecEntityExpander(embeddings cui2vec.PrecomputedEmbeddings) *Cui2VecEntityExpander {

@@ -7,6 +7,7 @@ import (
 	"github.com/bbalet/stopwords"
 	"github.com/biogo/ncbi/entrez"
 	"github.com/hscells/cqr"
+	"github.com/hscells/cui2vec"
 	"github.com/hscells/ghost"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
@@ -14,6 +15,7 @@ import (
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/merging"
+	"github.com/hscells/quickumlsrest"
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
 	"github.com/hscells/trecresults"
@@ -96,6 +98,9 @@ func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource,
 		fmt.Println("lists merged!")
 		return list, nil
 	case cqr.Keyword:
+		if posting.scoreCache == nil {
+			posting.scoreCache = make(map[uint32]float64)
+		}
 		scorers := []Scorer{
 			&BM25Scorer{s: e, p: posting, B: 0.1, K1: 1.2},
 			&LnL2Scorer{s: e, p: posting},
@@ -116,31 +121,36 @@ func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource,
 		for i, scorer := range scorers {
 			for pmid := range posting.DocLens {
 				score := 1.0
-				var err error
-				switch q.Fields[0] {
-				case fields.Title:
-					score, err = scorer.Score(q.QueryString, pmid, "ti")
-				case fields.Abstract:
-					score, err = scorer.Score(q.QueryString, pmid, "ab")
-				case fields.MeshHeadings, fields.MeSHTerms, fields.MeSHSubheading, fields.MeSHMajorTopic, fields.FloatingMeshHeadings:
-					if exp, ok := q.Options[cqr.ExplodedString]; ok {
-						if v, ok := exp.(bool); ok && q.QueryString[len(q.QueryString)-1] != '#' {
-							if v {
-								q.QueryString += "#"
+				if v, ok := posting.scoreCache[hash(pmid+q.QueryString+strings.Join(q.Fields, ""))]; ok {
+					score = v
+				} else {
+					var err error
+					switch q.Fields[0] {
+					case fields.Title:
+						score, err = scorer.Score(q.QueryString, pmid, "ti")
+					case fields.Abstract:
+						score, err = scorer.Score(q.QueryString, pmid, "ab")
+					case fields.MeshHeadings, fields.MeSHTerms, fields.MeSHSubheading, fields.MeSHMajorTopic, fields.FloatingMeshHeadings:
+						if exp, ok := q.Options[cqr.ExplodedString]; ok {
+							if v, ok := exp.(bool); ok && q.QueryString[len(q.QueryString)-1] != '#' {
+								if v {
+									q.QueryString += "#"
+								}
 							}
 						}
+						score, err = scorer.Score(q.QueryString, pmid, "mh")
+					case fields.TitleAbstract, fields.TextWord:
+						score, err = scorer.Score(q.QueryString, pmid, "ti", "ab")
+					case fields.AllFields:
+						score, err = scorer.Score(q.QueryString, pmid, "ti", "ab", "mh")
+					default:
+						fmt.Printf("CANNOT SCORE QUERY STRING: %s\n", q.QueryString)
+						score = 0.0
 					}
-					score, err = scorer.Score(q.QueryString, pmid, "mh")
-				case fields.TitleAbstract, fields.TextWord:
-					score, err = scorer.Score(q.QueryString, pmid, "ti", "ab")
-				case fields.AllFields:
-					score, err = scorer.Score(q.QueryString, pmid, "ti", "ab", "mh")
-				default:
-					fmt.Printf("CANNOT SCORE QUERY STRING: %s\n", q.QueryString)
-					score = 0.0
-				}
-				if err != nil {
-					panic(err)
+					if err != nil {
+						panic(err)
+					}
+					posting.scoreCache[hash(pmid+q.QueryString+strings.Join(q.Fields, ""))] = score
 				}
 				//n := float64(time.Now().Unix())
 				//score *= 1 - ((n - float64(posting.DocDates[hash(pmid)]+1)) / n)
@@ -344,12 +354,6 @@ func scoreWithPubMed(pmids []string, query cqr.CommonQueryRepresentation, topic 
 
 	seen := make(map[string]struct{})
 
-	{
-		if topic == "CD009263" || topic == "CD010409" {
-			pmids = pmids[:4000]
-		}
-	}
-
 	pmidKeywords := make([]cqr.CommonQueryRepresentation, len(pmids))
 	for i, pmid := range pmids {
 		pmidKeywords[i] = cqr.NewKeyword(pmid, "pmid")
@@ -394,7 +398,6 @@ func scoreWithPubMed(pmids []string, query cqr.CommonQueryRepresentation, topic 
 	} else if err == nil && len(r) == 0 {
 		return trecresults.ResultList{}, nil
 	}
-
 
 research:
 	q, err := transmute.CompileCqr2PubMed(tq)
@@ -486,6 +489,7 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 		learning.NewLogicalOperatorTransformer(),
 		learning.NewFieldRestrictionsTransformer(),
 		learning.NewMeshParentTransformer(),
+		learning.Newcui2vecExpansionTransformer(options.vector, options.mapping, options.quickumlscache, e),
 		learning.NewClauseRemovalTransformer())
 	if err != nil {
 		return err
@@ -499,7 +503,7 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 	}
 	indexPath := path.Join(cd, "groove_rank_variations")
 
-	p := "tar18t2_variations"
+	p := options.VariationsOutput
 	err = os.MkdirAll(path.Join(p, topic), 0777)
 	if err != nil {
 		return err
@@ -620,14 +624,27 @@ type CLFOptions struct {
 	RetrievalModel bool    `json:"retrieval_model"`
 	Cutoff         float64 `json:"cutoff"`
 
-	CLFVariations bool   `json:"clf_variations"`
-	PMIDS         string `json:"pmids"`
-	Titles        string `json:"titles"`
+	CLFVariations    bool   `json:"clf_variations"`
+	VariationsOutput string `json:"variations_output"`
+	PMIDS            string `json:"pmids"`
+	Qrels            string `json:"qrels"`
+	vector           cui2vec.Embeddings
+	mapping          cui2vec.Mapping
+	quickumlscache   quickumlsrest.Cache
+
+	Titles string `json:"titles"`
 }
 
-// CLF performs coordination-level fusion given a query. It ranks the documents retrieved for a query according to ...TODO?
+func (o CLFOptions) SetVariationOptions(vector cui2vec.Embeddings, mapping cui2vec.Mapping, cache quickumlsrest.Cache) CLFOptions {
+	o.vector = vector
+	o.mapping = mapping
+	o.quickumlscache = cache
+	return o
+}
+
+// CLF performs coordination-level fusion given a query.
 // This wrapper function performs some pre-processing steps before actually ranking the documents for the query.
-func CLF(query pipeline.Query, cacher combinator.QueryCacher, e stats.EntrezStatisticsSource, options CLFOptions) (trecresults.ResultList, error) {
+func CLF(query pipeline.Query, e stats.EntrezStatisticsSource, options CLFOptions) (trecresults.ResultList, error) {
 	cd, err := os.UserCacheDir()
 	if err != nil {
 		return nil, err
@@ -648,8 +665,6 @@ func CLF(query pipeline.Query, cacher combinator.QueryCacher, e stats.EntrezStat
 		}
 		pmids = append(pmids, pmid)
 	}
-
-	posting, err := newPostingFromPMIDS(pmids, query.Topic, indexPath, e)
 
 	if options.QueryExpansion {
 		c := query.Query.(cqr.BooleanQuery).Children
@@ -695,7 +710,7 @@ func CLF(query pipeline.Query, cacher combinator.QueryCacher, e stats.EntrezStat
 	}
 
 	if options.CLFVariations {
-		f, err := os.OpenFile("/Users/s4558151/Repositories/tar/2018-TAR/Task2/Testing/qrels/qrel_abs_task2", os.O_RDONLY, 0664)
+		f, err := os.OpenFile(options.Qrels, os.O_RDONLY, 0664)
 		if err != nil {
 			return nil, err
 		}
@@ -719,12 +734,12 @@ func CLF(query pipeline.Query, cacher combinator.QueryCacher, e stats.EntrezStat
 			return nil, err
 		}
 
-		if _, err := os.Stat("/Users/s4558151/go/src/github.com/hscells/groove/scripts/tar18t2_variations/" + query.Topic); os.IsNotExist(err) {
+		if _, err := os.Stat(path.Join(options.VariationsOutput, query.Topic)); os.IsNotExist(err) {
 			res, err := e.Execute(query, e.SearchOptions())
 			if err != nil {
 				return nil, err
 			}
-			err = writeResults(res, path.Join("/Users/s4558151/go/src/github.com/hscells/groove/scripts/tar18t2_orig/"+query.Topic))
+			err = writeResults(res, path.Join(options.VariationsOutput, "orig", query.Topic))
 			if err != nil {
 				return nil, err
 			}
@@ -733,12 +748,20 @@ func CLF(query pipeline.Query, cacher combinator.QueryCacher, e stats.EntrezStat
 			fmt.Printf("skipping topic %s, already exists\n", query.Topic)
 		}
 	} else if options.RankCLF {
+		posting, err := newPostingFromPMIDS(pmids, query.Topic, indexPath, e)
+		if err != nil {
+			return nil, err
+		}
 		results, err := clf(query, posting, e, options)
 		if err != nil {
 			return nil, err
 		}
 		return results, nil
 	} else if options.RankCLM {
+		posting, err := newPostingFromPMIDS(pmids, query.Topic, indexPath, e)
+		if err != nil {
+			return nil, err
+		}
 		results, err := clm(query, posting, e)
 		if err != nil {
 			return nil, err
