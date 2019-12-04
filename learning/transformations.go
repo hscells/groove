@@ -649,27 +649,43 @@ func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []
 
 		keyword := string(remRe.ReplaceAll([]byte(q.QueryString), []byte("")))
 		seen := make(map[string]bool)
-		var children []cqr.CommonQueryRepresentation
-		if candidates, ok := c.cache[keyword]; ok {
+		var (
+			children   []cqr.CommonQueryRepresentation
+			candidates []quickumlsrest.Candidate
+			ok         bool
+		)
+		if candidates, ok = c.cache[keyword]; ok { // Try to get CUIs from the cache.
 			if len(candidates) == 0 {
 				return []cqr.CommonQueryRepresentation{}, nil
 			}
-			for _, candidate := range candidates {
-				concepts, err := c.vector.Similar(candidate.CUI)
-				if err != nil {
-					return []cqr.CommonQueryRepresentation{}, err
-				}
-				for _, concept := range concepts {
-					if term, ok := c.mapping[concept.CUI]; ok {
-						if _, ok := seen[term]; !ok {
-							children = append(children, cqr.NewKeyword(term, q.Fields...))
-							seen[term] = true
-						}
-					}
+		} else { // Otherwise, get them from the ncbi medgen API.
+			cuis, err := formulation.NewMedGenExpander(c.EntrezStatisticsSource).CUIs(q)
+			if err != nil {
+				return nil, err
+			}
+			candidates = make([]quickumlsrest.Candidate, len(cuis))
+			for i, cui := range cuis {
+				candidates[i] = quickumlsrest.Candidate{
+					CUI: cui,
 				}
 			}
-		} else {
-			return formulation.NewMedGenExpander(c.EntrezStatisticsSource).Expand(q)
+		}
+
+		// Match only the first concept for each candidate.
+		for _, candidate := range candidates {
+			concepts, err := c.vector.Similar(candidate.CUI)
+			if err != nil {
+				return []cqr.CommonQueryRepresentation{}, err
+			}
+			if len(concepts) == 0 {
+				return []cqr.CommonQueryRepresentation{}, nil
+			}
+			if term, ok := c.mapping[concepts[0].CUI]; ok {
+				if _, ok := seen[term]; !ok {
+					children = append(children, cqr.NewKeyword(term, q.Fields...))
+					seen[term] = true
+				}
+			}
 		}
 
 		return []cqr.CommonQueryRepresentation{cqr.NewBooleanQuery("or", append(children, q))}, nil

@@ -60,6 +60,23 @@ func (m MedGenEntityExpander) Expand(q cqr.Keyword) ([]cqr.CommonQueryRepresenta
 	return keywords, nil
 }
 
+func (m MedGenEntityExpander) CUIs(q cqr.Keyword) ([]string, error) {
+	ids, err := m.e.Search(q.QueryString)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	sids := make([]string, len(ids))
+	for i, id := range ids {
+		sids[i] = cui2vec.Int2CUI(id)
+	}
+	return sids, nil
+}
+
 func NewMedGenExpander(e stats.EntrezStatisticsSource) *MedGenEntityExpander {
 	return &MedGenEntityExpander{e: e.SetDB("medgen")}
 }
