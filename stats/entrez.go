@@ -275,8 +275,8 @@ func (e EntrezStatisticsSource) Fetch(pmids []int, options ...func(p *entrez.Par
 retry:
 	r, err := entrez.Fetch(e.db, p, e.tool, e.email, nil, pmids...)
 	if err != nil {
+		log.Printf("error: %v, retrying %d more times for %f seconds", err, fails, time.Duration(((nfails - fails) * 5) * int(time.Second)).Seconds())
 		if fails > 0 {
-			log.Printf("error: %v, retrying %d more times for %f seconds", err, fails, time.Duration(((nfails - fails) * 5) * int(time.Second)).Seconds())
 			fails--
 			time.Sleep(time.Duration((nfails-fails)*5) * time.Second)
 			goto retry
