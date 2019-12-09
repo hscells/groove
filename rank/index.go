@@ -2,7 +2,6 @@ package rank
 
 import (
 	"fmt"
-	"github.com/hscells/cqr"
 	"github.com/hscells/guru"
 	"github.com/hscells/trecresults"
 	"gopkg.in/cheggaaa/pb.v1"
@@ -28,7 +27,7 @@ type Posting struct {
 	MaxDocLen float64
 
 	dvCache    map[uint32][]float64
-	scoreCache map[cqr.Keyword]trecresults.ResultList
+	scoreCache map[string]trecresults.ResultList
 }
 
 var (
