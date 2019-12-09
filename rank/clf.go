@@ -99,7 +99,10 @@ func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource,
 		return list, nil
 	case cqr.Keyword:
 		if posting.scoreCache == nil {
-			posting.scoreCache = make(map[uint32]float64)
+			posting.scoreCache = make(map[cqr.Keyword]trecresults.ResultList)
+		}
+		if v, ok := posting.scoreCache[q]; ok {
+			return v, nil
 		}
 		scorers := []Scorer{
 			&BM25Scorer{s: e, p: posting, B: 0.1, K1: 1.2},
@@ -121,36 +124,31 @@ func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource,
 		for i, scorer := range scorers {
 			for pmid := range posting.DocLens {
 				score := 1.0
-				if v, ok := posting.scoreCache[hash(pmid+q.QueryString+strings.Join(q.Fields, ""))]; ok {
-					score = v
-				} else {
-					var err error
-					switch q.Fields[0] {
-					case fields.Title:
-						score, err = scorer.Score(q.QueryString, pmid, "ti")
-					case fields.Abstract:
-						score, err = scorer.Score(q.QueryString, pmid, "ab")
-					case fields.MeshHeadings, fields.MeSHTerms, fields.MeSHSubheading, fields.MeSHMajorTopic, fields.FloatingMeshHeadings:
-						if exp, ok := q.Options[cqr.ExplodedString]; ok {
-							if v, ok := exp.(bool); ok && q.QueryString[len(q.QueryString)-1] != '#' {
-								if v {
-									q.QueryString += "#"
-								}
+				var err error
+				switch q.Fields[0] {
+				case fields.Title:
+					score, err = scorer.Score(q.QueryString, pmid, "ti")
+				case fields.Abstract:
+					score, err = scorer.Score(q.QueryString, pmid, "ab")
+				case fields.MeshHeadings, fields.MeSHTerms, fields.MeSHSubheading, fields.MeSHMajorTopic, fields.FloatingMeshHeadings:
+					if exp, ok := q.Options[cqr.ExplodedString]; ok {
+						if v, ok := exp.(bool); ok && q.QueryString[len(q.QueryString)-1] != '#' {
+							if v {
+								q.QueryString += "#"
 							}
 						}
-						score, err = scorer.Score(q.QueryString, pmid, "mh")
-					case fields.TitleAbstract, fields.TextWord:
-						score, err = scorer.Score(q.QueryString, pmid, "ti", "ab")
-					case fields.AllFields:
-						score, err = scorer.Score(q.QueryString, pmid, "ti", "ab", "mh")
-					default:
-						fmt.Printf("CANNOT SCORE QUERY STRING: %s\n", q.QueryString)
-						score = 0.0
 					}
-					if err != nil {
-						panic(err)
-					}
-					posting.scoreCache[hash(pmid+q.QueryString+strings.Join(q.Fields, ""))] = score
+					score, err = scorer.Score(q.QueryString, pmid, "mh")
+				case fields.TitleAbstract, fields.TextWord:
+					score, err = scorer.Score(q.QueryString, pmid, "ti", "ab")
+				case fields.AllFields:
+					score, err = scorer.Score(q.QueryString, pmid, "ti", "ab", "mh")
+				default:
+					fmt.Printf("CANNOT SCORE QUERY STRING: %s\n", q.QueryString)
+					score = 0.0
+				}
+				if err != nil {
+					panic(err)
 				}
 				//n := float64(time.Now().Unix())
 				//score *= 1 - ((n - float64(posting.DocDates[hash(pmid)]+1)) / n)
@@ -234,6 +232,7 @@ func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource,
 			totalGain := fusion.Sum()
 			if totalGain == 0 {
 				fmt.Printf("XXXX|")
+				posting.scoreCache[q] = trecresults.ResultList{}
 				return trecresults.ResultList{}, nil
 			}
 			allowedGain := totalGain * options.Cutoff
@@ -251,7 +250,9 @@ func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource,
 			fmt.Printf("{k:%f;r:%d;t:%f;a:%f;c:%f}|", options.Cutoff, len(fusion), totalGain, allowedGain, cumGain)
 		}
 
-		return fusion.TRECResults(query.Topic), nil
+		result := fusion.TRECResults(query.Topic)
+		posting.scoreCache[q] = result
+		return result, nil
 	}
 	return nil, nil
 }

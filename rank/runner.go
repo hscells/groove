@@ -28,7 +28,7 @@ var docCache = make(map[int]guru.MedlineDocument)
 func index(pmids []int, e stats.EntrezStatisticsSource) (*Posting, error) {
 	var docs guru.MedlineDocuments
 	sem := make(chan bool, 1)
-	n := 10000
+	n := 300
 
 	// Grab documents from cache.
 	var unseenPmids []int
