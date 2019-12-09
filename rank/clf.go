@@ -97,7 +97,9 @@ func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource,
 		fmt.Println("lists merged!")
 		return list, nil
 	case cqr.Keyword:
+		fmt.Printf("%s", q.String())
 		if v, ok := scoreCache[q.String()]; ok {
+			fmt.Println("[@]")
 			return v, nil
 		}
 		scorers := []Scorer{
@@ -112,9 +114,8 @@ func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource,
 
 		lists := make([]trecresults.ResultList, len(scorers))
 
-		fmt.Printf("%s %v", q.QueryString, q.Fields)
 		defer func() {
-			fmt.Println("[√]")
+			fmt.Println("[$]")
 		}()
 
 		for i, scorer := range scorers {
