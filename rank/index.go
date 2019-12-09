@@ -3,7 +3,6 @@ package rank
 import (
 	"fmt"
 	"github.com/hscells/guru"
-	"github.com/hscells/trecresults"
 	"gopkg.in/cheggaaa/pb.v1"
 	"gopkg.in/jdkato/prose.v2"
 	"hash/fnv"
@@ -26,8 +25,7 @@ type Posting struct {
 	TermIdx   map[uint32]int
 	MaxDocLen float64
 
-	dvCache    map[uint32][]float64
-	scoreCache map[string]trecresults.ResultList
+	dvCache map[uint32][]float64
 }
 
 var (

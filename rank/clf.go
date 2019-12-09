@@ -38,6 +38,7 @@ var cm = merging.CoordinationLevelMatching{
 
 var rCacher, _ = ghost.Open("./queries_cache_r", ghost.NewGobSchema(combinator.Documents{}), ghost.WithIndexCache(1e4))
 var nrCacher, _ = ghost.Open("./queries_cache_nr", ghost.NewGobSchema(combinator.Documents{}), ghost.WithIndexCache(1e4))
+var scoreCache = make(map[string]trecresults.ResultList)
 
 // clf is the actual implementation of coordination level fusion. The exported function is simply a wrapper.
 func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource, options CLFOptions) (trecresults.ResultList, error) {
@@ -96,11 +97,7 @@ func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource,
 		fmt.Println("lists merged!")
 		return list, nil
 	case cqr.Keyword:
-		if posting.scoreCache == nil {
-			posting.scoreCache = make(map[string]trecresults.ResultList)
-		}
-
-		if v, ok := posting.scoreCache[q.String()]; ok {
+		if v, ok := scoreCache[q.String()]; ok {
 			return v, nil
 		}
 		scorers := []Scorer{
@@ -231,7 +228,7 @@ func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource,
 			totalGain := fusion.Sum()
 			if totalGain == 0 {
 				fmt.Printf("XXXX|")
-				posting.scoreCache[q.String()] = trecresults.ResultList{}
+				scoreCache[q.String()] = trecresults.ResultList{}
 				return trecresults.ResultList{}, nil
 			}
 			allowedGain := totalGain * options.Cutoff
@@ -250,7 +247,7 @@ func clf(query pipeline.Query, posting *Posting, e stats.EntrezStatisticsSource,
 		}
 
 		result := fusion.TRECResults(query.Topic)
-		posting.scoreCache[q.String()] = result
+		scoreCache[q.String()] = result
 		return result, nil
 	}
 	return nil, nil
