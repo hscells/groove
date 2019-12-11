@@ -516,6 +516,10 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 		candidates[i], candidates[j] = candidates[j], candidates[i]
 	})
 
+	if len(candidates) > 100 {
+		candidates = candidates[:100]
+	}
+
 	for i, candidate := range candidates {
 		fmt.Printf("[%s] variation %d/%d\n", topic, i+1, len(candidates))
 
