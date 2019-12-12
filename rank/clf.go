@@ -506,7 +506,6 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 	if err != nil {
 		return err
 	}
-
 	N, err := e.RetrievalSize(query)
 	if err != nil {
 		return err
@@ -577,14 +576,22 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 		if err != nil {
 			return err
 		}
-		if err != nil {
-			return err
-		}
+		defer f.Close()
 		_, err = f.WriteString(s)
 		if err != nil {
 			return err
 		}
-		err = f.Close()
+
+		// Write the transformation ID.
+		f2, err := os.OpenFile(path.Join(p, topic, strconv.Itoa(int(hash(s)))+".t12n"), os.O_CREATE|os.O_WRONLY, 0664)
+		if err != nil {
+			return err
+		}
+		defer f2.Close()
+		_, err = f2.WriteString(strconv.Itoa(candidate.TransformationID))
+		if err != nil {
+			return err
+		}
 	}
 	wg.Wait()
 	return nil
