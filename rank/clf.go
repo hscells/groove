@@ -22,7 +22,6 @@ import (
 	"github.com/reiver/go-porterstemmer"
 	"gopkg.in/jdkato/prose.v2"
 	"io/ioutil"
-	"math/rand"
 	"os"
 	"path"
 	"sort"
@@ -467,12 +466,15 @@ func writeResults(list trecresults.ResultList, dir string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	for _, res := range list {
 		_, err := f.WriteString(fmt.Sprintf("%s 0 %s %d %f %s\n", res.Topic, res.DocId, res.Rank, res.Score, res.RunName))
 		if err != nil {
 			return err
 		}
+	}
+	err = f.Close()
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -495,11 +497,11 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 
 	wg := new(sync.WaitGroup)
 
-	cd, err := os.UserCacheDir()
-	if err != nil {
-		return err
-	}
-	indexPath := path.Join(cd, "groove_rank_variations")
+	//cd, err := os.UserCacheDir()
+	//if err != nil {
+	//	return err
+	//}
+	//indexPath := path.Join(cd, "groove_rank_variations")
 
 	p := options.VariationsOutput
 	err = os.MkdirAll(path.Join(p, topic), 0777)
@@ -511,13 +513,13 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 		return err
 	}
 
-	rand.Shuffle(len(candidates), func(i, j int) {
-		candidates[i], candidates[j] = candidates[j], candidates[i]
-	})
-
-	if len(candidates) > 100 {
-		candidates = candidates[:100]
-	}
+	//rand.Shuffle(len(candidates), func(i, j int) {
+	//	candidates[i], candidates[j] = candidates[j], candidates[i]
+	//})
+	//
+	//if len(candidates) > 100 {
+	//	candidates = candidates[:100]
+	//}
 
 	for i, candidate := range candidates {
 		fmt.Printf("[%s] variation %d/%d\n", topic, i+1, len(candidates))
@@ -534,8 +536,8 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 			fmt.Println(err)
 			goto r
 		}
-		if n < N/2 || n > N*2 || n == 0 {
-			fmt.Printf("skipping variation %d, retrieved no documents\n", i+1)
+		if n < N/2 || n >= N || n == 0 {
+			fmt.Printf("skipping variation %d, retrieved documents out of bounds\n", i+1)
 			fmt.Println(s)
 			continue
 		}
@@ -546,38 +548,45 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 			fmt.Println(err)
 			goto s
 		}
+		items := make(merging.Items, len(pmids))
+		for i, pmid := range pmids {
+			items[i] = merging.Item{Id: strconv.Itoa(pmid), Score: 0}
+		}
 		// Create posting list for query.
-	f:
-		posting, err := newPostingFromPMIDS(pmids, topic+"_"+strconv.Itoa(int(hash(s))), indexPath, e)
-		if err != nil {
-			fmt.Println(err)
-			goto f
-		}
-		// Use fusion technique to rank retrieved results and write results to file.
-		res, err := clf(pipeline.NewQuery(topic, topic, candidate.Query), posting, e, options)
-		if err != nil {
-			return err
-		}
-		err = writeResults(res, path.Join(p, topic, strconv.Itoa(int(hash(s)))+".res.retrieved"))
+		//f:
+		//posting, err := newPostingFromPMIDS(pmids, topic+"_"+strconv.Itoa(int(hash(s))), indexPath, e)
+		//if err != nil {
+		//	fmt.Println(err)
+		//	goto f
+		//}
+		//// Use fusion technique to rank retrieved results and write results to file.
+		//res, err := clf(pipeline.NewQuery(topic, topic, candidate.Query), posting, e, options)
+		//if err != nil {
+		//	return err
+		//}
+		err = writeResults(items.TRECResults(topic), path.Join(p, topic, strconv.Itoa(int(hash(s)))+".res.retrieved"))
 		if err != nil {
 			return err
 		}
 		// Use fusion technique to rank only the relevant results and write to file.
-		idealRes, err := clf(pipeline.NewQuery(topic, topic, candidate.Query), idealPosting, e, options)
-		if err != nil {
-			return err
-		}
-		err = writeResults(idealRes, path.Join(p, topic, strconv.Itoa(int(hash(s)))+".res.ideal"))
-		if err != nil {
-			return err
-		}
+		//idealRes, err := clf(pipeline.NewQuery(topic, topic, candidate.Query), idealPosting, e, options)
+		//if err != nil {
+		//	return err
+		//}
+		//err = writeResults(idealRes, path.Join(p, topic, strconv.Itoa(int(hash(s)))+".res.ideal"))
+		//if err != nil {
+		//	return err
+		//}
 		// Write the query to file for posterity.
 		f, err := os.OpenFile(path.Join(p, topic, strconv.Itoa(int(hash(s)))+".qry"), os.O_CREATE|os.O_WRONLY, 0664)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
 		_, err = f.WriteString(s)
+		if err != nil {
+			return err
+		}
+		err = f.Close()
 		if err != nil {
 			return err
 		}
@@ -587,8 +596,25 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 		if err != nil {
 			return err
 		}
-		defer f2.Close()
 		_, err = f2.WriteString(strconv.Itoa(candidate.TransformationID))
+		if err != nil {
+			return err
+		}
+		err = f2.Close()
+		if err != nil {
+			return err
+		}
+
+		// Write the transformation ID.
+		f3, err := os.OpenFile(path.Join(p, topic, strconv.Itoa(int(hash(s)))+".ret"), os.O_CREATE|os.O_WRONLY, 0664)
+		if err != nil {
+			return err
+		}
+		_, err = f3.WriteString(strconv.Itoa(int(n)))
+		if err != nil {
+			return err
+		}
+		err = f3.Close()
 		if err != nil {
 			return err
 		}

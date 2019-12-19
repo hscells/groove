@@ -30,6 +30,7 @@ import (
 // Pipeline contains all the information for executing a pipeline for query analysis.
 type Pipeline struct {
 	QueryPath             string
+	PubDatesFile          string
 	QueriesSource         query.QueriesSource
 	StatisticsSource      stats.StatisticsSource
 	Preprocess            []preprocess.QueryProcessor
@@ -194,6 +195,15 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			}
 		}
 
+		//if len(p.PubDatesFile) > 0 {
+		//	log.Println("adding date restrictions to queries...")
+		//	for i, cq := range queries {
+		//		log.Println(cq.Topic)
+		//		q := preprocess.DateRestrictions(p.PubDatesFile)(cq.Query, cq.Topic)()
+		//		queries[i].Query = q
+		//	}
+		//}
+
 		log.Println("sorting queries by complexity...")
 
 		// Sort the transformed queries by size.
@@ -219,7 +229,8 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			}
 
 			// Apply any transformations.
-			for _, t := range p.Transformations.BooleanTransformations {
+			for i, t := range p.Transformations.BooleanTransformations {
+				fmt.Println(q.Topic, i)
 				q = pipeline.NewQuery(q.Name, q.Topic, t(q.Query, q.Topic)())
 			}
 			for _, t := range p.Transformations.ElasticsearchTransformations {
