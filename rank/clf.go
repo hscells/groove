@@ -14,6 +14,7 @@ import (
 	"github.com/hscells/groove/learning"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/headway"
 	"github.com/hscells/merging"
 	"github.com/hscells/quickumlsrest"
 	"github.com/hscells/transmute"
@@ -22,12 +23,12 @@ import (
 	"github.com/reiver/go-porterstemmer"
 	"gopkg.in/jdkato/prose.v2"
 	"io/ioutil"
+	"log"
 	"os"
 	"path"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -480,6 +481,7 @@ func writeResults(list trecresults.ResultList, dir string) error {
 }
 
 func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosting *Posting, e stats.EntrezStatisticsSource, options CLFOptions) error {
+	learning.ComputeFeatures = false
 	candidates, err := learning.Variations(learning.CandidateQuery{
 		TransformationID: -1,
 		Topic:            topic,
@@ -495,7 +497,12 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 		return err
 	}
 
-	wg := new(sync.WaitGroup)
+	var hw *headway.Client
+	if len(options.HeadwayServer) > 0 {
+		log.Println("connecting to headway server...")
+		hw = headway.NewClient(options.HeadwayServer, fmt.Sprintf("@harry topic [%s]", topic))
+	}
+	//wg := new(sync.WaitGroup)
 
 	//cd, err := os.UserCacheDir()
 	//if err != nil {
@@ -618,8 +625,20 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 		if err != nil {
 			return err
 		}
+		if len(options.HeadwayServer) > 0 {
+			err = hw.Send(float64(i), float64(len(candidates)), fmt.Sprintf("retrieved: %f", n))
+			if err != nil {
+				log.Println(err)
+			}
+		}
 	}
-	wg.Wait()
+	if len(options.HeadwayServer) > 0 {
+		err = hw.Send(float64(len(candidates)), float64(len(candidates)), fmt.Sprintf("done!"))
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	//wg.Wait()
 	return nil
 }
 
@@ -668,6 +687,8 @@ type CLFOptions struct {
 	quickumlscache   quickumlsrest.Cache
 
 	Titles string `json:"titles"`
+
+	HeadwayServer string `json:"headway_server"`
 }
 
 func (o CLFOptions) SetVariationOptions(vector cui2vec.Embeddings, mapping cui2vec.Mapping, cache quickumlsrest.Cache) CLFOptions {

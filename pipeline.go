@@ -16,6 +16,7 @@ import (
 	"github.com/hscells/groove/query"
 	"github.com/hscells/groove/rank"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/headway"
 	"github.com/hscells/transmute"
 	"github.com/hscells/trecresults"
 	"github.com/peterbourgon/diskv"
@@ -143,6 +144,7 @@ func NewGroovePipeline(qs query.QueriesSource, ss stats.StatisticsSource, compon
 }
 
 // Execute runs a groove pipeline for a particular directory of queries.
+//noinspection GoNilness
 func (p Pipeline) Execute(c chan pipeline.Result) {
 	defer close(c)
 	log.Println("starting groove pipeline...")
@@ -293,6 +295,15 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			}
 		}
 
+		var hw *headway.Client
+		loghw := false
+		if len(p.CLF.HeadwayServer) > 0 {
+			hw = headway.NewClient(p.CLF.HeadwayServer, "@harry groove pipeline")
+			if hw != nil {
+				loghw = true
+			}
+		}
+
 		if (len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0) && p.CLF.CLF {
 			// Store the measurements to be output later.
 
@@ -316,7 +327,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			f.Close()
 
 			measurements := make(map[string]map[string]float64)
-			for _, q := range measurementQueries {
+			for i, q := range measurementQueries {
 				if _, ok := r.Results[q.Topic]; ok {
 					log.Printf("already completed topic %v, so skipping it\n", q.Topic)
 					continue
@@ -350,7 +361,14 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 					Type:           pipeline.Transformation,
 				}
 
+				if loghw {
+					_ = hw.Send(float64(i), float64(len(measurementQueries)), fmt.Sprintf("[measurement] topic %s", q.Topic))
+				}
+
 				log.Printf("completed topic %v\n", q.Topic)
+			}
+			if loghw {
+				_ = hw.Send(float64(len(measurementQueries)), float64(len(measurementQueries)), "[measurement] done!")
 			}
 
 		} else if len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0 {
