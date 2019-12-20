@@ -335,6 +335,9 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 				log.Printf("starting topic %v\n", q.Topic)
 				results, err := rank.CLF(q, p.StatisticsSource.(stats.EntrezStatisticsSource), p.CLF)
 				if err != nil {
+					if loghw {
+						_ = hw.Send(float64(i), float64(len(measurementQueries)), err.Error())
+					}
 					c <- pipeline.Result{
 						Error: err,
 						Type:  pipeline.Error,
@@ -436,6 +439,9 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 					//trecResults := docIds.Results(query, query.Name)
 					trecResults, err := p.StatisticsSource.Execute(query, p.StatisticsSource.SearchOptions())
 					if err != nil {
+						if loghw {
+							_ = hw.Send(float64(i), float64(len(measurementQueries)), err.Error())
+						}
 						panic(err)
 					}
 
