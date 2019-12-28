@@ -60,6 +60,7 @@ type ObjectiveFormulator struct {
 	qrels                                  trecresults.Qrels
 	MeSHK                                  []int
 	DevK, PopK                             []float64
+	minDocs                                int
 
 	population     BackgroundCollection
 	splitter       Splitter
@@ -95,6 +96,11 @@ func ObjectivePostProcessing(processes ...PostProcess) ObjectiveOption {
 		o.postProcessing = processes
 	}
 }
+func ObjectiveMinDocs(docs int) ObjectiveOption {
+	return func(o *ObjectiveFormulator) {
+		o.minDocs = docs
+	}
+}
 
 func NewObjectiveFormulator(query pipeline.Query, s stats.EntrezStatisticsSource, qrels trecresults.Qrels, population BackgroundCollection, folder, pubdates, semTypes, metamapURL string, optimisation eval.Evaluator, options ...ObjectiveOption) *ObjectiveFormulator {
 	o := &ObjectiveFormulator{
@@ -109,6 +115,7 @@ func NewObjectiveFormulator(query pipeline.Query, s stats.EntrezStatisticsSource
 		splitter:     RandomSplitter(1000),
 		analyser:     TermFrequencyAnalyser,
 		optimisation: optimisation,
+		minDocs:      50,
 		//DevK:         []float64{0.20},
 		//PopK:         []float64{0.02},
 		//MeSHK:        []int{20},
@@ -141,8 +148,8 @@ func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Sup
 		}
 	}
 
-	if len(docs) <= 50 {
-		return nil, nil, fmt.Errorf("not enough relevant studies (minimmum 50)")
+	if len(docs) <= o.minDocs {
+		return nil, nil, fmt.Errorf("not enough relevant studies (minimmum %d)", o.minDocs)
 	}
 
 	// Fetch those relevant documents.

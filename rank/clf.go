@@ -24,6 +24,7 @@ import (
 	"gopkg.in/jdkato/prose.v2"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"os"
 	"path"
 	"sort"
@@ -520,22 +521,10 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 		return err
 	}
 
-	//rand.Shuffle(len(candidates), func(i, j int) {
-	//	candidates[i], candidates[j] = candidates[j], candidates[i]
-	//})
-	//
-	//if len(candidates) > 100 {
-	//	candidates = candidates[:100]
-	//}
-
+	fmt.Println("filtering candidates by size")
+	var filteredCandidates []learning.CandidateQuery
+	numRet := make(map[uint32]float64)
 	for i, candidate := range candidates {
-		fmt.Printf("[%s] variation %d/%d\n", topic, i+1, len(candidates))
-
-		// String-ify the query.
-		s, err := transmute.CompileCqr2PubMed(candidate.Query)
-		if err != nil {
-			return err
-		}
 	r:
 		// Skip this candidate if it retrieves more than the original query.
 		n, err := e.RetrievalSize(candidate.Query)
@@ -544,9 +533,34 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 			goto r
 		}
 		if n < N/2 || n >= N || n == 0 {
-			fmt.Printf("skipping variation %d, retrieved documents out of bounds\n", i+1)
-			fmt.Println(s)
+			fmt.Printf(" - skipping variation %d, retrieved documents out of bounds\n", i+1)
 			continue
+		}
+		// String-ify the query.
+		s, err := transmute.CompileCqr2PubMed(candidate.Query)
+		if err != nil {
+			return err
+		}
+		numRet[hash(s)] = n
+
+		filteredCandidates = append(filteredCandidates, candidate)
+	}
+
+	fmt.Println("randomly filtering remaining candidates to less than 50")
+	rand.Shuffle(len(candidates), func(i, j int) {
+		candidates[i], candidates[j] = candidates[j], candidates[i]
+	})
+	if len(candidates) > 50 {
+		candidates = candidates[:50]
+	}
+
+	for i, candidate := range candidates {
+		fmt.Printf("[%s] variation %d/%d\n", topic, i+1, len(candidates))
+
+		// String-ify the query.
+		s, err := transmute.CompileCqr2PubMed(candidate.Query)
+		if err != nil {
+			return err
 		}
 	s:
 		// Obtain list of pmids.
@@ -611,6 +625,8 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 		if err != nil {
 			return err
 		}
+
+		n := numRet[hash(s)]
 
 		// Write the transformation ID.
 		f3, err := os.OpenFile(path.Join(p, topic, strconv.Itoa(int(hash(s)))+".ret"), os.O_CREATE|os.O_WRONLY, 0664)
