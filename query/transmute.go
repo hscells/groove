@@ -1,6 +1,7 @@
 package query
 
 import (
+	"errors"
 	"github.com/hscells/cqr"
 	gpipeline "github.com/hscells/groove/pipeline"
 	"github.com/hscells/transmute/backend"
@@ -9,6 +10,7 @@ import (
 	tpipeline "github.com/hscells/transmute/pipeline"
 	"io/ioutil"
 	"log"
+	"path"
 )
 
 var (
@@ -52,6 +54,30 @@ type TransmuteQuerySource struct {
 	queries  []gpipeline.Query
 }
 
+func (ts TransmuteQuerySource) LoadSingle(file string) (gpipeline.Query, error) {
+	dir, topic := path.Split(file)
+	if len(dir) == 0 {
+		return gpipeline.Query{}, errors.New("query topic cannot be inferred from pathname")
+	}
+
+	source, err := ioutil.ReadFile(file)
+	if err != nil {
+		return gpipeline.Query{}, err
+	}
+
+	bq, err := ts.pipeline.Execute(string(source))
+	if err != nil {
+		log.Printf("transmute error in topic %s\n", topic)
+		return gpipeline.Query{}, err
+	}
+
+	repr, err := bq.Representation()
+	if err != nil {
+		return gpipeline.Query{}, err
+	}
+	return gpipeline.NewQuery(topic, topic, repr.(cqr.CommonQueryRepresentation)), nil
+}
+
 // Load takes a directory of queries and parses them using a supplied transmute gpipeline.
 func (ts TransmuteQuerySource) Load(directory string) ([]gpipeline.Query, error) {
 	// First, get a list of files in the directory.
@@ -71,24 +97,10 @@ func (ts TransmuteQuerySource) Load(directory string) ([]gpipeline.Query, error)
 			continue
 		}
 
-		source, err := ioutil.ReadFile(directory + "/" + f.Name())
+		queries[i], err = ts.LoadSingle(path.Join(directory, f.Name()))
 		if err != nil {
 			return nil, err
 		}
-
-		bq, err := ts.pipeline.Execute(string(source))
-		if err != nil {
-			log.Printf("transmute error in topic %s\n", f.Name())
-			return nil, err
-		}
-
-		topic := f.Name()
-
-		repr, err := bq.Representation()
-		if err != nil {
-			return nil, err
-		}
-		queries[i] = gpipeline.NewQuery(f.Name(), topic, repr.(cqr.CommonQueryRepresentation))
 	}
 
 	// Finally, return the parsed queries.
