@@ -300,6 +300,7 @@ func cutDevelopmentTermsWithPopulation(dev []string, population BackgroundCollec
 	terms := make(TermStatistics)
 
 	for _, term := range dev {
+		fmt.Println(" -", term)
 		if df, err := population.Statistic(term); err == nil {
 			if float64(df) <= n {
 				terms[term] = df
@@ -976,38 +977,49 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 	for _, d := range o.DevK {
 		for _, p := range o.PopK {
 			fmt.Println(d, p)
+
+			fmt.Println("cutting terms")
 			// Take terms from dev.
 			cut := cutDevelopmentTerms(devDF, dev, d)
+
+			fmt.Println("ranking terms")
 			// Rank the cut terms in dev.
 			terms := rankTerms(cut, dev, o.query.Topic, o.Folder)
 
+			fmt.Println("cutting dev terms with population")
 			// Identify dev TermStatistics which appear in <= 2% of the DF of the population set.
 			queryTerms := cutDevelopmentTermsWithPopulation(terms, population, o.query.Topic, o.Folder, p)
 
+			fmt.Println("mapping terms")
 			// Map sem types in TermStatistics.
 			mapping, err := metaMapTerms(queryTerms, metawrap.HTTPClient{URL: o.MetaMapURL})
 			if err != nil {
 				return nil, nil, err
 			}
 
+			fmt.Println("classifying terms")
 			// Classify query TermStatistics.
 			conditions, treatments, studyTypes := classifyQueryTerms(queryTerms, mapping, semTypes)
 
+			fmt.Println("creating keywords")
 			// Create keywords for the proceeding query.
 			conditionsKeywords, treatmentsKeywords, studyTypesKeywords := makeKeywords(conditions, treatments, studyTypes)
 
+			fmt.Println("filtering keywords")
 			// And then filter the query TermStatistics.
 			conditions, treatments, studyTypes, err = FilterQueryTerms(conditions, treatments, studyTypes, fields.TitleAbstract, MakeQrels(dev, o.Topic()), o.s)
 			if err != nil {
 				return nil, nil, err
 			}
 
+			fmt.Println("constructing final query")
 			// Create the query from the three categories.
 			q := constructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords)
 			fmt.Println(q)
 			q = preprocess.DateRestrictions(o.Pubdates)(q, o.query.Topic)()
 			fmt.Println(q)
 
+			fmt.Println("evaluating final query")
 			ev, err := evaluate(q, o.s, dev, val, nil, o.Topic())
 			if err != nil {
 				return nil, nil, err
@@ -1024,6 +1036,7 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 			}
 		}
 	}
+	fmt.Println("completed grid search")
 
 	// Grid search parameters of k for the number of mesh keywords to add to a query.
 	bestEval = 0.0
