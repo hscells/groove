@@ -505,11 +505,12 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 	}
 	//wg := new(sync.WaitGroup)
 
-	//cd, err := os.UserCacheDir()
-	//if err != nil {
-	//	return err
-	//}
-	//indexPath := path.Join(cd, "groove_rank_variations")
+	cd, err := os.UserCacheDir()
+	if err != nil {
+		return err
+	}
+	cachePath := path.Join(cd, "groove_query_cache")
+	fileCache := combinator.NewFileQueryCache(cachePath)
 
 	p := options.VariationsOutput
 	err = os.MkdirAll(path.Join(p, topic), 0777)
@@ -564,6 +565,7 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 		}
 	s:
 		// Obtain list of pmids.
+		combinator.NewLogicalTree(pipeline.NewQuery(candidate.Topic, candidate.Topic, candidate.Query), e, fileCache)
 		pmids, err := e.Search(s)
 		if err != nil {
 			fmt.Println(err)
