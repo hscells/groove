@@ -533,7 +533,7 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, e stats.En
 			fmt.Println(err)
 			goto r
 		}
-		if n < N/2 || n >= N || n == 0 {
+		if n >= N || n == 0 {
 			fmt.Printf(" - skipping variation %d, retrieved documents out of bounds\n", i+1)
 			continue
 		}
