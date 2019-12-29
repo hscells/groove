@@ -481,7 +481,7 @@ func writeResults(list trecresults.ResultList, dir string) error {
 	return nil
 }
 
-func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosting *Posting, e stats.EntrezStatisticsSource, options CLFOptions) error {
+func clfVariations(query cqr.CommonQueryRepresentation, topic string, e stats.EntrezStatisticsSource, options CLFOptions) error {
 	learning.ComputeFeatures = false
 	candidates, err := learning.Variations(learning.CandidateQuery{
 		TransformationID: -1,
@@ -537,10 +537,10 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 			fmt.Printf(" - skipping variation %d, retrieved documents out of bounds\n", i+1)
 			continue
 		}
-		if n > 50000 {
-			fmt.Printf(" - skipping variation %d, retrieved too many documents\n", i+1)
-			continue
-		}
+		//if n > 50000 {
+		//	fmt.Printf(" - skipping variation %d, retrieved too many documents\n", i+1)
+		//	continue
+		//}
 		// String-ify the query.
 		s, err := transmute.CompileCqr2PubMed(candidate.Query)
 		if err != nil {
@@ -552,15 +552,15 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 	}
 
 	fmt.Println("randomly filtering remaining candidates to less than 50")
-	rand.Shuffle(len(candidates), func(i, j int) {
-		candidates[i], candidates[j] = candidates[j], candidates[i]
+	rand.Shuffle(len(filteredCandidates), func(i, j int) {
+		filteredCandidates[i], filteredCandidates[j] = filteredCandidates[j], filteredCandidates[i]
 	})
 	if len(candidates) > 50 {
-		candidates = candidates[:50]
+		filteredCandidates = filteredCandidates[:50]
 	}
 
-	for i, candidate := range candidates {
-		fmt.Printf("[%s] variation %d/%d\n", topic, i+1, len(candidates))
+	for i, candidate := range filteredCandidates {
+		fmt.Printf("[%s] variation %d/%d\n", topic, i+1, len(filteredCandidates))
 
 		// String-ify the query.
 		s, err := transmute.CompileCqr2PubMed(candidate.Query)
@@ -571,7 +571,7 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 		// Obtain list of pmids.
 		tree, _, err := combinator.NewLogicalTree(pipeline.NewQuery(candidate.Topic, candidate.Topic, candidate.Query), e, fileCache)
 		if err != nil {
-			_ = hw.Send(float64(i), float64(len(candidates)), err.Error())
+			_ = hw.Send(float64(i), float64(len(filteredCandidates)), err.Error())
 			fmt.Println(err)
 			goto s
 		}
@@ -655,14 +655,14 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 			return err
 		}
 		if len(options.HeadwayServer) > 0 {
-			err = hw.Send(float64(i), float64(len(candidates)), fmt.Sprintf("retrieved: %f", n))
+			err = hw.Send(float64(i), float64(len(filteredCandidates)), fmt.Sprintf("retrieved: %f", n))
 			if err != nil {
 				log.Println(err)
 			}
 		}
 	}
 	if len(options.HeadwayServer) > 0 {
-		err = hw.Send(float64(len(candidates)), float64(len(candidates)), fmt.Sprintf("done!"))
+		err = hw.Send(float64(len(filteredCandidates)), float64(len(filteredCandidates)), fmt.Sprintf("done!"))
 		if err != nil {
 			log.Println(err)
 		}
@@ -795,30 +795,6 @@ func CLF(query pipeline.Query, e stats.EntrezStatisticsSource, options CLFOption
 	}
 
 	if options.CLFVariations {
-		f, err := os.OpenFile(options.Qrels, os.O_RDONLY, 0664)
-		if err != nil {
-			return nil, err
-		}
-		qrels, err := trecresults.QrelsFromReader(f)
-		if err != nil {
-			return nil, err
-		}
-		rels := qrels.Qrels[query.Topic]
-		var pmidsIdeal []int
-		for _, rel := range rels {
-			if rel.Score > 0 {
-				i, err := strconv.Atoi(rel.DocId)
-				if err != nil {
-					return nil, err
-				}
-				pmidsIdeal = append(pmids, i)
-			}
-		}
-		idealPosting, err := newPostingFromPMIDS(pmidsIdeal, query.Topic, idealIndexPath, e)
-		if err != nil {
-			return nil, err
-		}
-
 		if _, err := os.Stat(path.Join(options.VariationsOutput, query.Topic)); os.IsNotExist(err) {
 			res, err := e.Execute(query, e.SearchOptions())
 			if err != nil {
@@ -828,7 +804,7 @@ func CLF(query pipeline.Query, e stats.EntrezStatisticsSource, options CLFOption
 			if err != nil {
 				return nil, err
 			}
-			return nil, clfVariations(query.Query, query.Topic, idealPosting, e, options)
+			return nil, clfVariations(query.Query, query.Topic, e, options)
 		} else {
 			fmt.Printf("skipping topic %s, already exists\n", query.Topic)
 		}
