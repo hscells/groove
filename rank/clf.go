@@ -796,11 +796,22 @@ func CLF(query pipeline.Query, e stats.EntrezStatisticsSource, options CLFOption
 
 	if options.CLFVariations {
 		if _, err := os.Stat(path.Join(options.VariationsOutput, query.Topic)); os.IsNotExist(err) {
-			res, err := e.Execute(query, e.SearchOptions())
+			//res, err := e.Execute(query, e.SearchOptions())
+			//if err != nil {
+			//	return nil, err
+			//}
+			cd, err := os.UserCacheDir()
 			if err != nil {
 				return nil, err
 			}
-			err = writeResults(res, path.Join(options.VariationsOutput, "orig", query.Topic))
+			cachePath := path.Join(cd, "groove_query_cache")
+			fileCache := combinator.NewFileQueryCache(cachePath)
+			tree, _, err := combinator.NewLogicalTree(query, e, fileCache)
+			if err != nil {
+				return nil, err
+			}
+
+			err = writeResults(tree.Documents(fileCache).Results(query, "o"), path.Join(options.VariationsOutput, "orig", query.Topic))
 			if err != nil {
 				return nil, err
 			}
