@@ -735,7 +735,7 @@ func CLF(query pipeline.Query, e stats.EntrezStatisticsSource, options CLFOption
 		return nil, err
 	}
 	indexPath := path.Join(cd, "groove_rank")
-	idealIndexPath := path.Join(cd, "groove_rank_ideal")
+	//idealIndexPath := path.Join(cd, "groove_rank_ideal")
 
 	var pmids []int
 	b, err := ioutil.ReadFile(path.Join(options.PMIDS, query.Topic))
