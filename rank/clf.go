@@ -555,7 +555,7 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, e stats.En
 	rand.Shuffle(len(filteredCandidates), func(i, j int) {
 		filteredCandidates[i], filteredCandidates[j] = filteredCandidates[j], filteredCandidates[i]
 	})
-	if len(candidates) > 50 {
+	if len(filteredCandidates) > 50 {
 		filteredCandidates = filteredCandidates[:50]
 	}
 
