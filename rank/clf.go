@@ -537,6 +537,10 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 			fmt.Printf(" - skipping variation %d, retrieved documents out of bounds\n", i+1)
 			continue
 		}
+		if n > 50000 {
+			fmt.Printf(" - skipping variation %d, retrieved too many documents\n", i+1)
+			continue
+		}
 		// String-ify the query.
 		s, err := transmute.CompileCqr2PubMed(candidate.Query)
 		if err != nil {
