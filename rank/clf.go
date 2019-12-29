@@ -565,15 +565,22 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, idealPosti
 		}
 	s:
 		// Obtain list of pmids.
-		combinator.NewLogicalTree(pipeline.NewQuery(candidate.Topic, candidate.Topic, candidate.Query), e, fileCache)
-		pmids, err := e.Search(s)
+		tree, _, err := combinator.NewLogicalTree(pipeline.NewQuery(candidate.Topic, candidate.Topic, candidate.Query), e, fileCache)
 		if err != nil {
+			_ = hw.Send(float64(i), float64(len(candidates)), err.Error())
 			fmt.Println(err)
 			goto s
 		}
+		pmids := tree.Documents(fileCache)
+		//pmids, err := e.Search(s)
+		//if err != nil {
+		//	fmt.Println(err)
+		//	goto s
+		//}
+
 		items := make(merging.Items, len(pmids))
 		for i, pmid := range pmids {
-			items[i] = merging.Item{Id: strconv.Itoa(pmid), Score: 0}
+			items[i] = merging.Item{Id: strconv.Itoa(int(pmid)), Score: 0}
 		}
 		// Create posting list for query.
 		//f:
