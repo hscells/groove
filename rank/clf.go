@@ -802,21 +802,21 @@ func CLF(query pipeline.Query, e stats.EntrezStatisticsSource, options CLFOption
 			//if err != nil {
 			//	return nil, err
 			//}
-			cd, err := os.UserCacheDir()
-			if err != nil {
-				return nil, err
-			}
-			cachePath := path.Join(cd, "groove_query_cache")
-			fileCache := combinator.NewFileQueryCache(cachePath)
-			tree, _, err := combinator.NewLogicalTree(query, e, fileCache)
-			if err != nil {
-				return nil, err
-			}
-
-			err = writeResults(tree.Documents(fileCache).Results(query, "o"), path.Join(options.VariationsOutput, "orig", query.Topic))
-			if err != nil {
-				return nil, err
-			}
+			//cd, err := os.UserCacheDir()
+			//if err != nil {
+			//	return nil, err
+			//}
+			//cachePath := path.Join(cd, "groove_query_cache")
+			//fileCache := combinator.NewFileQueryCache(cachePath)
+			//tree, _, err := combinator.NewLogicalTree(query, e, fileCache)
+			//if err != nil {
+			//	return nil, err
+			//}
+			//
+			//err = writeResults(tree.Documents(fileCache).Results(query, "o"), path.Join(options.VariationsOutput, "orig", query.Topic))
+			//if err != nil {
+			//	return nil, err
+			//}
 			return nil, clfVariations(query.Query, query.Topic, e, options)
 		} else {
 			fmt.Printf("skipping topic %s, already exists\n", query.Topic)

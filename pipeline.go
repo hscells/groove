@@ -26,6 +26,7 @@ import (
 	"path"
 	"sort"
 	"strconv"
+	"time"
 )
 
 // Pipeline contains all the information for executing a pipeline for query analysis.
@@ -298,7 +299,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 		var hw *headway.Client
 		loghw := false
 		if len(p.CLF.HeadwayServer) > 0 {
-			hw = headway.NewClient(p.CLF.HeadwayServer, "@harry groove pipeline")
+			hw = headway.NewClient(p.CLF.HeadwayServer, fmt.Sprintf("@harry groove pipeline [#%d]", time.Now().Unix()))
 			if hw != nil {
 				loghw = true
 			}
