@@ -337,13 +337,22 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 				results, err := rank.CLF(q, p.StatisticsSource.(stats.EntrezStatisticsSource), p.CLF)
 				if err != nil {
 					if loghw {
-						_ = hw.Send(float64(i), float64(len(measurementQueries)), err.Error())
+						err = hw.Send(float64(i), float64(len(measurementQueries)), err.Error())
+						if err != nil {
+							log.Println(err)
+						}
 					}
 					c <- pipeline.Result{
 						Error: err,
 						Type:  pipeline.Error,
 					}
 					return
+				}
+				if loghw {
+					err = hw.Send(float64(i), float64(len(measurementQueries)), fmt.Sprintf("[measurement] topic %s", q.Topic))
+					if err != nil {
+						log.Println(err)
+					}
 				}
 				// Set the evaluation results.
 				if len(p.Evaluations) > 0 {
@@ -363,10 +372,6 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 				c <- pipeline.Result{
 					Transformation: pipeline.QueryResult{Name: q.Name, Topic: q.Topic, Transformation: q.Query},
 					Type:           pipeline.Transformation,
-				}
-
-				if loghw {
-					_ = hw.Send(float64(i), float64(len(measurementQueries)), fmt.Sprintf("[measurement] topic %s", q.Topic))
 				}
 
 				log.Printf("completed topic %v\n", q.Topic)
