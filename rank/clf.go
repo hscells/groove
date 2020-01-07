@@ -738,17 +738,19 @@ func CLF(query pipeline.Query, e stats.EntrezStatisticsSource, options CLFOption
 	//idealIndexPath := path.Join(cd, "groove_rank_ideal")
 
 	var pmids []int
-	b, err := ioutil.ReadFile(path.Join(options.PMIDS, query.Topic))
-	if err != nil {
-		return nil, err
-	}
-	s := bufio.NewScanner(bytes.NewBuffer(b))
-	for s.Scan() {
-		pmid, err := strconv.Atoi(s.Text())
+	if !options.CLFVariations {
+		b, err := ioutil.ReadFile(path.Join(options.PMIDS, query.Topic))
 		if err != nil {
 			return nil, err
 		}
-		pmids = append(pmids, pmid)
+		s := bufio.NewScanner(bytes.NewBuffer(b))
+		for s.Scan() {
+			pmid, err := strconv.Atoi(s.Text())
+			if err != nil {
+				return nil, err
+			}
+			pmids = append(pmids, pmid)
+		}
 	}
 
 	if options.QueryExpansion {
