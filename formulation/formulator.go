@@ -7,6 +7,7 @@ import (
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/guru"
 	"github.com/hscells/trecresults"
 	"strconv"
 )
@@ -96,9 +97,32 @@ func ObjectivePostProcessing(processes ...PostProcess) ObjectiveOption {
 		o.postProcessing = processes
 	}
 }
+
 func ObjectiveMinDocs(docs int) ObjectiveOption {
 	return func(o *ObjectiveFormulator) {
 		o.minDocs = docs
+	}
+}
+
+func ObjectiveOptimisation(optimisation eval.Evaluator) ObjectiveOption {
+	return func(o *ObjectiveFormulator) {
+		o.optimisation = optimisation
+	}
+}
+func ObjectiveQrels(rels trecresults.Qrels) ObjectiveOption {
+	return func(o *ObjectiveFormulator) {
+		o.qrels = rels
+	}
+}
+func ObjectivePopulation(population BackgroundCollection) ObjectiveOption {
+	return func(o *ObjectiveFormulator) {
+		o.population = population
+	}
+}
+
+func ObjectiveQuery(query pipeline.Query) ObjectiveOption {
+	return func(o *ObjectiveFormulator) {
+		o.query = query
 	}
 }
 
@@ -131,8 +155,7 @@ func NewObjectiveFormulator(query pipeline.Query, s stats.EntrezStatisticsSource
 	return o
 }
 
-// Formulate returns two queries: one with MeSH terms and one without. It also returns the set of unseen documents for evaluation later.
-func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []SupplementalData, error) {
+func (o ObjectiveFormulator) Derive() (cqr.CommonQueryRepresentation, cqr.CommonQueryRepresentation, []guru.MedlineDocument, []guru.MedlineDocument, []guru.MedlineDocument, error) {
 	// Identify the relevant studies using relevance assessments.
 	var docs []int
 	var nonrel []*trecresults.Qrel
@@ -149,7 +172,7 @@ func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Sup
 	}
 
 	if len(docs) <= o.minDocs {
-		return nil, nil, fmt.Errorf("not enough relevant studies (minimmum %d)", o.minDocs)
+		return nil, nil, nil, nil, nil, fmt.Errorf("not enough relevant studies (minimmum %d)", o.minDocs)
 	}
 
 	// Fetch those relevant documents.
@@ -172,19 +195,29 @@ func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []Sup
 
 	q1, q2, err := o.derive(devTerms, dev, val, o.population, o.optimisation)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 
 	// Post-Processing.
 	for _, postProcessor := range o.postProcessing {
 		q1, err = postProcessor(q1)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
 		q2, err = postProcessor(q2)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
+	}
+
+	return q1, q2, unseen, dev, val, nil
+}
+
+// Formulate returns two queries: one with MeSH terms and one without. It also returns the set of unseen documents for evaluation later.
+func (o ObjectiveFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []SupplementalData, error) {
+	q1, q2, unseen, dev, val, err := o.Derive()
+	if err != nil {
+		return nil, nil, err
 	}
 
 	resNoMesh, err := o.s.Execute(pipeline.NewQuery("objective_nomesh", o.Topic(), q1), o.s.SearchOptions())
