@@ -19,7 +19,7 @@ import (
 
 var (
 	name    = "entrez_eval"
-	version = "28.Mar.2019"
+	version = "06.Jan.2020"
 	author  = "Harry Scells"
 )
 
@@ -100,12 +100,24 @@ func main() {
 	resultsHandlers["deduplicate"] = retrieval.NewDeduplicator(e)
 
 	evaluationMeasures["precision"] = eval.Precision
+	evaluationMeasures["precision_res"] = eval.NewResidualEvaluator(eval.Precision)
+	evaluationMeasures["precision_mle"] = eval.NewMaximumLikelihoodEvaluator(eval.Precision)
 	evaluationMeasures["recall"] = eval.Recall
+	evaluationMeasures["recall_res"] = eval.NewResidualEvaluator(eval.Recall)
+	evaluationMeasures["recall_mle"] = eval.NewMaximumLikelihoodEvaluator(eval.Recall)
 	evaluationMeasures["f1"] = eval.F1Measure
+	evaluationMeasures["f1_res"] = eval.NewResidualEvaluator(eval.F1Measure)
+	evaluationMeasures["f1_mle"] = eval.NewMaximumLikelihoodEvaluator(eval.F1Measure)
 	evaluationMeasures["f0.5"] = eval.F05Measure
+	evaluationMeasures["f0.5_res"] = eval.NewResidualEvaluator(eval.F05Measure)
+	evaluationMeasures["f0.5_mle"] = eval.NewMaximumLikelihoodEvaluator(eval.F05Measure)
 	evaluationMeasures["f3"] = eval.F3Measure
+	evaluationMeasures["f3_res"] = eval.NewResidualEvaluator(eval.F3Measure)
+	evaluationMeasures["f3_mle"] = eval.NewMaximumLikelihoodEvaluator(eval.F3Measure)
 	evaluationMeasures["nnr"] = eval.NNR
 	evaluationMeasures["wss"] = eval.NewWSSEvaluator(N)
+	evaluationMeasures["wss_res"] = eval.NewResidualEvaluator(eval.NewWSSEvaluator(N))
+	evaluationMeasures["wss_mle"] = eval.NewMaximumLikelihoodEvaluator(eval.NewWSSEvaluator(N))
 	evaluationMeasures["num_ret"] = eval.NumRet
 	evaluationMeasures["num_rel"] = eval.NumRel
 	evaluationMeasures["num_rel_ret"] = eval.NumRelRet
