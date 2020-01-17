@@ -33,6 +33,7 @@ type args struct {
 	EvaluationOutput string   `help:"Name of results file" arg:"-q"`
 	Summary          bool     `help:"Only output summary information" arg:"-s"`
 	Topic            string   `help:"Topic to evaluate (only when loading qrels using RPC)" arg:"-t"`
+	EstimateN        float64  `help:"Estimate number of documents" arg:"-n"`
 	QrelsFile        string   `help:"Path to qrels file" arg:"required,positional"`
 	RunFile          string   `help:"Path to run file" arg:"required,positional"`
 }
@@ -80,27 +81,32 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	e, err := stats.NewEntrezStatisticsSource(
-		stats.EntrezTool(c.Entrez.Tool),
-		stats.EntrezAPIKey(c.Entrez.Key),
-		stats.EntrezEmail(c.Entrez.Email),
-		stats.EntrezOptions(stats.SearchOptions{
-			Size:    100000,
-			RunName: "entrez_eval",
-		}))
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	N, err := e.CollectionSize()
-	if err != nil {
-		log.Fatalln(err)
-	}
-
 	resultsHandlers := make(map[string]retrieval.ResultsHandler)
 	evaluationMeasures := make(map[string]eval.Evaluator)
 
-	resultsHandlers["deduplicate"] = retrieval.NewDeduplicator(e)
+	var N float64
+	if args.EstimateN == 0 {
+		e, err := stats.NewEntrezStatisticsSource(
+			stats.EntrezTool(c.Entrez.Tool),
+			stats.EntrezAPIKey(c.Entrez.Key),
+			stats.EntrezEmail(c.Entrez.Email),
+			stats.EntrezOptions(stats.SearchOptions{
+				Size:    100000,
+				RunName: "entrez_eval",
+			}))
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		N, err = e.CollectionSize()
+		if err != nil {
+			log.Fatalln(err)
+		}
+		resultsHandlers["deduplicate"] = retrieval.NewDeduplicator(e)
+
+	} else {
+		N = args.EstimateN
+	}
 
 	evaluationMeasures["precision"] = eval.Precision
 	evaluationMeasures["precision_res"] = eval.NewResidualEvaluator(eval.Precision)
