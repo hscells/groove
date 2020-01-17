@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/BurntSushi/toml"
 	"github.com/alexflint/go-arg"
+	"github.com/hscells/groove/cmd/qrel_server/qrelrpc"
 	"github.com/hscells/groove/eval"
 	"github.com/hscells/groove/output"
 	"github.com/hscells/groove/retrieval"
@@ -12,6 +13,7 @@ import (
 	"github.com/hscells/trecresults"
 	"gonum.org/v1/gonum/stat"
 	"log"
+	"net/rpc"
 	"os"
 	"path"
 	"strings"
@@ -30,6 +32,7 @@ type args struct {
 	RunOutput        string   `help:"Name of processed run file" arg:"-o"`
 	EvaluationOutput string   `help:"Name of results file" arg:"-q"`
 	Summary          bool     `help:"Only output summary information" arg:"-s"`
+	Topic            string   `help:"Topic to evaluate (only when loading qrels using RPC)" arg:"-t"`
 	QrelsFile        string   `help:"Path to qrels file" arg:"required,positional"`
 	RunFile          string   `help:"Path to run file" arg:"required,positional"`
 }
@@ -142,13 +145,27 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	q, err := os.OpenFile(args.QrelsFile, os.O_RDONLY, 0664)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	qrels, err := trecresults.QrelsFromReader(q)
-	if err != nil {
-		log.Fatalln(err)
+	var qrels trecresults.QrelsFile
+	if strings.Contains(args.QrelsFile, ":8004") {
+		client, err := rpc.Dial("tcp", args.QrelsFile)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		q := new(qrelrpc.Response)
+		err = client.Call("QrelsRPC.GetQrels", args.Topic, &q)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		qrels = q.Qrels
+	} else {
+		q, err := os.OpenFile(args.QrelsFile, os.O_RDONLY, 0664)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		qrels, err = trecresults.QrelsFromReader(q)
+		if err != nil {
+			log.Fatalln(err)
+		}
 	}
 
 	evaluation := make(map[string]map[string]float64)
