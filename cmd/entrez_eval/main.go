@@ -10,6 +10,7 @@ import (
 	"github.com/hscells/groove/output"
 	"github.com/hscells/groove/retrieval"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/guru"
 	"github.com/hscells/trecresults"
 	"gonum.org/v1/gonum/stat"
 	"log"
@@ -146,9 +147,41 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	results, err := trecresults.ResultsFromReader(r)
-	if err != nil {
-		log.Fatalln(err)
+
+	var results *trecresults.ResultFile
+	if strings.Contains(args.RunFile, ".xres") || strings.Contains(args.RunFile, ".xrun") {
+		results, err = guru.ReadCompressedTrecResultFile(r)
+		if err != nil {
+			log.Fatalln(err)
+		}
+	} else {
+		rr, err := trecresults.ResultsFromReader(r)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		results = &rr
+	}
+
+	for topic, run := range results.Results {
+		newTopic := ""
+		if strings.Contains(topic, "_") {
+			parts := strings.Split(topic, "_")
+			newTopic = parts[len(parts)-1]
+			newRun := make(trecresults.ResultList, len(run))
+			copy(newRun, run)
+			results.Results[newTopic] = newRun
+			delete(results.Results, topic)
+			fmt.Printf("whoops! topic %s has been corrected automatically to %s\n", topic, parts[len(parts)-1])
+		} else {
+			continue
+		}
+		// Also rename the topic in each element of thee run.
+		for i, el := range run {
+			if strings.Contains(el.Topic, "_") {
+				run[i].Topic = newTopic
+				run[i].RunName = newTopic
+			}
+		}
 	}
 
 	var qrels trecresults.QrelsFile
