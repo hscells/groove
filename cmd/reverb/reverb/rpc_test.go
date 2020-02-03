@@ -13,7 +13,7 @@ func TestReverb(t *testing.T) {
 		},
 		Query: boogie.PipelineQuery{
 			Format: "medline",
-			Path:   "/Users/s4558151/go/src/github.com/hscells/groove/scripts/tar2_testing_topics",
+			Path:   "reverb_queries",
 		},
 		Measurements: []string{"boolean_clauses", "boolean_keywords"},
 		Output: boogie.PipelineOutput{
@@ -23,5 +23,5 @@ func TestReverb(t *testing.T) {
 		},
 	}
 
-	reverb.Execute(dsl, "ielab-sysrev3.uqcloud.net:443")
+	reverb.Execute(dsl, "ielab-sysrev3.uqcloud.net:80")
 }

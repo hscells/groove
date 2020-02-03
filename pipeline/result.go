@@ -33,8 +33,8 @@ const (
 // Result is the output of a groove pipeline.
 type Result struct {
 	Topic          string
-	Measurements   []string
-	Evaluations    []string
+	Measurements   map[string]float64
+	Evaluations    map[string]float64
 	Transformation QueryResult
 	TrecResults    *trecresults.ResultList
 	Type           ResultType

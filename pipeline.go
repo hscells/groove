@@ -3,7 +3,6 @@ package groove
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/hscells/groove/analysis"
@@ -253,7 +252,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 		// The measurements are computed in parallel.
 		N := len(p.Measurements)
 		headers := make([]string, N)
-		data := make([][]float64, N)
+		data := make(map[string]float64)
 
 		for i, measure := range p.Measurements {
 			headers[i] = measure.Name()
@@ -271,32 +270,33 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 					return
 				}
 				for i, measurement := range measurements {
-					data[i] = append(data[i], measurement)
+					data[p.Measurements[i].Name()] = measurement
 				}
 			}
 
-			// Format the measurement results into specified formats.
-			outputs := make([]string, len(p.MeasurementFormatters))
-			for i, formatter := range p.MeasurementFormatters {
-				if len(data) > 0 && len(topics) != len(data[0]) {
-					c <- pipeline.Result{
-						Error: errors.New("the length of topics and data must be the same"),
-						Type:  pipeline.Error,
-					}
-				}
-				outputs[i], err = formatter(topics, headers, data)
-				if err != nil {
-					c <- pipeline.Result{
-						Error: err,
-						Type:  pipeline.Error,
-					}
-					return
-				}
-			}
+			//// Format the measurement results into specified formats.
+			//outputs := make([]string, len(p.MeasurementFormatters))
+			//for i, formatter := range p.MeasurementFormatters {
+			//	if len(data) > 0 && len(topics) != len(data[0]) {
+			//		c <- pipeline.Result{
+			//			Error: errors.New("the length of topics and data must be the same"),
+			//			Type:  pipeline.Error,
+			//		}
+			//	}
+			//	outputs[i], err = formatter(topics, headers, data)
+			//	if err != nil {
+			//		c <- pipeline.Result{
+			//			Error: err,
+			//			Type:  pipeline.Error,
+			//		}
+			//		return
+			//	}
+			//}
 			c <- pipeline.Result{
-				Measurements: outputs,
+				Measurements: data,
 				Type:         pipeline.Measurement,
 			}
+
 		}
 
 		loghw := !(p.Headway == nil)
@@ -375,9 +375,6 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 		} else if len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0 {
 			// This section is run concurrently, since the results can sometimes get quite large and we don't want to eat ram.
 
-			// Store the measurements to be output later.
-			measurements := make(map[string]map[string]float64)
-
 			// Set the limit to how many goroutines can be run.
 			// http://jmoiron.net/blog/limiting-concurrency-in-go/
 			concurrency := 1 //runtime.NumCPU()
@@ -446,7 +443,11 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 
 					// Set the evaluation results.
 					if len(p.Evaluations) > 0 {
-						measurements[query.Topic] = eval.Evaluate(p.Evaluations, &trecResults, p.EvaluationFormatters.EvaluationQrels, query.Topic)
+						c <- pipeline.Result{
+							Topic:       query.Topic,
+							Evaluations: eval.Evaluate(p.Evaluations, &trecResults, p.EvaluationFormatters.EvaluationQrels, query.Topic),
+							Type:        pipeline.Evaluation,
+						}
 					}
 
 					// MeasurementOutput the trec results.
@@ -473,26 +474,6 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 				sem <- true
 			}
 
-			// MeasurementOutput the evaluation results.
-			evaluations := make([]string, len(p.EvaluationFormatters.EvaluationFormatters))
-			// Now we can finally get to formatting the evaluation results.
-			for i, f := range p.EvaluationFormatters.EvaluationFormatters {
-				r, err := f(measurements)
-				if err != nil {
-					c <- pipeline.Result{
-						Error: err,
-						Type:  pipeline.Error,
-					}
-					return
-				}
-				evaluations[i] = r
-			}
-
-			// And send the through the channel.
-			c <- pipeline.Result{
-				Evaluations: evaluations,
-				Type:        pipeline.Evaluation,
-			}
 		}
 	}
 
