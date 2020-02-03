@@ -5,8 +5,8 @@ import (
 	"encoding/gob"
 	"fmt"
 	"github.com/alexflint/go-arg"
-	"github.com/go-errors/errors"
 	"github.com/hscells/boogie"
+	"github.com/hscells/cqr"
 	"github.com/hscells/groove/cmd/reverb/reverb"
 	"github.com/hscells/groove/pipeline"
 	"io/ioutil"
@@ -69,7 +69,8 @@ func main() {
 	gob.Register(os.PathError{})
 	gob.Register(syscall.Errno(0))
 	gob.Register(map[string]interface{}{})
-	gob.Register(errors.Error{})
+	gob.Register(cqr.BooleanQuery{})
+	gob.Register(cqr.Keyword{})
 
 	if args.Mode == "server" {
 		addr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:"+args.Port)
