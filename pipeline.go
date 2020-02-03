@@ -4,6 +4,7 @@ package groove
 import (
 	"bytes"
 	"fmt"
+	"github.com/go-errors/errors"
 	"github.com/google/uuid"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
@@ -362,7 +363,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			f, err := os.OpenFile(p.OutputTrec.Path, os.O_RDONLY, 0664)
 			if err != nil {
 				c <- pipeline.Result{
-					Error: err,
+					Error: errors.New(err.Error()),
 					Type:  pipeline.Error,
 				}
 				return
@@ -371,7 +372,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			r, err := trecresults.ResultsFromReader(f)
 			if err != nil {
 				c <- pipeline.Result{
-					Error: err,
+					Error: errors.New(err.Error()),
 					Type:  pipeline.Error,
 				}
 				return
