@@ -1,13 +1,40 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
+	"github.com/alexflint/go-arg"
 	"github.com/hscells/boogie"
 	"github.com/hscells/groove/cmd/reverb/reverb"
 	"github.com/hscells/groove/pipeline"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/rpc"
 )
+
+var (
+	name    = "reverb"
+	version = "03.Jan.2020"
+	author  = "Harry Scells"
+)
+
+type args struct {
+	Pipeline     string   `help:"Path to boogie experimental pipeline file" arg:"-p"`
+	Hosts        []string `help:"When in client mode, list of reverb servers to distribute the pipeline across" arg:"-s"`
+	Mode         string   `help:"Mode to run reverb in [client/server]" arg:"required,positional"`
+	TemplateArgs []string `help:"Additional arguments to pass to experimental pipeline file" arg:"positional"`
+}
+
+func (args) Version() string {
+	return version
+}
+
+func (args) Description() string {
+	return fmt.Sprintf(`%s
+@ %s
+# %s`, name, author, version)
+}
 
 type Reverb struct{}
 
@@ -31,22 +58,40 @@ func (r *Reverb) Execute(dsl boogie.Pipeline, resp *reverb.Response) error {
 }
 
 func main() {
+	var args args
+	arg.MustParse(&args)
 
-	addr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:8005")
-	if err != nil {
-		panic(err)
-	}
+	if args.Mode == "server" {
+		addr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:8005")
+		if err != nil {
+			panic(err)
+		}
 
-	inbound, err := net.ListenTCP("tcp", addr)
-	if err != nil {
-		panic(err)
-	}
+		inbound, err := net.ListenTCP("tcp", addr)
+		if err != nil {
+			panic(err)
+		}
 
-	listener := new(Reverb)
-	err = rpc.Register(listener)
-	if err != nil {
-		panic(err)
+		listener := new(Reverb)
+		err = rpc.Register(listener)
+		if err != nil {
+			panic(err)
+		}
+		log.Println("ready to go!")
+		rpc.Accept(inbound)
+	} else if args.Mode == "client" {
+		// Read the contents of the dsl file.
+		b, err := ioutil.ReadFile(args.Pipeline)
+		if err != nil {
+			panic(err)
+		}
+
+		// Parse the dsl file into a struct.
+		dsl, err := boogie.Template(bytes.NewBuffer(b), args.TemplateArgs...)
+		if err != nil {
+			panic(err)
+		}
+
+		reverb.Execute(dsl, args.Hosts...)
 	}
-	log.Println("ready to go!")
-	rpc.Accept(inbound)
 }
