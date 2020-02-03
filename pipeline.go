@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
 	"github.com/hscells/groove/eval"
@@ -26,7 +27,6 @@ import (
 	"path"
 	"sort"
 	"strconv"
-	"time"
 )
 
 // Pipeline contains all the information for executing a pipeline for query analysis.
@@ -47,6 +47,7 @@ type Pipeline struct {
 	Model                 learning.Model
 	ModelConfiguration    ModelConfiguration
 	QueryFormulator       formulation.Formulator
+	Headway               *headway.Client
 
 	CLF rank.CLFOptions
 }
@@ -149,6 +150,8 @@ func NewGroovePipeline(qs query.QueriesSource, ss stats.StatisticsSource, compon
 func (p Pipeline) Execute(c chan pipeline.Result) {
 	defer close(c)
 	log.Println("starting groove pipeline...")
+
+	p.CLF.Headway = p.Headway
 
 	// TODO this method needs some serious refactoring done to it.
 
@@ -296,14 +299,8 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 			}
 		}
 
-		var hw *headway.Client
-		loghw := false
-		if len(p.CLF.HeadwayServer) > 0 {
-			hw = headway.NewClient(p.CLF.HeadwayServer, fmt.Sprintf("@harry groove pipeline [#%d]", time.Now().Unix()))
-			if hw != nil {
-				loghw = true
-			}
-		}
+		loghw := !(p.Headway == nil)
+		hwName := fmt.Sprintf("groove (%s)", uuid.New().String())
 
 		if (len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0) && p.CLF.CLF {
 			// Store the measurements to be output later.
@@ -337,10 +334,8 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 				results, err := rank.CLF(q, p.StatisticsSource.(stats.EntrezStatisticsSource), p.CLF)
 				if err != nil {
 					if loghw {
-						err = hw.Send(float64(i), float64(len(measurementQueries)), err.Error())
-						if err != nil {
-							log.Println(err)
-						}
+						_ = p.Headway.Message(err.Error())
+						_ = p.Headway.Send(float64(i), float64(len(measurementQueries)), hwName, err.Error())
 					}
 					c <- pipeline.Result{
 						Error: err,
@@ -349,10 +344,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 					return
 				}
 				if loghw {
-					err = hw.Send(float64(i), float64(len(measurementQueries)), fmt.Sprintf("[measurement] topic %s", q.Topic))
-					if err != nil {
-						log.Println(err)
-					}
+					_ = p.Headway.Send(float64(i), float64(len(measurementQueries)), hwName, fmt.Sprintf("[measurement] topic %s", q.Topic))
 				}
 				// Set the evaluation results.
 				if len(p.Evaluations) > 0 {
@@ -377,7 +369,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 				log.Printf("completed topic %v\n", q.Topic)
 			}
 			if loghw {
-				_ = hw.Send(float64(len(measurementQueries)), float64(len(measurementQueries)), "[measurement] done!")
+				_ = p.Headway.Send(float64(len(measurementQueries)), float64(len(measurementQueries)), hwName, "[measurement] done!")
 			}
 
 		} else if len(p.OutputTrec.Path) > 0 || len(p.EvaluationFormatters.EvaluationFormatters) > 0 {
@@ -446,7 +438,8 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 					trecResults, err := p.StatisticsSource.Execute(query, p.StatisticsSource.SearchOptions())
 					if err != nil {
 						if loghw {
-							_ = hw.Send(float64(i), float64(len(measurementQueries)), err.Error())
+							_ = p.Headway.Message(err.Error())
+							_ = p.Headway.Send(float64(i), float64(len(measurementQueries)), hwName, err.Error())
 						}
 						panic(err)
 					}

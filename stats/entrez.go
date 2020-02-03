@@ -177,17 +177,27 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 		p.RetMax = e.options.Size
 	}
 
-	//entrez.Limit.Wait()
 	v := url.Values{}
 	v["db"] = []string{e.db}
 	v["term"] = []string{query}
 	fillParams(p, v)
 	fmt.Print(".")
+	fails, nfails := 20, 20
+search:
 	r, err := entrez.SearchURL.Get(v, e.tool, e.email, entrez.Limit)
 	if err != nil {
-		return nil, err
+		if fails > 0 {
+			log.Printf("search error: %v, retrying %d more times for %s", err, fails, time.Duration(((nfails-fails)*5)*int(time.Second)))
+			fails--
+			time.Sleep(time.Duration((nfails-fails)*5) * time.Second)
+			goto search
+		}
+		goto search
 	}
-	defer r.Close()
+	err = r.Close()
+	if err != nil {
+		log.Println(err)
+	}
 	fmt.Print(".")
 	b, err := ioutil.ReadAll(r)
 	if err != nil {
@@ -216,9 +226,8 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 		return nil, err
 	}
 
-	//pmids = s.EsearchResult.Idlist
 	fmt.Printf("[%d/%s]", retstart+len(pmids), s.EsearchResult.Count)
-	//log.Println(len(pmids) == e.options.Size, len(pmids), e.options.Size)
+
 	// If the number of pmids equals the execute size, there might be more to come.
 	if e.rank || (e.Limit > 0 && len(pmids) >= e.Limit) {
 		return pmids, nil
@@ -228,7 +237,7 @@ func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.P
 		l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)), e.SearchSize(e.SearchOptions().Size))
 		if err != nil {
 			if fails > 0 {
-				log.Printf("error: %v, retrying %d more times for %f seconds", err, fails, time.Duration(((nfails - fails) * 5) * int(time.Second)).Seconds())
+				log.Printf("recursive search error: %v, retrying %d more times for %f seconds", err, fails, time.Duration(((nfails - fails) * 5) * int(time.Second)).Seconds())
 				fails--
 				time.Sleep(time.Duration((nfails-fails)*5) * time.Second)
 				goto retry

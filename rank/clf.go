@@ -23,7 +23,6 @@ import (
 	"github.com/reiver/go-porterstemmer"
 	"gopkg.in/jdkato/prose.v2"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"os"
 	"path"
@@ -498,13 +497,6 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, e stats.En
 		return err
 	}
 
-	var hw *headway.Client
-	if len(options.HeadwayServer) > 0 {
-		log.Println("connecting to headway server...")
-		hw = headway.NewClient(options.HeadwayServer, fmt.Sprintf("@harry topic [%s]", topic))
-	}
-	//wg := new(sync.WaitGroup)
-
 	cd, err := os.UserCacheDir()
 	if err != nil {
 		return err
@@ -537,10 +529,6 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, e stats.En
 			fmt.Printf(" - skipping variation %d, retrieved documents out of bounds\n", i+1)
 			continue
 		}
-		//if n > 50000 {
-		//	fmt.Printf(" - skipping variation %d, retrieved too many documents\n", i+1)
-		//	continue
-		//}
 		// String-ify the query.
 		s, err := transmute.CompileCqr2PubMed(candidate.Query)
 		if err != nil {
@@ -560,114 +548,96 @@ func clfVariations(query cqr.CommonQueryRepresentation, topic string, e stats.En
 	}
 
 	for i, candidate := range filteredCandidates {
-		fmt.Printf("[%s] variation %d/%d\n", topic, i+1, len(filteredCandidates))
+		go func() {
+			fmt.Printf("[%s] variation %d/%d\n", topic, i+1, len(filteredCandidates))
 
-		// String-ify the query.
-		s, err := transmute.CompileCqr2PubMed(candidate.Query)
-		if err != nil {
-			return err
-		}
-	s:
-		// Obtain list of pmids.
-		tree, _, err := combinator.NewLogicalTree(pipeline.NewQuery(candidate.Topic, candidate.Topic, candidate.Query), e, fileCache)
-		if err != nil {
-			_ = hw.Send(float64(i), float64(len(filteredCandidates)), err.Error())
-			fmt.Println(err)
-			goto s
-		}
-		pmids := tree.Documents(fileCache)
-		//pmids, err := e.Search(s)
-		//if err != nil {
-		//	fmt.Println(err)
-		//	goto s
-		//}
-
-		items := make(merging.Items, len(pmids))
-		for i, pmid := range pmids {
-			items[i] = merging.Item{Id: strconv.Itoa(int(pmid)), Score: 0}
-		}
-		// Create posting list for query.
-		//f:
-		//posting, err := newPostingFromPMIDS(pmids, topic+"_"+strconv.Itoa(int(hash(s))), indexPath, e)
-		//if err != nil {
-		//	fmt.Println(err)
-		//	goto f
-		//}
-		//// Use fusion technique to rank retrieved results and write results to file.
-		//res, err := clf(pipeline.NewQuery(topic, topic, candidate.Query), posting, e, options)
-		//if err != nil {
-		//	return err
-		//}
-		err = writeResults(items.TRECResults(topic), path.Join(p, topic, strconv.Itoa(int(hash(s)))+".res.retrieved"))
-		if err != nil {
-			return err
-		}
-		// Use fusion technique to rank only the relevant results and write to file.
-		//idealRes, err := clf(pipeline.NewQuery(topic, topic, candidate.Query), idealPosting, e, options)
-		//if err != nil {
-		//	return err
-		//}
-		//err = writeResults(idealRes, path.Join(p, topic, strconv.Itoa(int(hash(s)))+".res.ideal"))
-		//if err != nil {
-		//	return err
-		//}
-		// Write the query to file for posterity.
-		f, err := os.OpenFile(path.Join(p, topic, strconv.Itoa(int(hash(s)))+".qry"), os.O_CREATE|os.O_WRONLY, 0664)
-		if err != nil {
-			return err
-		}
-		_, err = f.WriteString(s)
-		if err != nil {
-			return err
-		}
-		err = f.Close()
-		if err != nil {
-			return err
-		}
-
-		// Write the transformation ID.
-		f2, err := os.OpenFile(path.Join(p, topic, strconv.Itoa(int(hash(s)))+".t12n"), os.O_CREATE|os.O_WRONLY, 0664)
-		if err != nil {
-			return err
-		}
-		_, err = f2.WriteString(strconv.Itoa(candidate.TransformationID))
-		if err != nil {
-			return err
-		}
-		err = f2.Close()
-		if err != nil {
-			return err
-		}
-
-		n := numRet[hash(s)]
-
-		// Write the transformation ID.
-		f3, err := os.OpenFile(path.Join(p, topic, strconv.Itoa(int(hash(s)))+".ret"), os.O_CREATE|os.O_WRONLY, 0664)
-		if err != nil {
-			return err
-		}
-		_, err = f3.WriteString(strconv.Itoa(int(n)))
-		if err != nil {
-			return err
-		}
-		err = f3.Close()
-		if err != nil {
-			return err
-		}
-		if len(options.HeadwayServer) > 0 {
-			err = hw.Send(float64(i), float64(len(filteredCandidates)), fmt.Sprintf("retrieved: %f", n))
+			// String-ify the query.
+			s, err := transmute.CompileCqr2PubMed(candidate.Query)
 			if err != nil {
-				log.Println(err)
+				panic(err)
 			}
-		}
+		s:
+			// Obtain list of pmids.
+			tree, _, err := combinator.NewLogicalTree(pipeline.NewQuery(candidate.Topic, candidate.Topic, candidate.Query), e, fileCache)
+			if err != nil {
+				if options.Headway != nil {
+					go options.Headway.Message(err.Error())
+				}
+				fmt.Println(err)
+				goto s
+			}
+			pmids := tree.Documents(fileCache)
+			//pmids, err := e.Search(s)
+			//if err != nil {
+			//	fmt.Println(err)
+			//	goto s
+			//}
+
+			items := make(merging.Items, len(pmids))
+			for i, pmid := range pmids {
+				items[i] = merging.Item{Id: strconv.Itoa(int(pmid)), Score: 0}
+			}
+			// Create posting list for query.
+			//f:
+			//posting, err := newPostingFromPMIDS(pmids, topic+"_"+strconv.Itoa(int(hash(s))), indexPath, e)
+			//if err != nil {
+			//	fmt.Println(err)
+			//	goto f
+			//}
+			//// Use fusion technique to rank retrieved results and write results to file.
+			//res, err := clf(pipeline.NewQuery(topic, topic, candidate.Query), posting, e, options)
+			//if err != nil {
+			//	return err
+			//}
+			err = writeResults(items.TRECResults(topic), path.Join(p, topic, strconv.Itoa(int(hash(s)))+".res.retrieved"))
+			if err != nil {
+				panic(err)
+			}
+			// Use fusion technique to rank only the relevant results and write to file.
+			//idealRes, err := clf(pipeline.NewQuery(topic, topic, candidate.Query), idealPosting, e, options)
+			//if err != nil {
+			//	return err
+			//}
+			//err = writeResults(idealRes, path.Join(p, topic, strconv.Itoa(int(hash(s)))+".res.ideal"))
+			//if err != nil {
+			//	return err
+			//}
+			// Write the query to file for posterity.
+			f, err := os.OpenFile(path.Join(p, topic, strconv.Itoa(int(hash(s)))+".qry"), os.O_CREATE|os.O_WRONLY, 0664)
+			if err != nil {
+				panic(err)
+			}
+			_, err = f.WriteString(s)
+			if err != nil {
+				panic(err)
+			}
+			err = f.Close()
+			if err != nil {
+				panic(err)
+			}
+
+			// Write the transformation ID.
+			f2, err := os.OpenFile(path.Join(p, topic, strconv.Itoa(int(hash(s)))+".t12n"), os.O_CREATE|os.O_WRONLY, 0664)
+			if err != nil {
+				panic(err)
+			}
+			_, err = f2.WriteString(strconv.Itoa(candidate.TransformationID))
+			if err != nil {
+				panic(err)
+			}
+			err = f2.Close()
+			if err != nil {
+				panic(err)
+			}
+
+			if options.Headway != nil {
+				go options.Headway.Send(float64(i), float64(len(filteredCandidates)), fmt.Sprintf("topic [%s]", topic), "")
+			}
+		}()
 	}
-	if len(options.HeadwayServer) > 0 {
-		err = hw.Send(float64(len(filteredCandidates)), float64(len(filteredCandidates)), fmt.Sprintf("done!"))
-		if err != nil {
-			log.Println(err)
-		}
+	if options.Headway != nil {
+		go options.Headway.Send(float64(len(filteredCandidates)), float64(len(filteredCandidates)), fmt.Sprintf("topic [%s]", topic), "done!")
 	}
-	//wg.Wait()
 	return nil
 }
 
@@ -715,9 +685,8 @@ type CLFOptions struct {
 	mapping          cui2vec.Mapping
 	quickumlscache   quickumlsrest.Cache
 
-	Titles string `json:"titles"`
-
-	HeadwayServer string `json:"headway_server"`
+	Titles  string `json:"titles"`
+	Headway *headway.Client
 }
 
 func (o CLFOptions) SetVariationOptions(vector cui2vec.Embeddings, mapping cui2vec.Mapping, cache quickumlsrest.Cache) CLFOptions {
