@@ -30,32 +30,32 @@ func Execute(dsl boogie.Pipeline, hosts ...string) {
 				res <- result
 			}
 			wg.Done()
+			log.Println("completed experiments on", h)
 		}(host)
 	}
 
-	log.Println("executing results pipeline...")
+	var wg2 sync.WaitGroup
+	wg2.Add(1)
 	go func() {
 		err := boogie.Execute(dsl, res)
 		if err != nil {
 			panic(err)
 		}
+		log.Println("competed processing results")
+		wg2.Done()
 	}()
 
-	log.Println("accumulating results...")
 	go func() {
 		for err := range errs {
 			if err != nil {
 				panic(err)
 			}
 		}
-
+		log.Println("no errors found in experiments")
 	}()
-
-	log.Println("waiting for all experiments to complete")
 
 	wg.Wait()
 	close(errs)
 	close(res)
-
-	log.Println("no errors found in experiments")
+	wg2.Wait()
 }

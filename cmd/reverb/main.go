@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/gob"
 	"fmt"
 	"github.com/alexflint/go-arg"
 	"github.com/hscells/boogie"
@@ -11,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/rpc"
+	"os"
 )
 
 var (
@@ -61,6 +63,8 @@ func (r *Reverb) Execute(dsl boogie.Pipeline, resp *reverb.Response) error {
 func main() {
 	var args args
 	arg.MustParse(&args)
+
+	gob.Register(os.PathError{})
 
 	if args.Mode == "server" {
 		addr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:"+args.Port)
