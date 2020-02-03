@@ -359,26 +359,31 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 
 			log.Printf("starting to execute queries with %d goroutines\n", concurrency)
 
-			f, err := os.OpenFile(p.OutputTrec.Path, os.O_RDONLY, 0664)
-			if err != nil {
-				log.Println(err)
-				c <- pipeline.Result{
-					Error: err,
-					Type:  pipeline.Error,
+			var r trecresults.ResultFile
+			if _, err := os.Stat(p.OutputTrec.Path); os.IsExist(err) {
+				f, err := os.OpenFile(p.OutputTrec.Path, os.O_RDONLY, 0664)
+				if err != nil {
+					log.Println(err)
+					c <- pipeline.Result{
+						Error: err,
+						Type:  pipeline.Error,
+					}
+					return
 				}
-				return
-			}
 
-			r, err := trecresults.ResultsFromReader(f)
-			if err != nil {
-				log.Println(err)
-				c <- pipeline.Result{
-					Error: err,
-					Type:  pipeline.Error,
+				r, err = trecresults.ResultsFromReader(f)
+				if err != nil {
+					log.Println(err)
+					c <- pipeline.Result{
+						Error: err,
+						Type:  pipeline.Error,
+					}
+					return
 				}
-				return
+				f.Close()
+			} else {
+				r = *trecresults.NewResultFile()
 			}
-			f.Close()
 
 			sem := make(chan bool, concurrency)
 			for i, q := range measurementQueries {
