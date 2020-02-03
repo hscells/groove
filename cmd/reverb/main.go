@@ -20,8 +20,9 @@ var (
 )
 
 type args struct {
-	Pipeline     string   `help:"Path to boogie experimental pipeline file" arg:"-p"`
-	Hosts        []string `help:"When in client mode, list of reverb servers to distribute the pipeline across" arg:"-s"`
+	Pipeline     string   `help:"Path to boogie experimental pipeline file"`
+	Port         string   `help:"Port to run server on" arg:"-p"`
+	Hosts        []string `help:"When in client mode, list of reverb servers to distribute the pipeline across" arg:"-s,separate"`
 	Mode         string   `help:"Mode to run reverb in [client/server]" arg:"required,positional"`
 	TemplateArgs []string `help:"Additional arguments to pass to experimental pipeline file" arg:"positional"`
 }
@@ -62,7 +63,7 @@ func main() {
 	arg.MustParse(&args)
 
 	if args.Mode == "server" {
-		addr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:8005")
+		addr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:"+args.Port)
 		if err != nil {
 			panic(err)
 		}

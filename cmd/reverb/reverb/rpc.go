@@ -19,7 +19,7 @@ func Execute(dsl boogie.Pipeline, hosts ...string) {
 	for _, host := range hosts {
 		wg.Add(1)
 		go func() {
-			client, err := rpc.Dial("tcp", host)
+			client, err := rpc.DialHTTP("tcp", host)
 			if err != nil {
 				panic(err)
 			}
