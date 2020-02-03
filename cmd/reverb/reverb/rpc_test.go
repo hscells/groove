@@ -23,5 +23,5 @@ func TestReverb(t *testing.T) {
 		},
 	}
 
-	reverb.Execute(dsl, "ielab-sysrev3.uqcloud.net:80")
+	reverb.Execute(dsl, "ielab-sysrev3.uqcloud.net:80", "ielab-sysrev4.uqcloud.net:80")
 }

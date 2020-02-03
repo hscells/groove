@@ -250,17 +250,10 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 
 		// Compute measurements for each of the queries.
 		// The measurements are computed in parallel.
-		N := len(p.Measurements)
-		headers := make([]string, N)
-		data := make(map[string]float64)
-
-		for i, measure := range p.Measurements {
-			headers[i] = measure.Name()
-		}
-
 		// Only perform the measurements if there are some measurement formatters to output them to.
 		if len(p.MeasurementFormatters) > 0 {
 			for _, m := range measurementQueries {
+				data := make(map[string]float64)
 				measurements, err := p.MeasurementExecutor.Execute(m, p.StatisticsSource, p.Measurements...)
 				if err != nil {
 					c <- pipeline.Result{
@@ -272,31 +265,12 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 				for i, measurement := range measurements {
 					data[p.Measurements[i].Name()] = measurement
 				}
+				c <- pipeline.Result{
+					Topic:        m.Topic,
+					Measurements: data,
+					Type:         pipeline.Measurement,
+				}
 			}
-
-			//// Format the measurement results into specified formats.
-			//outputs := make([]string, len(p.MeasurementFormatters))
-			//for i, formatter := range p.MeasurementFormatters {
-			//	if len(data) > 0 && len(topics) != len(data[0]) {
-			//		c <- pipeline.Result{
-			//			Error: errors.New("the length of topics and data must be the same"),
-			//			Type:  pipeline.Error,
-			//		}
-			//	}
-			//	outputs[i], err = formatter(topics, headers, data)
-			//	if err != nil {
-			//		c <- pipeline.Result{
-			//			Error: err,
-			//			Type:  pipeline.Error,
-			//		}
-			//		return
-			//	}
-			//}
-			c <- pipeline.Result{
-				Measurements: data,
-				Type:         pipeline.Measurement,
-			}
-
 		}
 
 		loghw := !(p.Headway == nil)
@@ -362,6 +336,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 
 				// Send the transformation through the channel.
 				c <- pipeline.Result{
+					Topic:          q.Topic,
 					Transformation: pipeline.QueryResult{Name: q.Name, Topic: q.Topic, Transformation: q.Query},
 					Type:           pipeline.Transformation,
 				}
@@ -461,6 +436,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 
 					// Send the transformation through the channel.
 					c <- pipeline.Result{
+						Topic:          q.Topic,
 						Transformation: pipeline.QueryResult{Name: query.Name, Topic: query.Topic, Transformation: query.Query},
 						Type:           pipeline.Transformation,
 					}
