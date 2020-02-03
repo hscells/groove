@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"syscall"
 )
 
 var (
@@ -65,6 +66,8 @@ func main() {
 	arg.MustParse(&args)
 
 	gob.Register(os.PathError{})
+	gob.Register(syscall.Errno(0))
+	gob.Register(map[string]interface{}{})
 
 	if args.Mode == "server" {
 		addr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:"+args.Port)

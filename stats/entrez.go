@@ -194,10 +194,7 @@ search:
 		}
 		goto search
 	}
-	err = r.Close()
-	if err != nil {
-		log.Println(err)
-	}
+	defer r.Close()
 	fmt.Print(".")
 	b, err := ioutil.ReadAll(r)
 	if err != nil {
@@ -285,7 +282,7 @@ retry:
 	r, err := entrez.Fetch(e.db, p, e.tool, e.email, nil, pmids...)
 	if err != nil {
 		if fails > 0 {
-			log.Printf("error: %v, retrying %d more times for %f seconds", err, fails, time.Duration(((nfails - fails) * 5) * int(time.Second)).Seconds())
+			log.Printf("fetch error: %v, retrying %d more times for %f seconds", err, fails, time.Duration(((nfails - fails) * 5) * int(time.Second)).Seconds())
 			fails--
 			time.Sleep(time.Duration((nfails-fails)*5) * time.Second)
 			goto retry
@@ -499,7 +496,7 @@ retry:
 	s, err := entrez.DoSearch(e.db, q, &entrez.Parameters{RetType: "xml", APIKey: e.key}, nil, e.tool, e.email)
 	if err != nil {
 		if fails > 0 {
-			log.Printf("error: %v, retrying %d more times for %d seconds", err, fails, ((nfails-fails)*5)*int(time.Second))
+			log.Printf("retrieval size error: %v, retrying %d more times for %d seconds", err, fails, ((nfails-fails)*5)*int(time.Second))
 			fails--
 			time.Sleep(time.Duration((nfails-fails)*5) * time.Second)
 			goto retry
@@ -542,7 +539,7 @@ execute:
 	pmids, err := e.Search(q)
 	if err != nil {
 		if fails > 0 {
-			log.Printf("error: %v, retrying %d more times for query: %s", err, fails, q)
+			log.Printf("search execution error: %v, retrying %d more times for query: %s", err, fails, q)
 			fails--
 			time.Sleep(5 * time.Second)
 			goto execute

@@ -24,6 +24,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"runtime"
 	"sort"
 	"strconv"
 )
@@ -352,7 +353,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 
 			// Set the limit to how many goroutines can be run.
 			// http://jmoiron.net/blog/limiting-concurrency-in-go/
-			concurrency := 1 //runtime.NumCPU()
+			concurrency := runtime.NumCPU()
 
 			log.Println(p.OutputTrec)
 
