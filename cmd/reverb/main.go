@@ -37,9 +37,16 @@ func (args) Version() string {
 }
 
 func (args) Description() string {
-	return fmt.Sprintf(`%s
+	return fmt.Sprintf(`
+                        __ 
+  _______ _  _____ ____/ / 
+ / __/ -_) |/ / -_) __/ _ \
+/_/  \__/|___/\__/_/ /_.__/
+
+%s
 @ %s
-# %s`, name, author, version)
+# %s
+`, name, author, version)
 }
 
 type Reverb struct{}
@@ -60,6 +67,8 @@ func (r *Reverb) Execute(dsl boogie.Pipeline, resp *reverb.Response) error {
 	}
 
 	log.Println("experiments completed!")
+	fmt.Print(args{}.Description())
+	fmt.Println("[ready]")
 	return nil
 }
 
@@ -80,13 +89,7 @@ func main() {
 	gob.Register(pipeline.SupplementalData{})
 	gob.Register(pipeline.Data{})
 
-	fmt.Printf(`
-                        __ 
-  _______ _  _____ ____/ / 
- / __/ -_) |/ / -_) __/ _ \
-/_/  \__/|___/\__/_/ /_.__/
-%s
-\n`, args.Description())
+	fmt.Print(args.Description())
 
 	if args.Mode == "server" {
 		fmt.Println("[server mode]")

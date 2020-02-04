@@ -7,7 +7,9 @@ import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/guru"
 	"github.com/hscells/transmute/fields"
+	"log"
 	"strconv"
+	"time"
 )
 
 // EntityExpander takes as input a keyword that has been annotated with entities in the entity extraction
@@ -40,12 +42,15 @@ func (m MedGenEntityExpander) Expand(q cqr.Keyword) ([]cqr.CommonQueryRepresenta
 	for i, id := range ids {
 		sids[i] = strconv.Itoa(id)
 	}
+summary:
 	var summary guru.CeSummaryResult
 	err = m.e.Summary(sids, &summary, func(p *entrez.Parameters) {
 		p.Sort = "relevance"
 	})
 	if err != nil {
-		return nil, err
+		log.Println(err)
+		time.Sleep(5 * time.Second)
+		goto summary
 	}
 
 	var keywords []cqr.CommonQueryRepresentation
