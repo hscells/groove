@@ -9,6 +9,7 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/cmd/reverb/reverb"
 	"github.com/hscells/groove/pipeline"
+	"github.com/hscells/trecresults"
 	"io/ioutil"
 	"log"
 	"net"
@@ -71,8 +72,25 @@ func main() {
 	gob.Register(map[string]interface{}{})
 	gob.Register(cqr.BooleanQuery{})
 	gob.Register(cqr.Keyword{})
+	gob.Register(trecresults.Qrels{})
+	gob.Register(trecresults.Qrel{})
+	gob.Register(trecresults.ResultFile{})
+	gob.Register(trecresults.ResultList{})
+	gob.Register(trecresults.Result{})
+	gob.Register(pipeline.SupplementalData{})
+	gob.Register(pipeline.Data{})
+
+	fmt.Printf(`
+                        __ 
+  _______ _  _____ ____/ / 
+ / __/ -_) |/ / -_) __/ _ \
+/_/  \__/|___/\__/_/ /_.__/
+%s
+\n`, args.Description())
 
 	if args.Mode == "server" {
+		fmt.Println("[server mode]")
+
 		addr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:"+args.Port)
 		if err != nil {
 			panic(err)
@@ -89,8 +107,11 @@ func main() {
 			panic(err)
 		}
 		log.Println("ready to go!")
+		log.Println("port: ", args.Port)
 		rpc.Accept(inbound)
 	} else if args.Mode == "client" {
+		fmt.Println("[client mode]")
+
 		// Read the contents of the dsl file.
 		b, err := ioutil.ReadFile(args.Pipeline)
 		if err != nil {

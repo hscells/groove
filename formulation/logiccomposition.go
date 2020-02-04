@@ -4,14 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/chzyer/readline"
+	rake "github.com/afjoseph/RAKE.Go"
 	"github.com/hscells/cqr"
+	"github.com/hscells/metawrap"
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
-	"io/ioutil"
-	"os"
 	"os/exec"
-	"path"
 	"strings"
 	"unicode"
 )
@@ -29,16 +27,28 @@ func NewNLPLogicComposer(javaClassPath string) *NLPLogicComposer {
 	return &NLPLogicComposer{javaClassPath: javaClassPath}
 }
 
-// ManualLogicComposer composes queries with the help of human intervention.
-type ManualLogicComposer struct {
-	outputPath string
-	topic      string
+//// ManualLogicComposer composes queries with the help of human intervention.
+//type ManualLogicComposer struct {
+//}
+//
+//func NewManualLogicComposer() ManualLogicComposer {
+//	return ManualLogicComposer{
+//	}
+//}
+
+type RAKELogicComposer struct {
+	semtypes   semTypeMapping
+	metamapURL string
 }
 
-func NewManualLogicComposer(outputPath, topic string) ManualLogicComposer {
-	return ManualLogicComposer{
-		outputPath: outputPath,
-		topic:      topic,
+func NewRAKELogicComposer(semtypes, metamap string) RAKELogicComposer {
+	s, err := loadSemTypesMapping(semtypes)
+	if err != nil {
+		panic(err)
+	}
+	return RAKELogicComposer{
+		semtypes:   s,
+		metamapURL: metamap,
 	}
 }
 
@@ -205,45 +215,63 @@ func (n NLPLogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, e
 	return p, nil
 }
 
-func (m ManualLogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, error) {
-	p := cqr.NewBooleanQuery(cqr.AND, nil)
+//func (m ManualLogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, error) {
+//	p := cqr.NewBooleanQuery(cqr.AND, nil)
+//
+//	outputPath := path.Join(m.outputPath, m.topic)
+//	if _, err := os.Stat(outputPath); err == nil {
+//		b, err := ioutil.ReadFile(outputPath)
+//		if err != nil {
+//			return nil, err
+//		}
+//		s := bufio.NewScanner(bytes.NewBuffer(b))
+//		for s.Scan() {
+//			line := s.Text()
+//			//fmt.Println(line)
+//			p.Children = append(p.Children, cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{cqr.NewKeyword(line, fields.TitleAbstract)}))
+//		}
+//		return p, nil
+//	}
+//	var buff string
+//	//fmt.Println(qrels.Name)
+//	l, err := readline.New("> ")
+//	if err != nil {
+//		return nil, err
+//	}
+//	defer l.Close()
+//
+//	for {
+//		line, err := l.Readline()
+//		if err != nil {
+//			return nil, err
+//		}
+//		switch line {
+//		case "qrels":
+//			goto exit
+//		default:
+//			buff += fmt.Sprintln(line)
+//			p.Children = append(p.Children, cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{cqr.NewKeyword(line, fields.TitleAbstract)}))
+//		}
+//	}
+//exit:
+//	err = ioutil.WriteFile(outputPath, []byte(buff), 0644)
+//	return p, err
+//}
 
-	outputPath := path.Join(m.outputPath, m.topic)
-	if _, err := os.Stat(outputPath); err == nil {
-		b, err := ioutil.ReadFile(outputPath)
-		if err != nil {
-			return nil, err
-		}
-		s := bufio.NewScanner(bytes.NewBuffer(b))
-		for s.Scan() {
-			line := s.Text()
-			//fmt.Println(line)
-			p.Children = append(p.Children, cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{cqr.NewKeyword(line, fields.TitleAbstract)}))
-		}
-		return p, nil
+func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, error) {
+	candidates := rake.RunRake(text)
+
+	terms := make([]string, len(candidates))
+	for i, candidate := range candidates {
+		terms[i] = candidate.Key
 	}
-	var buff string
-	//fmt.Println(qrels.Name)
-	l, err := readline.New("> ")
+
+	mapping, err := metaMapTerms(terms, metawrap.HTTPClient{URL: r.metamapURL})
 	if err != nil {
 		return nil, err
 	}
-	defer l.Close()
 
-	for {
-		line, err := l.Readline()
-		if err != nil {
-			return nil, err
-		}
-		switch line {
-		case "qrels":
-			goto exit
-		default:
-			buff += fmt.Sprintln(line)
-			p.Children = append(p.Children, cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{cqr.NewKeyword(line, fields.TitleAbstract)}))
-		}
-	}
-exit:
-	err = ioutil.WriteFile(outputPath, []byte(buff), 0644)
-	return p, err
+	conditions, treatments, studyTypes := classifyQueryTerms(terms, mapping, r.semtypes)
+	conditionsKeywords, treatmentsKeywords, studyTypesKeywords := makeKeywords(conditions, treatments, studyTypes)
+	return constructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords), nil
 }

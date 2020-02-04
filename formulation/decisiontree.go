@@ -5,6 +5,7 @@ import (
 	"github.com/bbalet/stopwords"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/combinator"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/guru"
 	"github.com/hscells/transmute/fields"
@@ -349,7 +350,7 @@ func (t *tree) extract() []cqr.CommonQueryRepresentation {
 	return bqs
 }
 
-func (dt DecisionTreeFormulator) Formulate() ([]cqr.CommonQueryRepresentation, []SupplementalData, error) {
+func (dt DecisionTreeFormulator) Formulate(query pipeline.Query) ([]cqr.CommonQueryRepresentation, []pipeline.SupplementalData, error) {
 	var (
 		S []cqr.CommonQueryRepresentation
 	)
@@ -379,10 +380,6 @@ func (dt DecisionTreeFormulator) Formulate() ([]cqr.CommonQueryRepresentation, [
 
 func (dt DecisionTreeFormulator) Method() string {
 	return "dt"
-}
-
-func (dt DecisionTreeFormulator) Topic() string {
-	return dt.topic
 }
 
 func NewDecisionTreeFormulator(topic string, positive, negative guru.MedlineDocuments) (*DecisionTreeFormulator, error) {

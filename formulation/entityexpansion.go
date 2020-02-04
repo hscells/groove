@@ -1,6 +1,7 @@
 package formulation
 
 import (
+	"github.com/biogo/ncbi/entrez"
 	"github.com/hscells/cqr"
 	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/stats"
@@ -40,21 +41,29 @@ func (m MedGenEntityExpander) Expand(q cqr.Keyword) ([]cqr.CommonQueryRepresenta
 		sids[i] = strconv.Itoa(id)
 	}
 	var summary guru.CeSummaryResult
-	err = m.e.Summary(sids, &summary)
+	err = m.e.Summary(sids, &summary, func(p *entrez.Parameters) {
+		p.Sort = "relevance"
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	var keywords []cqr.CommonQueryRepresentation
 	for _, docSum := range summary.CDocumentSummarySet.CDocumentSummary {
-		for _, name := range docSum.CConceptMeta.CNames.CName {
+		for j, name := range docSum.CConceptMeta.CNames.CName {
+			if j > 2 {
+				break
+			}
 			query := cqr.NewKeyword(name.Value, fields.TitleAbstract)
 			// Add MeSH field restrictions to the query if it comes from a MeSH source.
 			if name.AttrSAB == "MSH" {
 				query.Fields = []string{fields.MeshHeadings}
-				query = query.SetOption(cqr.ExplodedString, false).(cqr.Keyword)
+				query = query.SetOption(cqr.ExplodedString, true).(cqr.Keyword)
 			}
 			keywords = append(keywords, query)
+		}
+		if len(keywords) > 5 {
+			break
 		}
 	}
 	return keywords, nil
