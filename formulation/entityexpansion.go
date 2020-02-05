@@ -112,7 +112,9 @@ func (c Cui2VecEntityExpander) Expand(keyword cqr.Keyword) ([]cqr.CommonQueryRep
 		if len(concept.CUI) == 0 {
 			continue
 		}
-		keywords = append(keywords, cqr.NewKeyword(keyword.QueryString, keyword.Fields...).SetOption(Entity, concept.CUI))
+		if concept.Value > 0.9 {
+			keywords = append(keywords, cqr.NewKeyword(keyword.QueryString, keyword.Fields...).SetOption(Entity, concept.CUI))
+		}
 	}
 	return keywords, nil
 }

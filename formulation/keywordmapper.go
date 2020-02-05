@@ -1,6 +1,9 @@
 package formulation
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/hscells/cqr"
 	"github.com/hscells/cui2vec"
@@ -8,6 +11,7 @@ import (
 	"github.com/hscells/meshexp"
 	"github.com/hscells/metawrap"
 	"github.com/hscells/transmute/fields"
+	"gopkg.in/olivere/elastic.v7"
 	"strings"
 	"time"
 )
@@ -63,10 +67,14 @@ func Frequent(mapping cui2vec.Mapping) MetaMapMapper {
 // Frequent identifies all of the terms for the concept in the UMLS meta-thesaurus.
 func Alias(mapping cui2vec.AliasMapping) MetaMapMapper {
 	return func(keyword cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
+		seen := make(map[string]struct{})
 		if v, ok := mapping[keyword.GetOption(Entity).(string)]; ok {
 			var mappings []cqr.CommonQueryRepresentation
 			for _, s := range v {
-				mappings = append(mappings, cqr.NewKeyword(fmt.Sprintf(`"%s"`, s), keyword.Fields...))
+				if _, ok := seen[s]; !ok {
+					mappings = append(mappings, cqr.NewKeyword(fmt.Sprintf(`"%s"`, s), keyword.Fields...))
+					seen[s] = struct{}{}
+				}
 			}
 			return mappings, nil
 		}
@@ -74,13 +82,48 @@ func Alias(mapping cui2vec.AliasMapping) MetaMapMapper {
 	}
 }
 
+func ElasticUMLS(c *elastic.Client) MetaMapMapper {
+	return func(keyword cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
+		res, err := c.Search("umls").Query(elastic.NewMatchQuery("cui", keyword.GetOption(Entity))).Do(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		seen := make(map[string]struct{})
+		mappings := []cqr.CommonQueryRepresentation{keyword}
+		if res.Hits != nil {
+			if len(res.Hits.Hits) > 0 {
+				b, _ := res.Hits.Hits[0].Source.MarshalJSON()
+				body := make(map[string]interface{})
+				err = json.NewDecoder(bytes.NewBuffer(b)).Decode(&body)
+				if err != nil {
+					return nil, err
+				}
+				thesaurus := body["thesaurus"].([]interface{})
+				for _, item := range thesaurus {
+					t := item.(map[string]interface{})
+					if t["MRCONSO_LAT"] == "ENG" && t["MRCONSO_ISPREF"] == "Y" && t["MRCONSO_TS"] == "P" && t["MRCONSO_STT"] == "PF" {
+						s := strings.ToLower(t["MRCONSO_STR"].(string))
+						if strings.ContainsAny(s, ",[]()") {
+							s = fmt.Sprintf(`"%s"`, s)
+						}
+						if t["MRCONSO_SAB"] == "MSH" {
+							mappings = append(mappings, cqr.NewKeyword(s, fields.MeshHeadings).SetOption(cqr.ExplodedString, true))
+						} else if _, ok := seen[s]; !ok {
+							mappings = append(mappings, cqr.NewKeyword(s, keyword.Fields...))
+							seen[s] = struct{}{}
+						}
+					}
+				}
+			}
+		}
+		return mappings, nil
+	}
+}
+
 // MeSHMapper uses the output of another MetaMap mapper to assign MeSH terms.
 func MeSHMapper(mapper MetaMapMapper) MetaMapMapper {
 	return func(keyword cqr.Keyword) (representations []cqr.CommonQueryRepresentation, e error) {
-		mt, err := meshexp.Default()
-		if e != nil {
-			return nil, err
-		}
+		mt, _ := meshexp.Default()
 		keywords, err := mapper(keyword)
 		if e != nil {
 			return nil, err

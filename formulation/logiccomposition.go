@@ -6,6 +6,7 @@ import (
 	"fmt"
 	rake "github.com/afjoseph/RAKE.Go"
 	"github.com/hscells/cqr"
+	"github.com/hscells/metawrap"
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
 	"os/exec"
@@ -257,6 +258,13 @@ func (n NLPLogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, e
 //	return p, err
 //}
 
+//func quickUMLSTerms(terms []string, client quickumlsrest.Client) (mapping, error) {
+//	m := make(mapping)
+//	for _, term := range terms {
+//		client.Match()
+//	}
+//}
+
 func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, error) {
 	candidates := rake.RunRake(text)
 
@@ -265,11 +273,18 @@ func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, 
 		terms[i] = candidate.Key
 	}
 
-	children := make([]cqr.CommonQueryRepresentation, len(terms))
-	for i, term := range terms {
-		children[i] = cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{
-			cqr.NewKeyword(term, fields.TitleAbstract),
-		})
+	mapping, err := metaMapTerms(terms, metawrap.HTTPClient{URL: r.metamapURL})
+	if err != nil {
+		return nil, err
 	}
-	return cqr.NewBooleanQuery(cqr.AND, children), nil
+
+	fmt.Println(mapping)
+
+	conditions, treatments, studyTypes, other := classifyQueryTerms(terms, mapping, r.semtypes)
+	fmt.Println(conditions)
+	fmt.Println(treatments)
+	fmt.Println(studyTypes)
+	fmt.Println(other)
+	conditionsKeywords, treatmentsKeywords, studyTypesKeywords, otherKeywords := makeKeywords(conditions, treatments, studyTypes, other...)
+	return constructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords, otherKeywords...), nil
 }

@@ -100,6 +100,7 @@ const (
 	condition
 	treatment
 	studyType
+	othernone
 )
 
 var (
@@ -417,11 +418,12 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 
 // classifyQueryTerms automatically classifies query TermStatistics based on the
 // semantic type of the query.
-func classifyQueryTerms(terms []string, mapping mapping, semTypes semTypeMapping) ([]string, []string, []string) {
+func classifyQueryTerms(terms []string, mapping mapping, semTypes semTypeMapping) ([]string, []string, []string, []string) {
 	var (
 		conditions []string
 		treatments []string
 		studyTypes []string
+		other      []string
 	)
 
 	// Loop through all the TermStatistics to become query TermStatistics.
@@ -463,15 +465,21 @@ func classifyQueryTerms(terms []string, mapping mapping, semTypes semTypeMapping
 					conditions = append(conditions, term)
 				case studyType:
 					studyTypes = append(studyTypes, term)
+				default:
+					other = append(other, term)
 				}
 				// Clearly, if the category is none (default), then we
 				// can just continue constructing the query without that term
 				// as it is likely rubbish.
+			} else {
+				other = append(other, term)
 			}
+		} else {
+			other = append(other, term)
 		}
 	}
 
-	return conditions, treatments, studyTypes
+	return conditions, treatments, studyTypes, other
 }
 
 type res struct {
@@ -682,13 +690,14 @@ func maximumCoverage(conditionsVec big.Int, treatmentsVec big.Int, studyTypesVec
 	return G
 }
 
-func makeKeywords(conditions, treatments, studyTypes []string) ([]cqr.Keyword, []cqr.Keyword, []cqr.Keyword) {
-	terms := make([][]string, 3)
+func makeKeywords(conditions, treatments, studyTypes []string, other ...string) ([]cqr.Keyword, []cqr.Keyword, []cqr.Keyword, []cqr.Keyword) {
+	terms := make([][]string, 4)
 	terms[0] = conditions
 	terms[1] = treatments
 	terms[2] = studyTypes
+	terms[3] = other
 
-	keywords := make([][]cqr.Keyword, 3)
+	keywords := make([][]cqr.Keyword, 4)
 
 	for i, t := range terms {
 		keywords[i] = make([]cqr.Keyword, len(terms[i]))
@@ -696,7 +705,7 @@ func makeKeywords(conditions, treatments, studyTypes []string) ([]cqr.Keyword, [
 			keywords[i][j] = cqr.NewKeyword(term, fields.TitleAbstract)
 		}
 	}
-	return keywords[0], keywords[1], keywords[2]
+	return keywords[0], keywords[1], keywords[2], keywords[3]
 }
 
 // MakeQrels creates a set of relevance assessments from some medline documents.
@@ -851,11 +860,12 @@ func classifyMeSHCategory(mh string, tree *meshexp.MeSHTree) []queryCategory {
 }
 
 // ConstructQuery takes three slices and creates a query from them.
-func constructQuery(conditions, treatments, studyTypes []cqr.Keyword) cqr.CommonQueryRepresentation {
+func constructQuery(conditions, treatments, studyTypes []cqr.Keyword, other ...cqr.Keyword) cqr.CommonQueryRepresentation {
 	q := cqr.NewBooleanQuery(cqr.AND, nil)
 	conditionsClause := cqr.NewBooleanQuery(cqr.OR, nil)
 	treatmentsClause := cqr.NewBooleanQuery(cqr.OR, nil)
 	studyTypesClause := cqr.NewBooleanQuery(cqr.OR, nil)
+	otherClause := cqr.NewBooleanQuery(cqr.OR, nil)
 
 	// Add the conditions clause to the query.
 	if len(conditions) > 0 {
@@ -879,6 +889,14 @@ func constructQuery(conditions, treatments, studyTypes []cqr.Keyword) cqr.Common
 			studyTypesClause.Children = append(studyTypesClause.Children, t)
 		}
 		q.Children = append(q.Children, studyTypesClause.SetOption("category", studyType))
+	}
+
+	// Add the treatments clause to the query.
+	if len(other) > 0 {
+		for _, t := range other {
+			otherClause.Children = append(otherClause.Children, t)
+		}
+		q.Children = append(q.Children, otherClause.SetOption("category", othernone))
 	}
 
 	return q
@@ -999,11 +1017,11 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 
 			fmt.Println("classifying terms")
 			// Classify query TermStatistics.
-			conditions, treatments, studyTypes := classifyQueryTerms(queryTerms, mapping, semTypes)
+			conditions, treatments, studyTypes, _ := classifyQueryTerms(queryTerms, mapping, semTypes)
 
 			fmt.Println("creating keywords")
 			// Create keywords for the proceeding query.
-			conditionsKeywords, treatmentsKeywords, studyTypesKeywords := makeKeywords(conditions, treatments, studyTypes)
+			conditionsKeywords, treatmentsKeywords, studyTypesKeywords, _ := makeKeywords(conditions, treatments, studyTypes)
 
 			fmt.Println("filtering keywords")
 			// And then filter the query TermStatistics.
