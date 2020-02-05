@@ -6,7 +6,6 @@ import (
 	"fmt"
 	rake "github.com/afjoseph/RAKE.Go"
 	"github.com/hscells/cqr"
-	"github.com/hscells/metawrap"
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
 	"os/exec"
@@ -266,12 +265,11 @@ func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, 
 		terms[i] = candidate.Key
 	}
 
-	mapping, err := metaMapTerms(terms, metawrap.HTTPClient{URL: r.metamapURL})
-	if err != nil {
-		return nil, err
+	children := make([]cqr.CommonQueryRepresentation, len(terms))
+	for i, term := range terms {
+		children[i] = cqr.NewBooleanQuery(cqr.OR, []cqr.CommonQueryRepresentation{
+			cqr.NewKeyword(term, fields.TitleAbstract),
+		})
 	}
-
-	conditions, treatments, studyTypes := classifyQueryTerms(terms, mapping, r.semtypes)
-	conditionsKeywords, treatmentsKeywords, studyTypesKeywords := makeKeywords(conditions, treatments, studyTypes)
-	return constructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords), nil
+	return cqr.NewBooleanQuery(cqr.AND, children), nil
 }
