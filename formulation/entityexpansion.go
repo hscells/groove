@@ -49,7 +49,7 @@ summary:
 	})
 	if err != nil {
 		log.Println(err)
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 		goto summary
 	}
 

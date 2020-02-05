@@ -88,7 +88,7 @@ func MeSHMapper(mapper MetaMapMapper) MetaMapMapper {
 		for i := 0; i < len(keywords); i++ {
 			switch q := keywords[i].(type) {
 			case cqr.Keyword:
-				if mt.Contains(strings.ToLower(q.QueryString)) {
+				if mt.Contains(q.QueryString) {
 					q.Fields = []string{fields.MeSHTerms}
 					keywords[i] = q
 				}

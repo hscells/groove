@@ -18,8 +18,6 @@ type Formulator interface {
 	Method() string
 }
 
-
-
 // ConceptualFormulator formulates queries using the title or string of a systematic review.
 type ConceptualFormulator struct {
 	LogicComposer
