@@ -392,6 +392,9 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 						log.Printf("already completed topic %v, so skipping it\n", q.Topic)
 						return
 					}
+					if loghw {
+						_ = p.Headway.Send(float64(i)+1, float64(len(measurementQueries)), "EV."+hwName, fmt.Sprintf("%s", query.Topic))
+					}
 					log.Printf("starting topic %v\n", query.Topic)
 					//
 					//tree, cache, err := combinator.NewLogicalTree(query, p.StatisticsSource, p.QueryCache)
@@ -461,7 +464,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 		if p.QueryFormulator != nil {
 			for i, measurementQuery := range measurementQueries {
 				if loghw {
-					_ = p.Headway.Send(float64(i), float64(len(measurementQueries)), "QF"+hwName, fmt.Sprintf("%s - %s", p.QueryFormulator.Method(), measurementQuery.Topic))
+					_ = p.Headway.Send(float64(i)+1, float64(len(measurementQueries)), "QF."+hwName, fmt.Sprintf("%s - %s", p.QueryFormulator.Method(), measurementQuery.Topic))
 				}
 				// Perform the query formulation.
 				queries, sup, err := p.QueryFormulator.Formulate(measurementQuery)
