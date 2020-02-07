@@ -3,12 +3,15 @@ package formulation
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	rake "github.com/afjoseph/RAKE.Go"
 	"github.com/hscells/cqr"
-	"github.com/hscells/metawrap"
+	"github.com/hscells/guru"
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
+	"gopkg.in/olivere/elastic.v7"
 	"os/exec"
 	"strings"
 	"unicode"
@@ -37,18 +40,27 @@ func NewNLPLogicComposer(javaClassPath string) *NLPLogicComposer {
 //}
 
 type RAKELogicComposer struct {
-	semtypes   semTypeMapping
-	metamapURL string
+	semtypes      map[string]guru.SemType
+	cuiSemtypes   semTypeMapping
+	metamapURL    string
+	elasticClient *elastic.Client
 }
 
-func NewRAKELogicComposer(semtypes, metamap string) RAKELogicComposer {
-	s, err := loadSemTypesMapping(semtypes)
+func NewRAKELogicComposer(semtypes, metamap string, client *elastic.Client) RAKELogicComposer {
+	s := guru.LoadSemTypes(guru.SEMTYPES)
+	x := make(map[string]guru.SemType)
+	for _, v := range s {
+		x[v.TUI] = v
+	}
+	z, err := loadSemTypesMapping(semtypes)
 	if err != nil {
 		panic(err)
 	}
 	return RAKELogicComposer{
-		semtypes:   s,
-		metamapURL: metamap,
+		semtypes:      x,
+		cuiSemtypes:   z,
+		metamapURL:    metamap,
+		elasticClient: client,
 	}
 }
 
@@ -265,7 +277,40 @@ func (n NLPLogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, e
 //	}
 //}
 
+func elasticUMLSMapTerms(terms []string, client *elastic.Client, st map[string]guru.SemType) (mapping, error) {
+	mapping := make(mapping)
+	for _, term := range terms {
+		res, err := client.Search("umls").Query(elastic.NewQueryStringQuery(term)).TerminateAfter(1).Do(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		if res.Hits != nil {
+			if len(res.Hits.Hits) > 0 {
+				b, _ := res.Hits.Hits[0].Source.MarshalJSON()
+				body := make(map[string]interface{})
+				err = json.NewDecoder(bytes.NewBuffer(b)).Decode(&body)
+				if err != nil {
+					return nil, err
+				}
+				cui := res.Hits.Hits[0].Id
+				mapping[term] = mappingPair{
+					CUI: cui,
+				}
+				semtypes := body["semtypes"].([]interface{})
+				if len(semtypes) > 0 {
+					tui := semtypes[0].(map[string]string)["TUI"]
+					if s, ok := st[tui]; ok {
+						mapping[term].Abbr = s.Abbreviation
+					}
+				}
+			}
+		}
+	}
+	return mapping, nil
+}
+
 func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, error) {
+
 	candidates := rake.RunRake(text)
 
 	terms := make([]string, len(candidates))
@@ -273,14 +318,17 @@ func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, 
 		terms[i] = candidate.Key
 	}
 
-	mapping, err := metaMapTerms(terms, metawrap.HTTPClient{URL: r.metamapURL})
+	//mapping, err := metaMapTerms(terms, metawrap.HTTPClient{URL: r.metamapURL})
+	//if err != nil {
+	//	return nil, err
+	//}
+	mapping, err := elasticUMLSMapTerms(terms, r.elasticClient, r.semtypes)
 	if err != nil {
 		return nil, err
 	}
-
 	fmt.Println(mapping)
 
-	conditions, treatments, studyTypes, other := classifyQueryTerms(terms, mapping, r.semtypes)
+	conditions, treatments, studyTypes, other := classifyQueryTerms(terms, mapping, r.cuiSemtypes)
 	fmt.Println(conditions)
 	fmt.Println(treatments)
 	fmt.Println(studyTypes)
