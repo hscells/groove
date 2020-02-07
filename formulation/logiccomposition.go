@@ -321,10 +321,6 @@ func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, 
 		terms[i] = candidate.Key
 	}
 
-	//mapping, err := metaMapTerms(terms, metawrap.HTTPClient{URL: r.metamapURL})
-	//if err != nil {
-	//	return nil, err
-	//}
 	mapping, err := elasticUMLSMapTerms(terms, r.elasticClient, r.semtypes)
 	if err != nil {
 		return nil, err

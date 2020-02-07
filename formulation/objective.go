@@ -106,7 +106,7 @@ const (
 var (
 	categories = map[string]queryCategory{
 		"Test":      treatment,
-		"treatment": treatment,
+		"Treatment": treatment,
 		"Diagnosis": condition,
 	}
 )
