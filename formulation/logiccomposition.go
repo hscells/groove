@@ -300,7 +300,10 @@ func elasticUMLSMapTerms(terms []string, client *elastic.Client, st map[string]g
 				if len(semtypes) > 0 {
 					tui := semtypes[0].(map[string]string)["TUI"]
 					if s, ok := st[tui]; ok {
-						mapping[term].Abbr = s.Abbreviation
+						mapping[term] = mappingPair{
+							CUI:  cui,
+							Abbr: s.Abbreviation,
+						}
 					}
 				}
 			}
