@@ -451,7 +451,7 @@ func classifyQueryTerms(terms []string, mapping mapping, semTypes semTypeMapping
 						category = condition
 					case "ORGA", "GEOG":
 						category = studyType
-					case "CONC":
+					default:
 						category = none
 					}
 				}
