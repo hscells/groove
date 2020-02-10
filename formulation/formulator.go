@@ -267,9 +267,11 @@ func (t ConceptualFormulator) Formulate(query pipeline.Query) ([]cqr.CommonQuery
 	}
 
 	// Entity Extraction.
-	q, err = t.EntityExtractor.Extract(q)
-	if err != nil {
-		return nil, nil, err
+	if t.EntityExtractor != nil {
+		q, err = t.EntityExtractor.Extract(q)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	// Entity Expansion.
