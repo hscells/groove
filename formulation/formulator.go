@@ -301,6 +301,8 @@ func (t ConceptualFormulator) Formulate(query pipeline.Query) ([]cqr.CommonQuery
 		return nil, nil, err
 	}
 
+	fmt.Println(q)
+
 	// Post-Processing.
 	for _, postProcessor := range t.postProcessing {
 		q, err = postProcessor(q)
