@@ -690,7 +690,7 @@ func maximumCoverage(conditionsVec big.Int, treatmentsVec big.Int, studyTypesVec
 	return G
 }
 
-func makeKeywords(conditions, treatments, studyTypes []string, other ...string) ([]cqr.Keyword, []cqr.Keyword, []cqr.Keyword, []cqr.Keyword) {
+func makeKeywords(conditions, treatments, studyTypes []string, other []string, mapping mapping) ([]cqr.Keyword, []cqr.Keyword, []cqr.Keyword, []cqr.Keyword) {
 	terms := make([][]string, 4)
 	terms[0] = conditions
 	terms[1] = treatments
@@ -702,6 +702,11 @@ func makeKeywords(conditions, treatments, studyTypes []string, other ...string) 
 	for i, t := range terms {
 		keywords[i] = make([]cqr.Keyword, len(terms[i]))
 		for j, term := range t {
+			if mapping != nil {
+				if v, ok := mapping[term]; ok {
+					keywords[i][j] = cqr.NewKeyword(term, fields.TitleAbstract).SetOption(Entity, v.CUI).(cqr.Keyword)
+				}
+			}
 			keywords[i][j] = cqr.NewKeyword(term, fields.TitleAbstract)
 		}
 	}
@@ -1021,7 +1026,7 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 
 			fmt.Println("creating keywords")
 			// Create keywords for the proceeding query.
-			conditionsKeywords, treatmentsKeywords, studyTypesKeywords, _ := makeKeywords(conditions, treatments, studyTypes)
+			conditionsKeywords, treatmentsKeywords, studyTypesKeywords, _ := makeKeywords(conditions, treatments, studyTypes, []string{}, nil)
 
 			fmt.Println("filtering keywords")
 			// And then filter the query TermStatistics.

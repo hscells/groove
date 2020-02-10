@@ -332,6 +332,6 @@ func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, 
 	fmt.Println(treatments)
 	fmt.Println(studyTypes)
 	fmt.Println(other)
-	conditionsKeywords, treatmentsKeywords, studyTypesKeywords, otherKeywords := makeKeywords(conditions, treatments, studyTypes, other...)
+	conditionsKeywords, treatmentsKeywords, studyTypesKeywords, otherKeywords := makeKeywords(conditions, treatments, studyTypes, other, mapping)
 	return constructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords, otherKeywords...), nil
 }
