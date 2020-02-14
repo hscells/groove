@@ -46,10 +46,11 @@ func avgVecs(vs ...[]float64) []float64 {
 func RelevanceFeedback(query cqr.CommonQueryRepresentation, docs guru.MedlineDocuments, mm metawrap.HTTPClient) (cqr.CommonQueryRepresentation, error) {
 
 	// Open a connection to vector client.
-	client, err := cui2vec.NewVecClient("localhost:8003")
-	if err != nil {
-		return nil, err
-	}
+	//client, err := cui2vec.NewVecClient("localhost:8003")
+	//if err != nil {
+	//	return nil, err
+	//}
+	var client *cui2vec.VecClient
 
 	// Function for embedding a clause by averaging child vectors.
 	var embed func(q cqr.CommonQueryRepresentation) []float64

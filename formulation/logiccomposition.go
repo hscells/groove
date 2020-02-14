@@ -8,7 +8,9 @@ import (
 	"fmt"
 	rake "github.com/afjoseph/RAKE.Go"
 	"github.com/hscells/cqr"
+	"github.com/hscells/cui2vec"
 	"github.com/hscells/guru"
+	"github.com/hscells/metawrap"
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
 	"gopkg.in/olivere/elastic.v7"
@@ -44,9 +46,10 @@ type RAKELogicComposer struct {
 	cuiSemtypes   semTypeMapping
 	metamapURL    string
 	elasticClient *elastic.Client
+	cui2vecClient *cui2vec.VecClient
 }
 
-func NewRAKELogicComposer(semtypes, metamap string, client *elastic.Client) RAKELogicComposer {
+func NewRAKELogicComposer(semtypes, metamap string, esClient *elastic.Client, vecClient *cui2vec.VecClient) RAKELogicComposer {
 	s := guru.LoadSemTypes(guru.SEMTYPES)
 	x := make(map[string]guru.SemType)
 	for _, v := range s {
@@ -60,7 +63,8 @@ func NewRAKELogicComposer(semtypes, metamap string, client *elastic.Client) RAKE
 		semtypes:      x,
 		cuiSemtypes:   z,
 		metamapURL:    metamap,
-		elasticClient: client,
+		elasticClient: esClient,
+		cui2vecClient: vecClient,
 	}
 }
 
@@ -314,24 +318,106 @@ func elasticUMLSMapTerms(terms []string, client *elastic.Client, st map[string]g
 
 func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, error) {
 
-	candidates := rake.RunRake(text)
+	candidates := rake.RunRakeI18N(text, append(rake.StopWordsSlice, "versus"))
 
-	terms := make([]string, len(candidates))
-	for i, candidate := range candidates {
-		terms[i] = candidate.Key
+	var terms []string
+	for _, candidate := range candidates {
+		fmt.Println(candidate)
+		switch candidate.Key {
+		case "the", "group", "groups", "and", "excluding", "community",
+			"one", "two", "three", "four",
+			"low", "red flags":
+			continue
+		}
+		terms = append(terms, candidate.Key)
+		if len(terms) >= 4 {
+			break
+		}
 	}
 
 	mapping, err := elasticUMLSMapTerms(terms, r.elasticClient, r.semtypes)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(mapping)
 
-	conditions, treatments, studyTypes, other := classifyQueryTerms(terms, mapping, r.cuiSemtypes)
-	fmt.Println(conditions)
-	fmt.Println(treatments)
-	fmt.Println(studyTypes)
-	fmt.Println(other)
-	conditionsKeywords, treatmentsKeywords, studyTypesKeywords, otherKeywords := makeKeywords(conditions, treatments, studyTypes, other, mapping)
-	return constructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords, otherKeywords...), nil
+	mapping1, err := metaMapTerms(terms, metawrap.HTTPClient{URL: r.metamapURL})
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range mapping1 {
+		if len(v.CUI) > 0 {
+			mapping[k] = v
+		}
+	}
+
+	type mappedTerm struct {
+		term string
+		cui  string
+		vec  []float64
+	}
+
+	var buckets [][]mappedTerm
+	var mappedTerms []mappedTerm
+	for t, v := range mapping {
+		vec, err := r.cui2vecClient.Vec(v.CUI)
+		if err != nil {
+			return nil, err
+		}
+		mappedTerms = append(mappedTerms, mappedTerm{
+			term: t,
+			cui:  v.CUI,
+			vec:  vec,
+		})
+	}
+
+	for _, term := range mappedTerms {
+		maxSim := 0.1
+		bestBucket := -1
+		for i, bucket := range buckets {
+			for _, bucketTerm := range bucket {
+				if len(term.vec) != len(bucketTerm.vec) {
+					continue
+				}
+				sim, err := cui2vec.Cosine(term.vec, bucketTerm.vec)
+				if err != nil {
+					return nil, err
+				}
+				fmt.Println(sim, term.term, bucketTerm.term)
+				if sim > maxSim {
+					maxSim = sim
+					bestBucket = i
+				}
+			}
+		}
+		if bestBucket > -1 {
+			buckets[bestBucket] = append(buckets[bestBucket], term)
+		} else {
+			buckets = append(buckets, []mappedTerm{term})
+		}
+	}
+
+	fmt.Println("----------------------------------")
+	bq := cqr.NewBooleanQuery(cqr.AND, nil)
+	for i, bucket := range buckets {
+		kws := make([]cqr.CommonQueryRepresentation, len(bucket))
+		for j, term := range bucket {
+			fmt.Println(i, term.term)
+			kws[j] = cqr.NewKeyword(term.term, fields.TitleAbstract).SetOption(Entity, term.cui)
+		}
+		bq.Children = append(bq.Children, cqr.NewBooleanQuery(cqr.OR, kws))
+	}
+	fmt.Println("----------------------------------")
+
+	return bq, nil
+
+	//conditions, treatments, studyTypes, other := classifyQueryTerms(terms, mapping, r.cuiSemtypes)
+	//conditionsKeywords, treatmentsKeywords, studyTypesKeywords, otherKeywords := makeKeywords(conditions, treatments, studyTypes, other, mapping)
+	//conditionsKeywords, _, _, _ := makeKeywords(conditions, treatments, studyTypes, other, mapping)
+	//kw := make([]cqr.CommonQueryRepresentation, len(conditionsKeywords))
+	//for i, w := range conditionsKeywords {
+	//	kw[i] = w
+	//}
+	//return constructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords, otherKeywords...), nil
+	//return cqr.NewBooleanQuery(cqr.AND, kw), nil
 }

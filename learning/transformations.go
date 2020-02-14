@@ -6,7 +6,6 @@ import (
 	"github.com/hscells/cui2vec"
 	"github.com/hscells/groove/analysis"
 	"github.com/hscells/groove/combinator"
-	"github.com/hscells/groove/formulation"
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/quickumlsrest"
 	"github.com/hscells/transmute/fields"
@@ -652,23 +651,12 @@ func (c cui2vecExpansion) Apply(query cqr.CommonQueryRepresentation) (queries []
 		var (
 			children   []cqr.CommonQueryRepresentation
 			candidates []quickumlsrest.Candidate
-			ok         bool
 		)
-		if candidates, ok = c.cache[keyword]; ok { // Try to get CUIs from the cache.
-			if len(candidates) == 0 {
+		if c, ok := c.cache[keyword]; ok { // Try to get CUIs from the cache.
+			if len(c) == 0 {
 				return []cqr.CommonQueryRepresentation{}, nil
 			}
-		} else { // Otherwise, get them from the ncbi medgen API.
-			cuis, err := formulation.NewMedGenExpander(c.EntrezStatisticsSource).CUIs(q)
-			if err != nil {
-				return nil, err
-			}
-			candidates = make([]quickumlsrest.Candidate, len(cuis))
-			for i, cui := range cuis {
-				candidates[i] = quickumlsrest.Candidate{
-					CUI: cui,
-				}
-			}
+			candidates = c
 		}
 
 		// Match only the first concept for each candidate.

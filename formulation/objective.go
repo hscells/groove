@@ -702,12 +702,12 @@ func makeKeywords(conditions, treatments, studyTypes []string, other []string, m
 	for i, t := range terms {
 		keywords[i] = make([]cqr.Keyword, len(terms[i]))
 		for j, term := range t {
+			keywords[i][j] = cqr.NewKeyword(term, fields.TitleAbstract).SetOption("noentity", nil).(cqr.Keyword)
 			if mapping != nil {
 				if v, ok := mapping[term]; ok {
 					keywords[i][j] = cqr.NewKeyword(term, fields.TitleAbstract).SetOption(Entity, v.CUI).(cqr.Keyword)
 				}
 			}
-			keywords[i][j] = cqr.NewKeyword(term, fields.TitleAbstract)
 		}
 	}
 	return keywords[0], keywords[1], keywords[2], keywords[3]

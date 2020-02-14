@@ -91,8 +91,8 @@ func ElasticUMLS(c *elastic.Client) MetaMapMapper {
 		seen := make(map[string]struct{})
 		mappings := []cqr.CommonQueryRepresentation{keyword}
 		if res.Hits != nil {
-			if len(res.Hits.Hits) > 0 {
-				b, _ := res.Hits.Hits[0].Source.MarshalJSON()
+			for i := range res.Hits.Hits {
+				b, _ := res.Hits.Hits[i].Source.MarshalJSON()
 				body := make(map[string]interface{})
 				err = json.NewDecoder(bytes.NewBuffer(b)).Decode(&body)
 				if err != nil {
@@ -110,8 +110,8 @@ func ElasticUMLS(c *elastic.Client) MetaMapMapper {
 							mappings = append(mappings, cqr.NewKeyword(s, fields.MeshHeadings).SetOption(cqr.ExplodedString, true))
 						} else if _, ok := seen[s]; !ok {
 							mappings = append(mappings, cqr.NewKeyword(s, keyword.Fields...))
-							seen[s] = struct{}{}
 						}
+						seen[s] = struct{}{}
 					}
 				}
 			}

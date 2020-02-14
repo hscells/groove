@@ -1,15 +1,8 @@
 package formulation
 
 import (
-	"github.com/biogo/ncbi/entrez"
 	"github.com/hscells/cqr"
 	"github.com/hscells/cui2vec"
-	"github.com/hscells/groove/stats"
-	"github.com/hscells/guru"
-	"github.com/hscells/transmute/fields"
-	"log"
-	"strconv"
-	"time"
 )
 
 // EntityExpander takes as input a keyword that has been annotated with entities in the entity extraction
@@ -23,80 +16,109 @@ type Cui2VecEntityExpander struct {
 	embeddings cui2vec.PrecomputedEmbeddings
 }
 
-// MedGenEntityExpander expands entities using the MedGen API.
-type MedGenEntityExpander struct {
-	e stats.EntrezStatisticsSource
+// Cui2VecEntityExpander expands entities using cui2vec embeddings.
+type Cui2VecRPCEntityExpander struct {
+	client *cui2vec.VecClient
 }
 
-func (m MedGenEntityExpander) Expand(q cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
-	ids, err := m.e.Search(q.QueryString)
-	if err != nil {
-		return nil, err
-	}
+//// MedGenEntityExpander expands entities using the MedGen API.
+//type MedGenEntityExpander struct {
+//	e stats.EntrezStatisticsSource
+//}
+//
+//func (m MedGenEntityExpander) Expand(q cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
+//	ids, err := m.e.Search(q.QueryString)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	if len(ids) == 0 {
+//		return nil, nil
+//	}
+//
+//	sids := make([]string, len(ids))
+//	for i, id := range ids {
+//		sids[i] = strconv.Itoa(id)
+//	}
+//summary:
+//	var summary guru.CeSummaryResult
+//	err = m.e.Summary(sids, &summary, func(p *entrez.Parameters) {
+//		p.Sort = "relevance"
+//	})
+//	if err != nil {
+//		log.Println(err)
+//		time.Sleep(10 * time.Second)
+//		goto summary
+//	}
+//
+//	var keywords []cqr.CommonQueryRepresentation
+//	for _, docSum := range summary.CDocumentSummarySet.CDocumentSummary {
+//		for j, name := range docSum.CConceptMeta.CNames.CName {
+//			if j > 2 {
+//				break
+//			}
+//			query := cqr.NewKeyword(name.Value, fields.TitleAbstract)
+//			// Add MeSH field restrictions to the query if it comes from a MeSH source.
+//			if name.AttrSAB == "MSH" {
+//				query.Fields = []string{fields.MeshHeadings}
+//				query = query.SetOption(cqr.ExplodedString, true).(cqr.Keyword)
+//			}
+//			keywords = append(keywords, query)
+//		}
+//		if len(keywords) > 5 {
+//			break
+//		}
+//	}
+//	return keywords, nil
+//}
+//
+//func (m MedGenEntityExpander) CUIs(q cqr.Keyword) ([]string, error) {
+//	ids, err := m.e.Search(q.QueryString)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	if len(ids) == 0 {
+//		return nil, nil
+//	}
+//
+//	sids := make([]string, len(ids))
+//	for i, id := range ids {
+//		sids[i] = cui2vec.Int2CUI(id)
+//	}
+//	return sids, nil
+//}
 
-	if len(ids) == 0 {
-		return nil, nil
-	}
+//func NewMedGenExpander(e stats.EntrezStatisticsSource) *MedGenEntityExpander {
+//	return &MedGenEntityExpander{e: e.SetDB("medgen")}
+//}
 
-	sids := make([]string, len(ids))
-	for i, id := range ids {
-		sids[i] = strconv.Itoa(id)
-	}
-summary:
-	var summary guru.CeSummaryResult
-	err = m.e.Summary(sids, &summary, func(p *entrez.Parameters) {
-		p.Sort = "relevance"
-	})
-	if err != nil {
-		log.Println(err)
-		time.Sleep(10 * time.Second)
-		goto summary
-	}
-
-	var keywords []cqr.CommonQueryRepresentation
-	for _, docSum := range summary.CDocumentSummarySet.CDocumentSummary {
-		for j, name := range docSum.CConceptMeta.CNames.CName {
-			if j > 2 {
-				break
-			}
-			query := cqr.NewKeyword(name.Value, fields.TitleAbstract)
-			// Add MeSH field restrictions to the query if it comes from a MeSH source.
-			if name.AttrSAB == "MSH" {
-				query.Fields = []string{fields.MeshHeadings}
-				query = query.SetOption(cqr.ExplodedString, true).(cqr.Keyword)
-			}
-			keywords = append(keywords, query)
-		}
-		if len(keywords) > 5 {
-			break
-		}
-	}
-	return keywords, nil
-}
-
-func (m MedGenEntityExpander) CUIs(q cqr.Keyword) ([]string, error) {
-	ids, err := m.e.Search(q.QueryString)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(ids) == 0 {
-		return nil, nil
-	}
-
-	sids := make([]string, len(ids))
-	for i, id := range ids {
-		sids[i] = cui2vec.Int2CUI(id)
-	}
-	return sids, nil
-}
-
-func NewMedGenExpander(e stats.EntrezStatisticsSource) *MedGenEntityExpander {
-	return &MedGenEntityExpander{e: e.SetDB("medgen")}
+func NewCui2VecRPCEntityExpander(client *cui2vec.VecClient) *Cui2VecRPCEntityExpander {
+	return &Cui2VecRPCEntityExpander{client: client}
 }
 
 func NewCui2VecEntityExpander(embeddings cui2vec.PrecomputedEmbeddings) *Cui2VecEntityExpander {
 	return &Cui2VecEntityExpander{embeddings: embeddings}
+}
+
+func (c *Cui2VecRPCEntityExpander) Expand(keyword cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
+	if keyword.GetOption(Entity) == nil {
+		return []cqr.CommonQueryRepresentation{}, nil
+	}
+	concepts, err := c.client.Sim(keyword.GetOption(Entity).(string))
+	if err != nil {
+		return nil, err
+	}
+	var keywords []cqr.CommonQueryRepresentation
+	for _, concept := range concepts {
+		if len(concept.CUI) == 0 {
+			continue
+		}
+		if concept.Value > 0.5 {
+			keywords = append(keywords, cqr.NewKeyword(keyword.QueryString, keyword.Fields...).SetOption(Entity, concept.CUI))
+		}
+	}
+	return keywords, nil
 }
 
 func (c Cui2VecEntityExpander) Expand(keyword cqr.Keyword) ([]cqr.CommonQueryRepresentation, error) {
@@ -112,9 +134,7 @@ func (c Cui2VecEntityExpander) Expand(keyword cqr.Keyword) ([]cqr.CommonQueryRep
 		if len(concept.CUI) == 0 {
 			continue
 		}
-		if concept.Value > 0.75 {
-			keywords = append(keywords, cqr.NewKeyword(keyword.QueryString, keyword.Fields...).SetOption(Entity, concept.CUI))
-		}
+		keywords = append(keywords, cqr.NewKeyword(keyword.QueryString, keyword.Fields...).SetOption(Entity, concept.CUI))
 	}
 	return keywords, nil
 }
