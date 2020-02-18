@@ -851,6 +851,11 @@ func addMeSHTerms(conditions, treatments, studyTypes []cqr.Keyword, dev []guru.M
 		fmt.Println(i, sh)
 	}
 
+	err := os.MkdirAll("top_subheadings", 0777)
+	if err != nil {
+		panic(err)
+	}
+
 	f, err := os.OpenFile(path.Join("./top_subheadings", folder, topic), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
 	if err != nil {
 		panic(err)
