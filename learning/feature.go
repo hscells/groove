@@ -34,7 +34,7 @@ const (
 	// Context Features.
 	nilFeature = iota
 	DepthFeature
-	ClauseTypeFeature  // This isn't the operator type, it's the type of the clause (keyword query/Boolean query).
+	ClauseTypeFeature // This isn't the operator type, it's the type of the clause (keyword query/Boolean query).
 	ChildrenCountFeature
 
 	// Transformation-based Features.
@@ -403,7 +403,6 @@ func (ff Features) String() string {
 	}
 	return strings.Join(s, " ")
 }
-
 
 // WriteLibSVM writes a LIBSVM compatible line to a writer.
 func (lf LearntFeature) WriteLibSVM(writer io.Writer, comment ...interface{}) (int, error) {

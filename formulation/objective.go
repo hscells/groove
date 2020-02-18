@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	rake "github.com/afjoseph/RAKE.Go"
 	"github.com/hscells/cqr"
 	"github.com/hscells/ghost"
 	"github.com/hscells/groove/combinator"
@@ -114,7 +115,7 @@ var (
 // GetPopulationSet retrieves a set of publications to form a population set.
 func GetPopulationSet(e stats.EntrezStatisticsSource, analyser TermAnalyser) (BackgroundCollection, error) {
 	e.Limit = 10000
-	pmids, err := e.Search(`("0000"[Date - Publication] : "2018"[Date - Publication])`, e.SearchSize(10000), )
+	pmids, err := e.Search(`("0000"[Date - Publication] : "2018"[Date - Publication])`, e.SearchSize(10000))
 	if err != nil {
 		return nil, err
 	}
@@ -247,6 +248,18 @@ func TermFrequencyAnalyser(docs []guru.MedlineDocument) (TermStatistics, error) 
 	return t, nil
 }
 
+func RAKEAnalyser(docs []guru.MedlineDocument) (TermStatistics, error) {
+	t := make(TermStatistics)
+	for _, doc := range docs {
+		pairs := rake.RunRakeI18N(fmt.Sprintf("%s %s", doc.TI, doc.AB), append(rake.StopWordsSlice, "<", ">"))
+		for _, v := range pairs {
+			t[v.Key] += v.Value
+		}
+
+	}
+	return t, nil
+}
+
 func loadSemTypesMapping(filename string) (semTypeMapping, error) {
 	m := make(semTypeMapping)
 
@@ -284,6 +297,8 @@ func cutDevelopmentTerms(t TermStatistics, dev []guru.MedlineDocument, cut float
 	return terms
 }
 
+var termStatistics map[string]float64
+
 // cutDevelopmentTermsWithPopulation takes TermStatistics where the DF in the population collection is <= 2%.
 func cutDevelopmentTermsWithPopulation(dev []string, population BackgroundCollection, topic, folder string, cut float64) []string {
 	size, err := population.Size()
@@ -300,16 +315,29 @@ func cutDevelopmentTermsWithPopulation(dev []string, population BackgroundCollec
 	}
 	terms := make(TermStatistics)
 
+	if termStatistics == nil {
+		termStatistics = make(map[string]float64)
+	}
+
 	for _, term := range dev {
-		fmt.Println(" -", term)
-		if df, err := population.Statistic(term); err == nil {
-			if float64(df) <= n {
-				terms[term] = df
-				t = append(t, term)
-			}
+		var df float64
+
+		if v, ok := termStatistics[term]; ok {
+			df = v
 		} else {
-			panic(err)
+			df, err = population.Statistic(term)
+			if err != nil {
+				panic(err)
+			}
+			termStatistics[term] = df
 		}
+
+		if df <= n && df > 0 {
+			terms[term] = df
+			t = append(t, term)
+		}
+
+		fmt.Println(" -", term, df)
 	}
 
 	var pairs []pair
@@ -320,6 +348,11 @@ func cutDevelopmentTermsWithPopulation(dev []string, population BackgroundCollec
 	sort.Slice(pairs, func(i, j int) bool {
 		return pairs[i].V > pairs[j].V
 	})
+
+	err = os.MkdirAll("document_frequency", 0777)
+	if err != nil {
+		panic(err)
+	}
 
 	f, err := os.OpenFile(path.Join("./document_frequency", folder, topic+".population.json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
 	if err != nil {
@@ -334,84 +367,124 @@ func cutDevelopmentTermsWithPopulation(dev []string, population BackgroundCollec
 	return t
 }
 
+var metaMapCache map[string]mappingPair
+
 // metaMapTerms maps TermStatistics to CUIs.
 func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
+	if metaMapCache == nil {
+		metaMapCache = make(map[string]mappingPair)
+	}
+
 	// Open the document store.
-	d, err := os.UserCacheDir()
-	if err != nil {
-		return nil, err
-	}
-	g, err := ghost.Open(path.Join(d, "/ghost/groove/objective/metamap"), ghost.NewGobSchema(mappingPair{}))
-	if err != nil {
-		panic(err)
-	}
+	//d, err := os.UserCacheDir()
+	//if err != nil {
+	//	return nil, err
+	//}
+	//g, err := ghost.Open(path.Join(d, "/ghost/groove/objective/metamap"), ghost.NewGobSchema(mappingPair{}))
+	//if err != nil {
+	//	panic(err)
+	//}
 	cuis := make(mapping)
-	for _, term := range terms {
-		if !g.Contains(term) {
-			candidates, err := client.Candidates(term)
-			if err != nil {
-				return nil, err
+	for i, term := range terms {
+		fmt.Printf("%d/%d", i, len(terms))
+		if v, ok := metaMapCache[term]; ok {
+			if len(v.CUI) > 0 {
+				cuis[term] = v
+				fmt.Printf(" - [√] %s -> %s", term, v.CUI)
 			}
-			found := false
-			for _, candidate := range candidates {
-				if strings.ToLower(candidate.CandidateMatched) == term {
-					p := mappingPair{
-						CUI:  candidate.CandidateCUI,
-						Abbr: candidate.SemTypes[0],
-					}
-					cuis[term] = p
-					err := g.Put(term, p)
-					if err != nil {
-						panic(err)
-					}
-					found = true
-					fmt.Println("put term", term)
-					break
-				}
-			}
-
-			if !found {
-				err := g.Put(term, mappingPair{})
-				if err != nil {
-					panic(err)
-				}
-			}
-		} else {
-			var p mappingPair
-			err := g.Get(term, &p)
-			if err != nil {
-				//panic(err)
-				candidates, err := client.Candidates(term)
-				if err != nil {
-					return nil, err
-				}
-				//found := false
-				for _, candidate := range candidates {
-					if strings.ToLower(candidate.CandidateMatched) == term {
-						p := mappingPair{
-							CUI:  candidate.CandidateCUI,
-							Abbr: candidate.SemTypes[0],
-						}
-						cuis[term] = p
-						err := g.Put(term, p)
-						if err != nil {
-							panic(err)
-						}
-						//found = true
-						fmt.Println("put term", term)
-						break
-					}
-				}
-			}
-			cuis[term] = p
-			fmt.Println("get term", term)
+			fmt.Println()
+			continue
 		}
+
+		candidates, err := client.Candidates(term)
+		if err != nil {
+			return nil, err
+		}
+
+		found := false
+		for _, candidate := range candidates {
+			if strings.ToLower(candidate.CandidateMatched) == term {
+				p := mappingPair{
+					CUI:  candidate.CandidateCUI,
+					Abbr: candidate.SemTypes[0],
+				}
+				cuis[term] = p
+				metaMapCache[term] = p
+				fmt.Printf(" - [?] %s -> %s", term, candidate.CandidateCUI)
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			metaMapCache[term] = mappingPair{}
+		}
+		fmt.Println()
+		//if !g.Contains(term) {
+		//	candidates, err := client.Candidates(term)
+		//	if err != nil {
+		//		return nil, err
+		//	}
+		//	found := false
+		//	for _, candidate := range candidates {
+		//		if strings.ToLower(candidate.CandidateMatched) == term {
+		//			p := mappingPair{
+		//				CUI:  candidate.CandidateCUI,
+		//				Abbr: candidate.SemTypes[0],
+		//			}
+		//			cuis[term] = p
+		//			err := g.Put(term, p)
+		//			if err != nil {
+		//				panic(err)
+		//			}
+		//			found = true
+		//			fmt.Println("put term", term)
+		//			break
+		//		}
+		//	}
+		//
+		//	if !found {
+		//		err := g.Put(term, mappingPair{})
+		//		if err != nil {
+		//			panic(err)
+		//		}
+		//	}
+		//} else {
+		//	var p mappingPair
+		//	err := g.Get(term, &p)
+		//	if err != nil {
+		//		//panic(err)
+		//		candidates, err := client.Candidates(term)
+		//		if err != nil {
+		//			return nil, err
+		//		}
+		//		//found := false
+		//		for _, candidate := range candidates {
+		//			if strings.ToLower(candidate.CandidateMatched) == term {
+		//				p := mappingPair{
+		//					CUI:  candidate.CandidateCUI,
+		//					Abbr: candidate.SemTypes[0],
+		//				}
+		//				cuis[term] = p
+		//				err := g.Put(term, p)
+		//				if err != nil {
+		//					panic(err)
+		//				}
+		//				//found = true
+		//				fmt.Println("put term", term)
+		//				break
+		//			}
+		//		}
+		//	}
+		//	cuis[term] = p
+		//	fmt.Println("get term", term)
+		//}
 	}
 
-	err = g.Close()
-	if err != nil {
-		return nil, err
-	}
+	//err = g.Close()
+	//if err != nil {
+	//	return nil, err
+	//}
 
 	return cuis, nil
 }
@@ -954,6 +1027,11 @@ func rankTerms(t TermStatistics, dev []guru.MedlineDocument, topic, folder strin
 		return pairs[i].V > pairs[j].V
 	})
 
+	err := os.MkdirAll("statistics", 0777)
+	if err != nil {
+		panic(err)
+	}
+
 	f, err := os.OpenFile(path.Join("./statistics", folder, topic+".development.json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
 	if err != nil {
 		panic(err)
@@ -994,7 +1072,12 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 		return nil, nil, err
 	}
 
+	fmt.Println("------------------------------------------")
+	fmt.Println(o.query.Topic)
+	fmt.Println(o.DevK)
+	fmt.Println(o.PopK)
 	fmt.Printf("grid search over %v, %v\n", o.DevK, o.PopK)
+	fmt.Println("------------------------------------------")
 
 	// Grid search over dev and pop values for the best query on validation.
 	for _, d := range o.DevK {
@@ -1028,7 +1111,7 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 			// Create keywords for the proceeding query.
 			conditionsKeywords, treatmentsKeywords, studyTypesKeywords, _ := makeKeywords(conditions, treatments, studyTypes, []string{}, nil)
 
-			fmt.Println("filtering keywords")
+			fmt.Println("filtering 	keywords")
 			// And then filter the query TermStatistics.
 			conditions, treatments, studyTypes, err = FilterQueryTerms(conditions, treatments, studyTypes, fields.TitleAbstract, MakeQrels(dev, o.Topic()), o.s)
 			if err != nil {

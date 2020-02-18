@@ -234,7 +234,7 @@ search:
 		l, err := e.Search(query, e.SearchStart(p.RetStart+len(pmids)), e.SearchSize(e.SearchOptions().Size))
 		if err != nil {
 			if fails > 0 {
-				log.Printf("recursive search error: %v, retrying %d more times for %f seconds", err, fails, time.Duration(((nfails - fails) * 5) * int(time.Second)).Seconds())
+				log.Printf("recursive search error: %v, retrying %d more times for %f seconds", err, fails, time.Duration(((nfails-fails)*5)*int(time.Second)).Seconds())
 				fails--
 				time.Sleep(time.Duration((nfails-fails)*5) * time.Second)
 				goto retry
@@ -282,7 +282,7 @@ retry:
 	r, err := entrez.Fetch(e.db, p, e.tool, e.email, nil, pmids...)
 	if err != nil {
 		if fails > 0 {
-			log.Printf("fetch error: %v, retrying %d more times for %f seconds", err, fails, time.Duration(((nfails - fails) * 5) * int(time.Second)).Seconds())
+			log.Printf("fetch error: %v, retrying %d more times for %f seconds", err, fails, time.Duration(((nfails-fails)*5)*int(time.Second)).Seconds())
 			fails--
 			time.Sleep(time.Duration((nfails-fails)*5) * time.Second)
 			goto retry
@@ -559,6 +559,8 @@ execute:
 	return r, nil
 }
 
+var pmCollectionSize float64
+
 func (e EntrezStatisticsSource) CollectionSize() (float64, error) {
 	if e.N > 0 {
 		return e.N, nil
@@ -567,7 +569,10 @@ func (e EntrezStatisticsSource) CollectionSize() (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return float64(info.DbInfo.Count), nil
+	if pmCollectionSize == 0 {
+		pmCollectionSize = float64(info.DbInfo.Count)
+	}
+	return pmCollectionSize, nil
 }
 
 func (e EntrezStatisticsSource) Translation(term string) ([]string, error) {

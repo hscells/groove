@@ -41,7 +41,7 @@ func TestBoolCOMB(t *testing.T) {
 	cacher := combinator.NewFileQueryCache(path.Join(cacheDir, "groove", "file_cache"))
 
 	pq := pipeline.NewQuery("CD009694", "CD009694", q)
-	r, err := rank.CLF(pq, e, )
+	r, err := rank.CLF(pq, e)
 	if err != nil {
 		t.Fatal(err)
 	}

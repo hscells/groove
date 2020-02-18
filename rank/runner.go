@@ -157,7 +157,7 @@ func newPosting(query, indexPath string, e stats.EntrezStatisticsSource) (*Posti
 	return posting, nil
 }
 
-func (r Runner) run(done chan bool, scoredc chan ScoredDocuments, errc chan error) () {
+func (r Runner) run(done chan bool, scoredc chan ScoredDocuments, errc chan error) {
 	defer close(scoredc)
 	defer close(errc)
 	defer close(done)

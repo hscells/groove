@@ -37,7 +37,7 @@ type ObjectiveFormulator struct {
 	Folder, Pubdates, SemTypes, MetaMapURL string
 	query                                  pipeline.Query
 	s                                      stats.EntrezStatisticsSource
-	qrels                                  trecresults.Qrels
+	qrels                                  trecresults.QrelsFile
 	MeSHK                                  []int
 	DevK, PopK                             []float64
 	minDocs                                int
@@ -88,7 +88,7 @@ func ObjectiveOptimisation(optimisation eval.Evaluator) ObjectiveOption {
 		o.optimisation = optimisation
 	}
 }
-func ObjectiveQrels(rels trecresults.Qrels) ObjectiveOption {
+func ObjectiveQrels(rels trecresults.QrelsFile) ObjectiveOption {
 	return func(o *ObjectiveFormulator) {
 		o.qrels = rels
 	}
@@ -105,7 +105,7 @@ func ObjectiveQuery(query pipeline.Query) ObjectiveOption {
 	}
 }
 
-func NewObjectiveFormulator(s stats.EntrezStatisticsSource, qrels trecresults.Qrels, population BackgroundCollection, folder, pubdates, semTypes, metamapURL string, optimisation eval.Evaluator, options ...ObjectiveOption) *ObjectiveFormulator {
+func NewObjectiveFormulator(s stats.EntrezStatisticsSource, qrels trecresults.QrelsFile, population BackgroundCollection, folder, pubdates, semTypes, metamapURL string, optimisation eval.Evaluator, options ...ObjectiveOption) *ObjectiveFormulator {
 	o := &ObjectiveFormulator{
 		s:            s,
 		qrels:        qrels,
@@ -137,7 +137,7 @@ func (o ObjectiveFormulator) Derive() (cqr.CommonQueryRepresentation, cqr.Common
 	// Identify the relevant studies using relevance assessments.
 	var docs []int
 	var nonrel []*trecresults.Qrel
-	for _, rel := range o.qrels {
+	for _, rel := range o.qrels.Qrels[o.query.Topic] {
 		if rel.Score > 0 {
 			v, err := strconv.Atoi(rel.DocId)
 			if err != nil {
@@ -149,8 +149,8 @@ func (o ObjectiveFormulator) Derive() (cqr.CommonQueryRepresentation, cqr.Common
 		}
 	}
 
-	if len(docs) <= o.minDocs {
-		return nil, nil, nil, nil, nil, fmt.Errorf("not enough relevant studies (minimmum %d)", o.minDocs)
+	if len(docs) >= o.minDocs {
+		docs = docs[:o.minDocs]
 	}
 
 	// Fetch those relevant documents.

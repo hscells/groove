@@ -407,6 +407,10 @@ func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, 
 		}
 		bq.Children = append(bq.Children, cqr.NewBooleanQuery(cqr.OR, kws))
 	}
+	//for t, v := range mapping {
+	//	fmt.Println(t)
+	//	bq.Children = append(bq.Children, cqr.NewKeyword(t, fields.TitleAbstract).SetOption(Entity, v.CUI))
+	//}
 	fmt.Println("----------------------------------")
 
 	return bq, nil

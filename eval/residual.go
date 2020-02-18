@@ -27,7 +27,7 @@ func (r ResidualEvaluator) Residual(results *trecresults.ResultList, qrels trecr
 				Topic:     result.Topic,
 				Iteration: "Q0",
 				DocId:     d,
-				Score:     RelevanceGrade+1,
+				Score:     RelevanceGrade + 1,
 			}
 		}
 	}

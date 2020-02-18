@@ -558,7 +558,7 @@ func RankTerms(t Terms, dev []guru.MedlineDocument, topic, folder string) []stri
 // GetPopulationSet retrieves a set of publications to form a population set.
 func GetPopulationSet(e stats.EntrezStatisticsSource) ([]guru.MedlineDocument, error) {
 	e.Limit = 10000
-	pmids, err := e.Search(`("0000"[Date - Publication] : "2018"[Date - Publication])`, e.SearchSize(10000), )
+	pmids, err := e.Search(`("0000"[Date - Publication] : "2018"[Date - Publication])`, e.SearchSize(10000))
 	if err != nil {
 		return nil, err
 	}

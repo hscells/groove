@@ -55,7 +55,7 @@ func (m MaximumLikelihoodEvaluator) Residual(results *trecresults.ResultList, qr
 				Topic:     result.Topic,
 				Iteration: "Q0",
 				DocId:     d,
-				Score:     RelevanceGrade+1,
+				Score:     RelevanceGrade + 1,
 			}
 			// Do not forget to increase n.
 			n++

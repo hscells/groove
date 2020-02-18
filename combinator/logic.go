@@ -151,7 +151,7 @@ func (andOperator) Combine(nodes []LogicalTreeNode, cache QueryCacher) Documents
 	for i := 1; i < len(docIDs); i++ {
 		pivot := len(docs)
 
-		docs = append(docs, /* next */ docIDs[i]...)
+		docs = append(docs /* next */, docIDs[i]...)
 
 		size := set.Inter(docs, pivot)
 		docs = docs[:size]
