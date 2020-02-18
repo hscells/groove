@@ -1181,6 +1181,11 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 		return nil, nil, err
 	}
 
+	err = os.MkdirAll("./objective_qf/params", 0777)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	err = ioutil.WriteFile(path.Join("./objective_qf/params", o.Folder, o.query.Topic+"params.json"), b, 0664)
 	if err != nil {
 		return nil, nil, err
