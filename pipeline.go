@@ -396,34 +396,34 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 						_ = p.Headway.Send(float64(i)+1, float64(len(measurementQueries)), "EV."+hwName, fmt.Sprintf("%s", query.Topic))
 					}
 					log.Printf("starting topic %v\n", query.Topic)
-					//
-					//tree, cache, err := combinator.NewLogicalTree(query, p.StatisticsSource, p.QueryCache)
-					//if err != nil {
-					//	c <- pipeline.Result{
-					//		Topic: query.Topic,
-					//		Error: err,
-					//		Type:  pipeline.Error,
-					//	}
-					//	return
-					//}
-					//docIds := tree.Documents(cache)
-					//if err != nil {
-					//	c <- pipeline.Result{
-					//		Topic: query.Topic,
-					//		Error: err,
-					//		Type:  pipeline.Error,
-					//	}
-					//	return
-					//}
-					//trecResults := docIds.Results(query, query.Name)
-					trecResults, err := p.StatisticsSource.Execute(query, p.StatisticsSource.SearchOptions())
+
+					tree, cache, err := combinator.NewLogicalTree(query, p.StatisticsSource, p.QueryCache)
 					if err != nil {
-						if loghw {
-							_ = p.Headway.Message(err.Error())
-							_ = p.Headway.Send(float64(i), float64(len(measurementQueries)), hwName, err.Error())
+						c <- pipeline.Result{
+							Topic: query.Topic,
+							Error: err,
+							Type:  pipeline.Error,
 						}
-						panic(err)
+						return
 					}
+					docIds := tree.Documents(cache)
+					if err != nil {
+						c <- pipeline.Result{
+							Topic: query.Topic,
+							Error: err,
+							Type:  pipeline.Error,
+						}
+						return
+					}
+					trecResults := docIds.Results(query, query.Name)
+					//trecResults, err := p.StatisticsSource.Execute(query, p.StatisticsSource.SearchOptions())
+					//if err != nil {
+					//	if loghw {
+					//		_ = p.Headway.Message(err.Error())
+					//		_ = p.Headway.Send(float64(i), float64(len(measurementQueries)), hwName, err.Error())
+					//	}
+					//	panic(err)
+					//}
 
 					// Set the evaluation results.
 					if len(p.Evaluations) > 0 {

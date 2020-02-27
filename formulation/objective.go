@@ -2,6 +2,7 @@ package formulation
 
 import (
 	"encoding/csv"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	rake "github.com/afjoseph/RAKE.Go"
@@ -88,7 +89,7 @@ type mapping map[string]mappingPair
 // SemTypeMapping is a mapping of STY->Classification.
 type semTypeMapping map[string]string
 
-type queryCategory int
+type QueryCategory int
 
 type evaluation struct {
 	Development map[string]float64
@@ -97,7 +98,7 @@ type evaluation struct {
 }
 
 const (
-	none queryCategory = iota
+	none QueryCategory = iota
 	condition
 	treatment
 	studyType
@@ -105,7 +106,7 @@ const (
 )
 
 var (
-	categories = map[string]queryCategory{
+	categories = map[string]QueryCategory{
 		"Test":      treatment,
 		"Treatment": treatment,
 		"Diagnosis": condition,
@@ -512,7 +513,7 @@ func classifyQueryTerms(terms []string, mapping mapping, semTypes semTypeMapping
 
 				sty := group.STY
 
-				var category queryCategory
+				var category QueryCategory
 				// Now, the STY might not be mapped in Bevan's mapping.
 				if c, ok := semTypes[sty]; ok {
 					category = categories[c]
@@ -911,11 +912,11 @@ func addMeSHTerms(conditions, treatments, studyTypes []cqr.Keyword, dev []guru.M
 	return conditions, treatments, studyTypes, nil
 }
 
-func classifyMeSHCategory(mh string, tree *meshexp.MeSHTree) []queryCategory {
+func classifyMeSHCategory(mh string, tree *meshexp.MeSHTree) []QueryCategory {
 	references := tree.Reference(mh)
 	fmt.Println(mh)
 	seen := make(map[uint8]bool)
-	var cats []queryCategory
+	var cats []QueryCategory
 	for _, ref := range references {
 		c := ref.TreeLocation[0][0]
 		fmt.Println("->", string(c), ref.MedicalSubjectHeading)
@@ -988,21 +989,21 @@ func constructQuery(conditions, treatments, studyTypes []cqr.Keyword, other ...c
 // evaluate computes evaluation measures for each of the dev, val, and unseen sets.
 func evaluate(query cqr.CommonQueryRepresentation, e stats.EntrezStatisticsSource, dev, val, unseen []guru.MedlineDocument, topic string) (evaluation, error) {
 	// Execute the query and find the effectiveness.
-	//d, err := os.UserCacheDir()
-	//if err != nil {
-	//	return evaluation{}, err
-	//}
-	//filecache := combinator.NewFileQueryCache(path.Join(d, "filecache"))
-	//pq := pipeline.NewQuery("0", "0", query)
-	//tree, _, err := combinator.NewLogicalTree(pq, e, filecache)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//results := tree.Documents(filecache).Results(pq, "0")
-	results, err := e.Execute(pipeline.NewQuery("", "", query), e.SearchOptions())
+	d, err := os.UserCacheDir()
 	if err != nil {
 		return evaluation{}, err
 	}
+	filecache := combinator.NewFileQueryCache(path.Join(d, "filecache"))
+	pq := pipeline.NewQuery("0", "0", query)
+	tree, _, err := combinator.NewLogicalTree(pq, e, filecache)
+	if err != nil {
+		panic(err)
+	}
+	results := tree.Documents(filecache).Results(pq, "0")
+	//results, err := e.Execute(pipeline.NewQuery("", "", query), e.SearchOptions())
+	//if err != nil {
+	//	return evaluation{}, err
+	//}
 	eval.RelevanceGrade = 0
 	ev := []eval.Evaluator{eval.NumRel, eval.NumRet, eval.NumRelRet, eval.Recall, eval.Precision, eval.F1Measure, eval.F05Measure, eval.F3Measure, eval.NNR}
 	devEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": MakeQrels(dev, topic)}}, "0")
@@ -1017,6 +1018,7 @@ func evaluate(query cqr.CommonQueryRepresentation, e stats.EntrezStatisticsSourc
 
 // RankTerms ranks term statistics.
 func rankTerms(t TermStatistics, dev []guru.MedlineDocument, topic, folder string) []string {
+	gob.Register(QueryCategory(0))
 	type pair struct {
 		K string
 		V float64
