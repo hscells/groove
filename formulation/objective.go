@@ -1086,112 +1086,156 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 	fmt.Printf("grid search over %v, %v\n", o.DevK, o.PopK)
 	fmt.Println("------------------------------------------")
 
-	// Grid search over dev and pop values for the best query on validation.
-	for _, d := range o.DevK {
-		for _, p := range o.PopK {
-			fmt.Println(d, p)
+	err = os.MkdirAll("./objective_qf/params", 0777)
+	if err != nil {
+		return nil, nil, err
+	}
 
-			fmt.Println("cutting terms")
-			// Take terms from dev.
-			cut := cutDevelopmentTerms(devDF, dev, d)
+	paramsFile := path.Join("./objective_qf/params", o.Folder, o.query.Topic+"params.json")
 
-			fmt.Println("ranking terms")
-			// Rank the cut terms in dev.
-			terms := rankTerms(cut, dev, o.query.Topic, o.Folder)
+	_, err = os.Stat(paramsFile)
+	if os.IsExist(err) {
+		f, err := os.OpenFile(paramsFile, os.O_RDONLY, 0664)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer f.Close()
+		params := make(map[string]float64)
+		json.NewDecoder(f).Decode(&params)
+		var ev evaluation
+		bestConditions, bestTreatments, bestStudyTypes, bestQ, ev, _, _, err = o.tuneSingleQuery(devDF, dev, params["d"], population, params["p"], semTypes, val)
+		if err != nil {
+			return nil, nil, err
+		}
+		bestEval = ev.Validation[m.Name()]
+		conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH, err := addMeSHTerms(bestConditions, bestTreatments, bestStudyTypes, dev, o.s, o.query.Topic, int(params["m"]), o.Folder)
+		if err != nil {
+			return nil, nil, err
+		}
 
-			fmt.Println("cutting dev terms with population")
-			// Identify dev TermStatistics which appear in <= 2% of the DF of the population set.
-			queryTerms := cutDevelopmentTermsWithPopulation(terms, population, o.query.Topic, o.Folder, p)
+		qWithMeSH := constructQuery(conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH)
+		qWithMeSH = preprocess.DateRestrictions(o.Pubdates)(qWithMeSH, o.query.Topic)()
 
-			fmt.Println("mapping terms")
-			// Map sem types in TermStatistics.
-			mapping, err := metaMapTerms(queryTerms, metawrap.HTTPClient{URL: o.MetaMapURL})
+		ev, err = evaluate(qWithMeSH, o.s, dev, val, nil, o.Topic())
+		if err != nil {
+			return nil, nil, err
+		}
+		bestEval = ev.Validation[m.Name()]
+		bestQWithMesh = qWithMeSH
+		bestM = int(params["m"])
+
+	} else {
+		// Grid search over dev and pop values for the best query on validation.
+		for _, d := range o.DevK {
+			for _, p := range o.PopK {
+				fmt.Println(d, p)
+
+				conditionsKeywords, treatmentsKeywords, studyTypesKeywords, q, ev, representation, queryRepresentation, err2 := o.tuneSingleQuery(devDF, dev, d, population, p, semTypes, val)
+				if err2 != nil {
+					return representation, queryRepresentation, err2
+				}
+
+				if ev.Validation[m.Name()] > bestEval {
+					bestEval = ev.Validation[m.Name()]
+					bestQ = q
+					bestConditions = conditionsKeywords
+					bestTreatments = treatmentsKeywords
+					bestStudyTypes = studyTypesKeywords
+					bestD = d
+					bestP = p
+				}
+			}
+		}
+		fmt.Println("completed grid search")
+
+		// Grid search parameters of k for the number of mesh keywords to add to a query.
+		bestEval = 0.0
+		for _, k := range o.MeSHK {
+			fmt.Println(k)
+			conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH, err := addMeSHTerms(bestConditions, bestTreatments, bestStudyTypes, dev, o.s, o.query.Topic, k, o.Folder)
 			if err != nil {
 				return nil, nil, err
 			}
+			qWithMeSH := constructQuery(conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH)
+			qWithMeSH = preprocess.DateRestrictions(o.Pubdates)(qWithMeSH, o.query.Topic)()
 
-			fmt.Println("classifying terms")
-			// Classify query TermStatistics.
-			conditions, treatments, studyTypes, _ := classifyQueryTerms(queryTerms, mapping, semTypes)
-
-			fmt.Println("creating keywords")
-			// Create keywords for the proceeding query.
-			conditionsKeywords, treatmentsKeywords, studyTypesKeywords, _ := makeKeywords(conditions, treatments, studyTypes, []string{}, nil)
-
-			fmt.Println("filtering 	keywords")
-			// And then filter the query TermStatistics.
-			conditions, treatments, studyTypes, err = FilterQueryTerms(conditions, treatments, studyTypes, fields.TitleAbstract, MakeQrels(dev, o.Topic()), o.s)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			fmt.Println("constructing final query")
-			// Create the query from the three categories.
-			q := constructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords)
-			fmt.Println(q)
-			q = preprocess.DateRestrictions(o.Pubdates)(q, o.query.Topic)()
-			fmt.Println(q)
-
-			fmt.Println("evaluating final query")
-			ev, err := evaluate(q, o.s, dev, val, nil, o.Topic())
+			ev, err := evaluate(qWithMeSH, o.s, dev, val, nil, o.Topic())
 			if err != nil {
 				return nil, nil, err
 			}
 
 			if ev.Validation[m.Name()] > bestEval {
 				bestEval = ev.Validation[m.Name()]
-				bestQ = q
-				bestConditions = conditionsKeywords
-				bestTreatments = treatmentsKeywords
-				bestStudyTypes = studyTypesKeywords
-				bestD = d
-				bestP = p
+				bestQWithMesh = qWithMeSH
+				bestM = k
 			}
 		}
-	}
-	fmt.Println("completed grid search")
 
-	// Grid search parameters of k for the number of mesh keywords to add to a query.
-	bestEval = 0.0
-	for _, k := range o.MeSHK {
-		fmt.Println(k)
-		conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH, err := addMeSHTerms(bestConditions, bestTreatments, bestStudyTypes, dev, o.s, o.query.Topic, k, o.Folder)
-		if err != nil {
-			return nil, nil, err
-		}
-		qWithMeSH := constructQuery(conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH)
-		qWithMeSH = preprocess.DateRestrictions(o.Pubdates)(qWithMeSH, o.query.Topic)()
-
-		ev, err := evaluate(qWithMeSH, o.s, dev, val, nil, o.Topic())
+		v := make(map[string]interface{})
+		v["d"] = bestD
+		v["p"] = bestP
+		v["m"] = bestM
+		b, err := json.Marshal(v)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		if ev.Validation[m.Name()] > bestEval {
-			bestEval = ev.Validation[m.Name()]
-			bestQWithMesh = qWithMeSH
-			bestM = k
+		err = ioutil.WriteFile(paramsFile, b, 0664)
+		if err != nil {
+			return nil, nil, err
 		}
-	}
 
-	v := make(map[string]interface{})
-	v["d"] = bestD
-	v["p"] = bestP
-	v["m"] = bestM
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	err = os.MkdirAll("./objective_qf/params", 0777)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	err = ioutil.WriteFile(path.Join("./objective_qf/params", o.Folder, o.query.Topic+"params.json"), b, 0664)
-	if err != nil {
-		return nil, nil, err
 	}
 
 	return bestQ, bestQWithMesh, nil
+}
+
+func (o ObjectiveFormulator) tuneSingleQuery(devDF TermStatistics, dev []guru.MedlineDocument, d float64, population BackgroundCollection, p float64, semTypes semTypeMapping, val []guru.MedlineDocument) ([]cqr.Keyword, []cqr.Keyword, []cqr.Keyword, cqr.CommonQueryRepresentation, evaluation, cqr.CommonQueryRepresentation, cqr.CommonQueryRepresentation, error) {
+	fmt.Println("cutting terms")
+	// Take terms from dev.
+	cut := cutDevelopmentTerms(devDF, dev, d)
+
+	fmt.Println("ranking terms")
+	// Rank the cut terms in dev.
+	terms := rankTerms(cut, dev, o.query.Topic, o.Folder)
+
+	fmt.Println("cutting dev terms with population")
+	// Identify dev TermStatistics which appear in <= 2% of the DF of the population set.
+	queryTerms := cutDevelopmentTermsWithPopulation(terms, population, o.query.Topic, o.Folder, p)
+
+	fmt.Println("mapping terms")
+	// Map sem types in TermStatistics.
+	mapping, err := metaMapTerms(queryTerms, metawrap.HTTPClient{URL: o.MetaMapURL})
+	if err != nil {
+		return nil, nil, nil, nil, evaluation{}, nil, nil, err
+	}
+
+	fmt.Println("classifying terms")
+	// Classify query TermStatistics.
+	conditions, treatments, studyTypes, _ := classifyQueryTerms(queryTerms, mapping, semTypes)
+
+	fmt.Println("creating keywords")
+	// Create keywords for the proceeding query.
+	conditionsKeywords, treatmentsKeywords, studyTypesKeywords, _ := makeKeywords(conditions, treatments, studyTypes, []string{}, nil)
+
+	fmt.Println("filtering 	keywords")
+	// And then filter the query TermStatistics.
+	conditions, treatments, studyTypes, err = FilterQueryTerms(conditions, treatments, studyTypes, fields.TitleAbstract, MakeQrels(dev, o.Topic()), o.s)
+	if err != nil {
+		return nil, nil, nil, nil, evaluation{}, nil, nil, err
+	}
+
+	fmt.Println("constructing final query")
+	// Create the query from the three categories.
+	q := constructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords)
+	fmt.Println(q)
+	q = preprocess.DateRestrictions(o.Pubdates)(q, o.query.Topic)()
+	fmt.Println(q)
+
+	fmt.Println("evaluating final query")
+	ev, err := evaluate(q, o.s, dev, val, nil, o.Topic())
+	if err != nil {
+		return nil, nil, nil, nil, evaluation{}, nil, nil, err
+	}
+	return conditionsKeywords, treatmentsKeywords, studyTypesKeywords, q, ev, nil, nil, nil
 }
