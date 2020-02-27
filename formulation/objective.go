@@ -1094,6 +1094,7 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 	paramsFile := path.Join("./objective_qf/params", o.Folder, o.query.Topic+"params.json")
 
 	_, err = os.Stat(paramsFile)
+	fmt.Println(err)
 	if os.IsExist(err) {
 		f, err := os.OpenFile(paramsFile, os.O_RDONLY, 0664)
 		if err != nil {
@@ -1102,6 +1103,7 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 		defer f.Close()
 		params := make(map[string]float64)
 		json.NewDecoder(f).Decode(&params)
+		fmt.Println(params)
 		var ev evaluation
 		bestConditions, bestTreatments, bestStudyTypes, bestQ, ev, _, _, err = o.tuneSingleQuery(devDF, dev, params["d"], population, params["p"], semTypes, val)
 		if err != nil {
