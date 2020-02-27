@@ -1095,7 +1095,7 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 
 	_, err = os.Stat(paramsFile)
 	fmt.Println(err)
-	if os.IsExist(err) {
+	if err == nil || os.IsExist(err) {
 		f, err := os.OpenFile(paramsFile, os.O_RDONLY, 0664)
 		if err != nil {
 			return nil, nil, err
