@@ -8,6 +8,7 @@ import (
 	"github.com/hscells/boogie"
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/cmd/reverb/reverb"
+	"github.com/hscells/groove/formulation"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/trecresults"
 	"io/ioutil"
@@ -88,6 +89,7 @@ func main() {
 	gob.Register(trecresults.Result{})
 	gob.Register(pipeline.SupplementalData{})
 	gob.Register(pipeline.Data{})
+	gob.Register(formulation.QueryCategory(0))
 
 	fmt.Print(args.Description())
 
