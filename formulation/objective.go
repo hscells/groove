@@ -1185,7 +1185,7 @@ func (o ObjectiveFormulator) tuneSingleQuery(devDF TermStatistics, dev []guru.Me
 	// Create keywords for the proceeding query.
 	conditionsKeywords, treatmentsKeywords, studyTypesKeywords, _ := makeKeywords(conditions, treatments, studyTypes, []string{}, nil)
 
-	fmt.Println("filtering 	keywords")
+	fmt.Println("filtering keywords")
 	// And then filter the query TermStatistics.
 	conditions, treatments, studyTypes, err = FilterQueryTerms(conditions, treatments, studyTypes, fields.TitleAbstract, MakeQrels(dev, o.Topic()), o.s)
 	if err != nil {
