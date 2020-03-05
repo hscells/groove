@@ -284,10 +284,15 @@ func (n NLPLogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, e
 func elasticUMLSMapTerms(terms []string, client *elastic.Client, st map[string]guru.SemType) (mapping, error) {
 	mapping := make(mapping)
 	for _, term := range terms {
+		retries := 5
 	search:
 		res, err := client.Search("umls").Query(elastic.NewQueryStringQuery(fmt.Sprintf(`"%s"`, term))).TerminateAfter(1).Do(context.Background())
 		if err != nil {
-			fmt.Println(err)
+			retries--
+			fmt.Println(retries, err)
+			if retries < 1 {
+				continue
+			}
 			goto search
 		}
 		if res.Hits != nil {
@@ -296,7 +301,11 @@ func elasticUMLSMapTerms(terms []string, client *elastic.Client, st map[string]g
 				body := make(map[string]interface{})
 				err = json.NewDecoder(bytes.NewBuffer(b)).Decode(&body)
 				if err != nil {
-					fmt.Println(err)
+					retries--
+					fmt.Println(retries, err)
+					if retries < 1 {
+						continue
+					}
 					goto search
 				}
 				cui := res.Hits.Hits[0].Id
