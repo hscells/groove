@@ -384,7 +384,6 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 	cuis := make(mapping)
 	concurrency := runtime.NumCPU()
 	sem := make(chan bool, concurrency)
-
 	for i, term := range terms {
 		mu.Lock()
 		if v, ok := metaMapCache[term]; ok {
@@ -401,7 +400,6 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 
 		go func(t string, idx int) {
 			defer func() { <-sem }()
-			fmt.Printf("%d/%d", idx, len(terms))
 
 		back:
 			found, p, err := metamapRequest(client, t)
@@ -442,10 +440,13 @@ func metamapRequest(client metawrap.HTTPClient, term string) (bool, mappingPair,
 				CUI:  candidate.CandidateCUI,
 				Abbr: candidate.SemTypes[0],
 			}
-			fmt.Printf(" - [?] %s -> %s\n", term, candidate.CandidateCUI)
+			fmt.Printf(" - [*] %s -> %s\n", term, candidate.CandidateCUI)
 			found = true
 			break
 		}
+	}
+	if !found {
+		fmt.Printf(" - [*] %s -> MISSING\n", term)
 	}
 	return found, p, nil
 }
