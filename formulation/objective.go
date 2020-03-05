@@ -27,6 +27,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Splitter splits a test set into development, validation, and unseen.
@@ -202,8 +203,8 @@ type RandomSplitter int64
 
 // splitTest creates three slices of documents: 2:4 development, 1:4 validation, 1:4 unseen.
 func (r RandomSplitter) Split(docs []guru.MedlineDocument) ([]guru.MedlineDocument, []guru.MedlineDocument, []guru.MedlineDocument) {
-	rand.Seed(int64(r))
-	rand.Shuffle(len(docs), func(i, j int) {
+	source := rand.New(rand.NewSource(int64(r)))
+	source.Shuffle(len(docs), func(i, j int) {
 		docs[i], docs[j] = docs[j], docs[i]
 	})
 
@@ -372,122 +373,77 @@ var metaMapCache map[string]mappingPair
 
 // metaMapTerms maps TermStatistics to CUIs.
 func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
 	if metaMapCache == nil {
 		metaMapCache = make(map[string]mappingPair)
 	}
 
 	// Open the document store.
-	//d, err := os.UserCacheDir()
-	//if err != nil {
-	//	return nil, err
-	//}
-	//g, err := ghost.Open(path.Join(d, "/ghost/groove/objective/metamap"), ghost.NewGobSchema(mappingPair{}))
-	//if err != nil {
-	//	panic(err)
-	//}
 	cuis := make(mapping)
 	for i, term := range terms {
 		fmt.Printf("%d/%d", i, len(terms))
+		mu.Lock()
 		if v, ok := metaMapCache[term]; ok {
 			if len(v.CUI) > 0 {
 				cuis[term] = v
-				fmt.Printf(" - [√] %s -> %s", term, v.CUI)
+				fmt.Printf(" - [/] %s -> %s", term, v.CUI)
+			} else {
+				fmt.Printf(" - [#] %s -> MISSING", term)
 			}
 			fmt.Println()
 			continue
 		}
+		mu.Unlock()
+		wg.Add(1)
 
-		candidates, err := client.Candidates(term)
-		if err != nil {
-			return nil, err
-		}
-
-		found := false
-		for _, candidate := range candidates {
-			if strings.ToLower(candidate.CandidateMatched) == term {
-				p := mappingPair{
-					CUI:  candidate.CandidateCUI,
-					Abbr: candidate.SemTypes[0],
-				}
-				cuis[term] = p
-				metaMapCache[term] = p
-				fmt.Printf(" - [?] %s -> %s", term, candidate.CandidateCUI)
-				found = true
-				break
+		go func(t string) {
+			defer wg.Done()
+		back:
+			found, p, err := metamapRequest(client, term)
+			if err != nil {
+				fmt.Println(err)
+				goto back
 			}
-		}
+			mu.Lock()
+			defer mu.Unlock()
+			if found {
+				metaMapCache[term] = p
+			} else {
+				metaMapCache[term] = mappingPair{}
+			}
+		}(term)
 
-		if !found {
-			metaMapCache[term] = mappingPair{}
-		}
 		fmt.Println()
-		//if !g.Contains(term) {
-		//	candidates, err := client.Candidates(term)
-		//	if err != nil {
-		//		return nil, err
-		//	}
-		//	found := false
-		//	for _, candidate := range candidates {
-		//		if strings.ToLower(candidate.CandidateMatched) == term {
-		//			p := mappingPair{
-		//				CUI:  candidate.CandidateCUI,
-		//				Abbr: candidate.SemTypes[0],
-		//			}
-		//			cuis[term] = p
-		//			err := g.Put(term, p)
-		//			if err != nil {
-		//				panic(err)
-		//			}
-		//			found = true
-		//			fmt.Println("put term", term)
-		//			break
-		//		}
-		//	}
-		//
-		//	if !found {
-		//		err := g.Put(term, mappingPair{})
-		//		if err != nil {
-		//			panic(err)
-		//		}
-		//	}
-		//} else {
-		//	var p mappingPair
-		//	err := g.Get(term, &p)
-		//	if err != nil {
-		//		//panic(err)
-		//		candidates, err := client.Candidates(term)
-		//		if err != nil {
-		//			return nil, err
-		//		}
-		//		//found := false
-		//		for _, candidate := range candidates {
-		//			if strings.ToLower(candidate.CandidateMatched) == term {
-		//				p := mappingPair{
-		//					CUI:  candidate.CandidateCUI,
-		//					Abbr: candidate.SemTypes[0],
-		//				}
-		//				cuis[term] = p
-		//				err := g.Put(term, p)
-		//				if err != nil {
-		//					panic(err)
-		//				}
-		//				//found = true
-		//				fmt.Println("put term", term)
-		//				break
-		//			}
-		//		}
-		//	}
-		//	cuis[term] = p
-		//	fmt.Println("get term", term)
-		//}
 	}
 
-	//err = g.Close()
-	//if err != nil {
-	//	return nil, err
-	//}
+	wg.Wait()
 
 	return cuis, nil
+}
+
+func metamapRequest(client metawrap.HTTPClient, term string) (bool, mappingPair, error) {
+	var p mappingPair
+
+	candidates, err := client.Candidates(term)
+	if err != nil {
+		return false, p, err
+	}
+
+	found := false
+	for _, candidate := range candidates {
+		if strings.ToLower(candidate.CandidateMatched) == term {
+			p = mappingPair{
+				CUI:  candidate.CandidateCUI,
+				Abbr: candidate.SemTypes[0],
+			}
+			fmt.Printf(" - [?] %s -> %s", term, candidate.CandidateCUI)
+			found = true
+			break
+		}
+	}
+	return found, p, nil
 }
 
 // classifyQueryTerms automatically classifies query TermStatistics based on the
@@ -1091,7 +1047,7 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 		return nil, nil, err
 	}
 
-	paramsFile := path.Join("./objective_qf/params", o.Folder, o.query.Topic+"params.json")
+	paramsFile := path.Join("./objective_qf/params", o.Folder, fmt.Sprintf("%s_%d_params.json", o.query.Topic, int64(o.splitter.(RandomSplitter))))
 
 	_, err = os.Stat(paramsFile)
 	fmt.Println(err)
