@@ -301,7 +301,7 @@ func elasticUMLSMapTerms(terms []string, client *elastic.Client, st map[string]g
 					CUI: cui,
 				}
 				semtypes := body["semtypes"].([]interface{})
-				if len(semtypes) == 1 {
+				if len(semtypes) > 0 {
 					tui := semtypes[0].(map[string]interface{})["TUI"]
 					if s, ok := st[tui.(string)]; ok {
 						mapping[term] = mappingPair{
@@ -309,6 +309,7 @@ func elasticUMLSMapTerms(terms []string, client *elastic.Client, st map[string]g
 							Abbr: s.Abbreviation,
 						}
 					}
+					continue
 				}
 			}
 		}

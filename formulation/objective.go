@@ -1168,7 +1168,11 @@ func (o ObjectiveFormulator) tuneSingleQuery(devDF TermStatistics, dev []guru.Me
 
 	fmt.Println("mapping terms")
 	// Map sem types in TermStatistics.
-	mapping, err := metaMapTerms(queryTerms, metawrap.HTTPClient{URL: o.MetaMapURL})
+	//mapping, err := metaMapTerms(queryTerms, metawrap.HTTPClient{URL: o.MetaMapURL})
+	//if err != nil {
+	//	return nil, nil, nil, nil, evaluation{}, nil, nil, err
+	//}
+	mapping, err := elasticUMLSMapTerms(queryTerms, o.elastic, o.st)
 	if err != nil {
 		return nil, nil, nil, nil, evaluation{}, nil, nil, err
 	}

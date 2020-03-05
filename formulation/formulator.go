@@ -9,6 +9,7 @@ import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/guru"
 	"github.com/hscells/trecresults"
+	"gopkg.in/olivere/elastic.v7"
 	"strconv"
 )
 
@@ -41,6 +42,8 @@ type ObjectiveFormulator struct {
 	MeSHK                                  []int
 	DevK, PopK                             []float64
 	minDocs                                int
+	elastic                                *elastic.Client
+	st                                     map[string]guru.SemType
 
 	population     BackgroundCollection
 	splitter       Splitter
@@ -105,7 +108,13 @@ func ObjectiveQuery(query pipeline.Query) ObjectiveOption {
 	}
 }
 
-func NewObjectiveFormulator(s stats.EntrezStatisticsSource, qrels trecresults.QrelsFile, population BackgroundCollection, folder, pubdates, semTypes, metamapURL string, optimisation eval.Evaluator, options ...ObjectiveOption) *ObjectiveFormulator {
+func NewObjectiveFormulator(s stats.EntrezStatisticsSource, esClient *elastic.Client, qrels trecresults.QrelsFile, population BackgroundCollection, folder, pubdates, semTypes, metamapURL string, optimisation eval.Evaluator, options ...ObjectiveOption) *ObjectiveFormulator {
+	t := guru.LoadSemTypes(guru.SEMTYPES)
+	x := make(map[string]guru.SemType)
+	for _, v := range t {
+		x[v.TUI] = v
+	}
+
 	o := &ObjectiveFormulator{
 		s:            s,
 		qrels:        qrels,
@@ -118,6 +127,8 @@ func NewObjectiveFormulator(s stats.EntrezStatisticsSource, qrels trecresults.Qr
 		analyser:     TermFrequencyAnalyser,
 		optimisation: optimisation,
 		minDocs:      50,
+		st:           x,
+		elastic:      esClient,
 		//DevK:         []float64{0.20},
 		//PopK:         []float64{0.02},
 		//MeSHK:        []int{20},
