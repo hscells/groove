@@ -24,6 +24,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -374,7 +375,6 @@ var metaMapCache map[string]mappingPair
 // metaMapTerms maps TermStatistics to CUIs.
 func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 	var mu sync.Mutex
-	var wg sync.WaitGroup
 
 	if metaMapCache == nil {
 		metaMapCache = make(map[string]mappingPair)
@@ -382,6 +382,9 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 
 	// Open the document store.
 	cuis := make(mapping)
+	concurrency := runtime.NumCPU()
+	sem := make(chan bool, concurrency)
+
 	for i, term := range terms {
 		mu.Lock()
 		if v, ok := metaMapCache[term]; ok {
@@ -395,11 +398,11 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 			continue
 		}
 		mu.Unlock()
-		wg.Add(1)
+		sem <- true
 
 		go func(t string, idx int) {
-			defer wg.Done()
-			//fmt.Printf("%d/%d", idx, len(terms))
+			defer func() { <-sem }()
+			fmt.Printf("%d/%d", idx, len(terms))
 
 		back:
 			found, p, err := metamapRequest(client, term)
@@ -415,11 +418,12 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 				metaMapCache[term] = mappingPair{}
 			}
 		}(term, i)
-
-		fmt.Println()
 	}
 
-	wg.Wait()
+	// Wait until the last goroutine has read from the semaphore.
+	for i := 0; i < cap(sem); i++ {
+		sem <- true
+	}
 
 	return cuis, nil
 }

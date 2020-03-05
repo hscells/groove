@@ -464,7 +464,7 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 		if p.QueryFormulator != nil {
 			for i, measurementQuery := range measurementQueries {
 				if loghw {
-					_ = p.Headway.Send(float64(i)+1, float64(len(measurementQueries)), "QF."+hwName, fmt.Sprintf("%s - %s", p.QueryFormulator.Method(), measurementQuery.Topic))
+					p.Headway.Send(float64(i)+1, float64(len(measurementQueries)), "QF."+hwName, fmt.Sprintf("%s - %s", p.QueryFormulator.Method(), measurementQuery.Topic))
 				}
 				// Perform the query formulation.
 				queries, sup, err := p.QueryFormulator.Formulate(measurementQuery)
@@ -484,6 +484,9 @@ func (p Pipeline) Execute(c chan pipeline.Result) {
 					},
 					Type: pipeline.Formulation,
 				}
+			}
+			if loghw {
+				p.Headway.Message("completed query formulation")
 			}
 		}
 	}

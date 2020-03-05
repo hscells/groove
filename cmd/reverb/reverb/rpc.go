@@ -14,24 +14,31 @@ func Execute(dsl boogie.Pipeline, hosts ...string) {
 	log.Println("executing pipeline with hosts:", len(hosts))
 
 	var wg sync.WaitGroup
+	var conn sync.WaitGroup
+	conn.Add(len(hosts))
 
 	for i, host := range hosts {
 		wg.Add(1)
 		go func(h string, idx int) {
 			d := splitSources(dsl, idx)
-			log.Println("connecting to", h)
+			log.Printf("[%s] connecting...\n", h)
 			client, err := rpc.Dial("tcp", h)
 			if err != nil {
 				panic(err)
 			}
-			log.Println("established connection to", h)
+			log.Printf("[%s] established connection\n", h)
+			conn.Done()
+
+			log.Printf("[%s] waiting for responses from other hosts\n", h)
+			conn.Wait()
+			log.Printf("[%s] executing experiments\n", h)
 			var resp Response
 			errs <- client.Call("Reverb.Execute", d, &resp)
 			for _, result := range resp.Results {
 				res <- result
 			}
 			wg.Done()
-			log.Println("completed experiments on", h)
+			log.Printf("[%s] completed experiments\n", h)
 		}(host, i)
 	}
 
