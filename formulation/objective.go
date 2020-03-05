@@ -388,7 +388,6 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 	for i, term := range terms {
 		mu.Lock()
 		if v, ok := metaMapCache[term]; ok {
-			fmt.Printf("%d/%d", i, len(terms))
 			if len(v.CUI) > 0 {
 				cuis[term] = v
 				fmt.Printf(" - [/] %s -> %s\n", term, v.CUI)
@@ -405,7 +404,7 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 			fmt.Printf("%d/%d", idx, len(terms))
 
 		back:
-			found, p, err := metamapRequest(client, term)
+			found, p, err := metamapRequest(client, t)
 			if err != nil {
 				fmt.Println(err)
 				goto back
