@@ -383,23 +383,24 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 	// Open the document store.
 	cuis := make(mapping)
 	for i, term := range terms {
-		fmt.Printf("%d/%d", i, len(terms))
 		mu.Lock()
 		if v, ok := metaMapCache[term]; ok {
+			fmt.Printf("%d/%d", i, len(terms))
 			if len(v.CUI) > 0 {
 				cuis[term] = v
-				fmt.Printf(" - [/] %s -> %s", term, v.CUI)
+				fmt.Printf(" - [/] %s -> %s\n", term, v.CUI)
 			} else {
-				fmt.Printf(" - [#] %s -> MISSING", term)
+				fmt.Printf(" - [#] %s -> MISSING\n", term)
 			}
-			fmt.Println()
 			continue
 		}
 		mu.Unlock()
 		wg.Add(1)
 
-		go func(t string) {
+		go func(t string, idx int) {
 			defer wg.Done()
+			//fmt.Printf("%d/%d", idx, len(terms))
+
 		back:
 			found, p, err := metamapRequest(client, term)
 			if err != nil {
@@ -413,7 +414,7 @@ func metaMapTerms(terms []string, client metawrap.HTTPClient) (mapping, error) {
 			} else {
 				metaMapCache[term] = mappingPair{}
 			}
-		}(term)
+		}(term, i)
 
 		fmt.Println()
 	}
@@ -438,7 +439,7 @@ func metamapRequest(client metawrap.HTTPClient, term string) (bool, mappingPair,
 				CUI:  candidate.CandidateCUI,
 				Abbr: candidate.SemTypes[0],
 			}
-			fmt.Printf(" - [?] %s -> %s", term, candidate.CandidateCUI)
+			fmt.Printf(" - [?] %s -> %s\n", term, candidate.CandidateCUI)
 			found = true
 			break
 		}
