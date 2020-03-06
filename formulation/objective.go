@@ -1052,7 +1052,7 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 		return nil, nil, err
 	}
 
-	paramsFile := path.Join("./objective_qf/params", o.Folder, fmt.Sprintf("%s_%s_%d_%s_params.json", o.query.Topic, o.analyserName, int64(o.splitter.(RandomSplitter)), o.optimisation.Name()))
+	paramsFile := path.Join("./objective_qf/params", o.Folder, fmt.Sprintf("%s_%s_%d_%s_params.json", o.query.Topic, o.analyserName, int64(o.seed), o.optimisation.Name()))
 
 	_, err = os.Stat(paramsFile)
 	fmt.Println(err)
