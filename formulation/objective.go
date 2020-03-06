@@ -1052,7 +1052,16 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 		return nil, nil, err
 	}
 
-	paramsFile := path.Join("./objective_qf/params", o.Folder, fmt.Sprintf("%s_%d_params.json", o.query.Topic, int64(o.splitter.(RandomSplitter))))
+	var analyserName string
+	switch o.analyser {
+	case RAKEAnalyser:
+		analyserName = "rake"
+	case TermFrequencyAnalyser:
+		analyserName = "term"
+
+	}
+
+	paramsFile := path.Join("./objective_qf/params", o.Folder, fmt.Sprintf("%s_%s_%d_%s_params.json", o.query.Topic, analyserName, int64(o.splitter.(RandomSplitter)), o.optimisation.Name()))
 
 	_, err = os.Stat(paramsFile)
 	fmt.Println(err)

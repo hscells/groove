@@ -108,6 +108,12 @@ func ObjectiveQuery(query pipeline.Query) ObjectiveOption {
 	}
 }
 
+func ObjectiveSeed(seed int) ObjectiveOption {
+	return func(o *ObjectiveFormulator) {
+		o.seed = seed
+	}
+}
+
 func NewObjectiveFormulator(s stats.EntrezStatisticsSource, esClient *elastic.Client, qrels trecresults.QrelsFile, population BackgroundCollection, folder, pubdates, semTypes, metamapURL string, optimisation eval.Evaluator, options ...ObjectiveOption) *ObjectiveFormulator {
 	t := guru.LoadSemTypes(guru.SEMTYPES)
 	x := make(map[string]guru.SemType)
@@ -132,9 +138,9 @@ func NewObjectiveFormulator(s stats.EntrezStatisticsSource, esClient *elastic.Cl
 		//DevK:         []float64{0.20},
 		//PopK:         []float64{0.02},
 		//MeSHK:        []int{20},
-		DevK:  []float64{0.05, 0.10, 0.15, 0.20, 0.25, 0.30},
-		PopK:  []float64{0.001, 0.01, 0.02, 0.05, 0.10, 0.20},
-		MeSHK: []int{1, 5, 10, 15, 20, 25},
+		DevK:  []float64{0.15, 0.20, 0.25, 0.30},
+		PopK:  []float64{0.001, 0.01, 0.02},
+		MeSHK: []int{1, 5, 10, 15, 20},
 	}
 
 	for _, option := range options {
