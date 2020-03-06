@@ -48,6 +48,7 @@ type ObjectiveFormulator struct {
 	population     BackgroundCollection
 	splitter       Splitter
 	analyser       TermAnalyser
+	analyserName   string
 	postProcessing []PostProcess
 	optimisation   eval.Evaluator
 }
@@ -68,9 +69,10 @@ func ObjectiveSplitter(spitter Splitter) ObjectiveOption {
 	}
 }
 
-func ObjectiveAnalyser(analyser TermAnalyser) ObjectiveOption {
+func ObjectiveAnalyser(analyser TermAnalyser, name string) ObjectiveOption {
 	return func(o *ObjectiveFormulator) {
 		o.analyser = analyser
+		o.analyserName = name
 	}
 }
 
