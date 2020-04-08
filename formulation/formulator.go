@@ -280,7 +280,7 @@ func NewConceptualFormulator(logicComposer LogicComposer, entityExtractor Entity
 
 func (t ConceptualFormulator) Formulate(query pipeline.Query) ([]cqr.CommonQueryRepresentation, []pipeline.SupplementalData, error) {
 	// Query Logic Composition.
-	q, err := t.LogicComposer.Compose(query.Name)
+	q, err := t.LogicComposer.Compose(query)
 	if err != nil {
 		return nil, nil, err
 	}

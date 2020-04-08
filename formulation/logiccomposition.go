@@ -9,18 +9,21 @@ import (
 	rake "github.com/afjoseph/RAKE.Go"
 	"github.com/hscells/cqr"
 	"github.com/hscells/cui2vec"
+	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/guru"
-	"github.com/hscells/metawrap"
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
+	"github.com/hscells/trecresults"
 	"gopkg.in/olivere/elastic.v7"
+	"math/bits"
 	"os/exec"
+	"sort"
 	"strings"
 	"unicode"
 )
 
 type LogicComposer interface {
-	Compose(text string) (cqr.CommonQueryRepresentation, error)
+	Compose(query pipeline.Query) (cqr.CommonQueryRepresentation, error)
 }
 
 // NLPLogicComposer composes queries logically using the stanford English parser.
@@ -44,12 +47,14 @@ func NewNLPLogicComposer(javaClassPath string) *NLPLogicComposer {
 type RAKELogicComposer struct {
 	semtypes      map[string]guru.SemType
 	cuiSemtypes   semTypeMapping
+	titles        map[string]string
+	seedPMIDs     trecresults.QrelsFile
 	metamapURL    string
 	elasticClient *elastic.Client
 	cui2vecClient *cui2vec.VecClient
 }
 
-func NewRAKELogicComposer(semtypes, metamap string, esClient *elastic.Client, vecClient *cui2vec.VecClient) RAKELogicComposer {
+func NewRAKELogicComposer(semtypes, metamap string, titles map[string]string, seedPMIDs trecresults.QrelsFile, esClient *elastic.Client, vecClient *cui2vec.VecClient) RAKELogicComposer {
 	s := guru.LoadSemTypes(guru.SEMTYPES)
 	x := make(map[string]guru.SemType)
 	for _, v := range s {
@@ -62,6 +67,8 @@ func NewRAKELogicComposer(semtypes, metamap string, esClient *elastic.Client, ve
 	return RAKELogicComposer{
 		semtypes:      x,
 		cuiSemtypes:   z,
+		titles:        titles,
+		seedPMIDs:     seedPMIDs,
 		metamapURL:    metamap,
 		elasticClient: esClient,
 		cui2vecClient: vecClient,
@@ -206,7 +213,8 @@ func simplify(r cqr.CommonQueryRepresentation) cqr.CommonQueryRepresentation {
 	return nil
 }
 
-func (n NLPLogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, error) {
+func (n NLPLogicComposer) Compose(query pipeline.Query) (cqr.CommonQueryRepresentation, error) {
+	text := query.Name
 	// Parse title: "Query Logic Composition".
 	cmd := exec.Command("bash", "-c", fmt.Sprintf(`echo "%s" | java -cp "%s/*" edu.stanford.nlp.parser.lexparser.LexicalizedParser -retainTMPSubcategories -outputFormat "penn" %s/englishPCFG.ser.gz -`, text, n.javaClassPath, n.javaClassPath))
 	r, err := cmd.StdoutPipe()
@@ -329,45 +337,104 @@ func elasticUMLSMapTerms(terms []string, client *elastic.Client, st map[string]g
 	return mapping, nil
 }
 
-func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, error) {
+func (r RAKELogicComposer) Compose(query pipeline.Query) (cqr.CommonQueryRepresentation, error) {
+	text := query.Name
+	topic := query.Topic
 
-	candidates := rake.RunRakeI18N(text, append(rake.StopWordsSlice, "versus"))
+	seeds := make([]string, len(r.seedPMIDs.Qrels[topic]))
+	i := 0
+	for pmid := range r.seedPMIDs.Qrels[topic] {
+		seeds[i] = pmid
+		i++
+	}
 
+	titles := make([]string, len(seeds))
+	for i, pmid := range seeds {
+		titles[i] = r.titles[pmid]
+	}
+	// The titles are now in order and should not be sorted past this point.
+
+	// BIG assumption: there can be no more than 64 seed studies.
+	index := make(map[string]uint64)
+
+	seen := make(map[string]struct{})
+	toks, err := tokenise(strings.Join(append(titles, text), " "))
+	candidates := make([]rake.Pair, len(toks))
+	for i, tok := range toks {
+		if len(tok) < 2 {
+			continue
+		}
+		for _, t := range rake.StopWordsSlice {
+			if t == string(tok) {
+				goto skipTerm
+			}
+		}
+		if _, ok := seen[string(tok)]; !ok {
+			candidates[i] = rake.Pair{Key: string(tok)}
+			seen[string(tok)] = struct{}{}
+		}
+	skipTerm:
+	}
+
+	//candidates := rake.RunRakeI18N(strings.Join(append(titles, text), " "), append(rake.StopWordsSlice, "versus"))
+	fmt.Println("candidates:", len(candidates))
 	var terms []string
 	for _, candidate := range candidates {
-		fmt.Println(candidate)
 		switch candidate.Key {
 		case "the", "group", "groups", "and", "excluding", "community",
-			"one", "two", "three", "four",
+			"one", "two", "three", "four", "a", "s", "d",
 			"low", "red flags":
 			continue
 		}
+		if len(candidate.Key) < 2 {
+			continue
+		}
 		terms = append(terms, candidate.Key)
-		if len(terms) >= 4 {
-			break
+
+		// Populate the index.
+		for i, title := range titles {
+			// Prevent integer overflows.
+			if uint64(i) > (1 << 63) {
+				continue
+			}
+			if strings.Contains(title, candidate.Key) {
+				// Set the bit in the byte corresponding to the title.
+				index[candidate.Key] |= 1 << uint64(i)
+			}
 		}
 	}
+
+	fmt.Println("terms:", len(terms))
+
+	fmt.Println("umls mapping")
 
 	mapping, err := elasticUMLSMapTerms(terms, r.elasticClient, r.semtypes)
 	if err != nil {
 		return nil, err
 	}
 
-	mapping1, err := metaMapTerms(terms, metawrap.HTTPClient{URL: r.metamapURL})
-	if err != nil {
-		return nil, err
-	}
+	//fmt.Println("metamap mapping")
+	//
+	//mapping1, err := metaMapTerms(terms, metawrap.HTTPClient{URL: r.metamapURL})
+	//if err != nil {
+	//	return nil, err
+	//}
+	//
+	//fmt.Println("combining mappings")
+	//
+	//for k, v := range mapping1 {
+	//	if len(v.CUI) > 0 {
+	//		mapping[k] = v
+	//	}
+	//}
 
-	for k, v := range mapping1 {
-		if len(v.CUI) > 0 {
-			mapping[k] = v
-		}
-	}
+	fmt.Println("mapped terms")
 
 	type mappedTerm struct {
 		term string
 		cui  string
 		vec  []float64
+		df   int
 	}
 
 	var buckets [][]mappedTerm
@@ -384,8 +451,13 @@ func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, 
 		})
 	}
 
+	fmt.Println("creating buckets")
+
 	for _, term := range mappedTerms {
-		maxSim := 0.1
+		if len(term.vec) == 0 {
+			continue
+		}
+		maxSim := 0.3
 		bestBucket := -1
 		for i, bucket := range buckets {
 			for _, bucketTerm := range bucket {
@@ -396,7 +468,7 @@ func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, 
 				if err != nil {
 					return nil, err
 				}
-				fmt.Println(sim, term.term, bucketTerm.term)
+				//fmt.Println(sim, len(term.vec), term.term, bucketTerm.term)
 				if sim > maxSim {
 					maxSim = sim
 					bestBucket = i
@@ -410,9 +482,77 @@ func (r RAKELogicComposer) Compose(text string) (cqr.CommonQueryRepresentation, 
 		}
 	}
 
+	fmt.Println("created buckets")
+	fmt.Println("performing query reduction")
+	var bestCoverage uint64
+	for i, bucket := range buckets {
+
+		if len(bucket) < 2 {
+			continue
+		}
+
+		var maxCoverage uint64
+
+		// Rank each term by DF and compute maximum maxCoverage of terms.
+		for j, term := range bucket {
+			posting := index[term.term]         // Posting is a uint64 where set bits indicate presence of term in a doc.
+			term.df = bits.OnesCount64(posting) // DF is the count of set bits -- this is a constant time operation.
+			bucket[j] = term
+			maxCoverage |= posting
+		}
+		sort.Slice(bucket, func(i, j int) bool {
+			return bucket[i].df > bucket[j].df
+		})
+
+		fmt.Printf("[bucket %d] terms: %d, max coverage: %b\n", i, len(bucket), maxCoverage)
+
+		// Perform the maxCoverage trick using bitwise OR.
+		var coverage uint64
+		tmp := bucket[:0]
+		for _, term := range bucket {
+			newCoverage := index[term.term] | coverage
+			//fmt.Printf("%d %d %b [%d, %d]\n", j, len(bucket), coverage, bits.OnesCount64(newCoverage), bits.OnesCount64(coverage))
+			if bits.OnesCount64(newCoverage) > bits.OnesCount64(coverage) {
+				// The term contributed to increasing the coverage, so add it to new temporary slice.
+				coverage = newCoverage
+				tmp = append(tmp, term)
+			}
+		}
+
+		if bits.OnesCount64(coverage) > bits.OnesCount64(bestCoverage) {
+			bestCoverage = coverage
+		}
+
+		fmt.Printf("[bucket %d] terms: %d, coverage: %b\n", i, len(tmp), coverage)
+
+		// Update the bucket.
+		buckets[i] = tmp
+	}
+
+	fmt.Println("reducing clauses")
+
+	tmp := buckets[:0]
+	for _, bucket := range buckets {
+		var coverage uint64
+
+		// Rank each term by DF and compute maximum maxCoverage of terms.
+		for _, term := range bucket {
+			posting := index[term.term] // Posting is a uint64 where set bits indicate presence of term in a doc.
+			coverage |= posting
+		}
+
+		fmt.Printf("terms: %d, coverage: %b, best coverage: %b\n", len(bucket), coverage, bestCoverage)
+
+		if bits.OnesCount64(bestCoverage)-bits.OnesCount64(coverage) < 5 {
+			tmp = append(tmp, bucket)
+		}
+	}
+
+	fmt.Println("reduced", len(buckets), "clauses to", len(tmp))
+
 	fmt.Println("----------------------------------")
 	bq := cqr.NewBooleanQuery(cqr.AND, nil)
-	for i, bucket := range buckets {
+	for i, bucket := range tmp {
 		kws := make([]cqr.CommonQueryRepresentation, len(bucket))
 		for j, term := range bucket {
 			fmt.Println(i, term.term)

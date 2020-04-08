@@ -3,6 +3,7 @@ package formulation
 import (
 	"github.com/dan-locke/clean-html"
 	"github.com/hscells/go-unidecode"
+	"strings"
 	"unicode"
 )
 
@@ -23,7 +24,7 @@ func tokenise(text string) (tokeniseOutput, error) {
 
 	var currWordLen int
 
-	txt := unidecode.Unidecode(text)
+	txt := unidecode.Unidecode(strings.ToLower(text))
 
 	portions, err := clean_html.TextPos(txt)
 	if err != nil {

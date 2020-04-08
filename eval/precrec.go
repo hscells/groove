@@ -54,13 +54,18 @@ func (rec recall) Score(results *trecresults.ResultList, qrels trecresults.Qrels
 	numRel := 0.0
 	numRelRet := 0.0    // tp
 	numRelNotRet := 0.0 // fn
+	seen := make(map[string]struct{})
 	for _, result := range *results {
 		docID := result.DocId
+		if _, ok := seen[docID]; ok {
+			continue
+		}
 		if qrel, ok := qrels[docID]; ok {
 			if qrel.Score > RelevanceGrade {
 				numRelRet++
 			}
 		}
+		seen[docID] = struct{}{}
 	}
 
 	for _, qrel := range qrels {
@@ -88,8 +93,12 @@ func (rec precision) Score(results *trecresults.ResultList, qrels trecresults.Qr
 	}
 	numRelRet := 0.0    // tp
 	numNonRelRet := 0.0 // fp
+	seen := make(map[string]struct{})
 	for _, result := range *results {
 		docID := result.DocId
+		if _, ok := seen[docID]; ok {
+			continue
+		}
 		if qrel, ok := qrels[docID]; ok {
 			if qrel.Score > RelevanceGrade {
 				numRelRet++
@@ -99,6 +108,7 @@ func (rec precision) Score(results *trecresults.ResultList, qrels trecresults.Qr
 		} else {
 			numNonRelRet++
 		}
+		seen[docID] = struct{}{}
 	}
 
 	if numRelRet == 0 || numNonRelRet == 0 {
@@ -148,10 +158,16 @@ func (e RecallAtK) Name() string {
 
 func (numRel) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
 	n := 0.0
+	seen := make(map[string]struct{})
 	for _, qrel := range qrels {
+		docID := qrel.DocId
+		if _, ok := seen[docID]; ok {
+			continue
+		}
 		if qrel.Score > RelevanceGrade {
 			n++
 		}
+		seen[docID] = struct{}{}
 	}
 	return n
 }
@@ -161,7 +177,17 @@ func (numRel) Name() string {
 }
 
 func (numRet) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
-	return float64(len(*results))
+	n := 0.0
+	seen := make(map[string]struct{})
+	for _, result := range *results {
+		docID := result.DocId
+		if _, ok := seen[docID]; ok {
+			continue
+		}
+		n++
+		seen[docID] = struct{}{}
+	}
+	return n
 }
 
 func (numRet) Name() string {
@@ -170,13 +196,18 @@ func (numRet) Name() string {
 
 func (numRelRet) Score(results *trecresults.ResultList, qrels trecresults.Qrels) float64 {
 	n := 0.0
+	seen := make(map[string]struct{})
 	for _, result := range *results {
 		docID := result.DocId
+		if _, ok := seen[docID]; ok {
+			continue
+		}
 		if qrel, ok := qrels[docID]; ok {
 			if qrel.Score > RelevanceGrade {
 				n++
 			}
 		}
+		seen[docID] = struct{}{}
 	}
 	return n
 }

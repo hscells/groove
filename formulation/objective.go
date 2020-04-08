@@ -1181,16 +1181,16 @@ func (o ObjectiveFormulator) tuneSingleQuery(devDF TermStatistics, dev []guru.Me
 	// Classify query TermStatistics.
 	conditions, treatments, studyTypes, _ := classifyQueryTerms(queryTerms, mapping, semTypes)
 
-	fmt.Println("creating keywords")
-	// Create keywords for the proceeding query.
-	conditionsKeywords, treatmentsKeywords, studyTypesKeywords, _ := makeKeywords(conditions, treatments, studyTypes, []string{}, nil)
-
 	fmt.Println("filtering keywords")
 	// And then filter the query TermStatistics.
 	conditions, treatments, studyTypes, err = FilterQueryTerms(conditions, treatments, studyTypes, fields.TitleAbstract, MakeQrels(dev, o.Topic()), o.s)
 	if err != nil {
 		return nil, nil, nil, nil, evaluation{}, nil, nil, err
 	}
+
+	fmt.Println("creating keywords")
+	// Create keywords for the proceeding query.
+	conditionsKeywords, treatmentsKeywords, studyTypesKeywords, _ := makeKeywords(conditions, treatments, studyTypes, []string{}, nil)
 
 	fmt.Println("constructing final query")
 	// Create the query from the three categories.
