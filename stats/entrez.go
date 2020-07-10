@@ -17,8 +17,10 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"net/url"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -489,21 +491,32 @@ func (e EntrezStatisticsSource) RetrievalSize(query cqr.CommonQueryRepresentatio
 	if err != nil {
 		return 0, err
 	}
-
-	nfails := 20
-	fails := nfails
 retry:
-	s, err := entrez.DoSearch(e.db, q, &entrez.Parameters{RetType: "xml", APIKey: e.key}, nil, e.tool, e.email)
+	entrez.Limit.Wait()
+	c := &http.Client{}
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&rettype=count&term=%s&api_key=%s&tool=%s&email=%s", url.QueryEscape(q), e.key, e.tool, e.email), nil)
 	if err != nil {
-		if fails > 0 {
-			log.Printf("retrieval size error: %v, retrying %d more times for %d seconds", err, fails, ((nfails-fails)*5)*int(time.Second))
-			fails--
-			time.Sleep(time.Duration((nfails-fails)*5) * time.Second)
-			goto retry
-		}
-		panic(err)
+		return 0, err
 	}
-	return float64(s.Count), nil
+	resp, err := c.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		goto retry
+	}
+
+	var buff bytes.Buffer
+	_, err = buff.ReadFrom(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+	re := regexp.MustCompile("<Count>(?P<count>[0-9]+)</Count>")
+	matches := re.FindSubmatch(buff.Bytes())
+	if len(matches) >= 2 {
+		return strconv.ParseFloat(string(bytes.TrimSpace(matches[1])), 32)
+	}
+	return 0, nil
 }
 
 func (e EntrezStatisticsSource) VocabularySize(field string) (float64, error) {
@@ -649,9 +662,9 @@ func NewEntrezStatisticsSource(options ...func(source *EntrezStatisticsSource)) 
 		rank: false,
 	}
 
-	if len(e.key) > 0 {
-		entrez.Limit = ncbi.NewLimiter(time.Second)
-	}
+	//if len(e.key) > 0 {
+	entrez.Limit = ncbi.NewLimiter(time.Second / 9)
+	//}
 
 	//ncbi.SetTimeout(0)
 

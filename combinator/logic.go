@@ -6,6 +6,7 @@ import (
 	"github.com/hscells/cqr"
 	"github.com/hscells/groove/pipeline"
 	"github.com/hscells/groove/stats"
+	"github.com/hscells/transmute/fields"
 	"github.com/hscells/trecresults"
 	"github.com/pkg/errors"
 	"github.com/xtgo/set"
@@ -36,7 +37,8 @@ type Operator interface {
 
 // LogicalTree can compute the number of documents retrieved for atomic components.
 type LogicalTree struct {
-	Root LogicalTreeNode
+	Root  LogicalTreeNode
+	cache QueryCacher
 }
 
 // LogicalTreeNode is a node in a logical tree.
@@ -57,11 +59,15 @@ type Combinator struct {
 	Operator
 	Clause
 	Clauses []LogicalTreeNode
+	N       float64
+	R       float64
 }
 
 // Atom is the smallest possible component of a query.
 type Atom struct {
 	Clause
+	N float64
+	R float64
 }
 
 // AdjAtom is a special type of atom for adjacent queries.
@@ -337,7 +343,7 @@ func (d Document) String() string {
 // NewAtom creates a new atom.
 func NewAtom(keyword cqr.Keyword) Atom {
 	return Atom{
-		Clause{
+		Clause: Clause{
 			Hash:  HashCQR(keyword),
 			Query: keyword,
 		},
@@ -496,6 +502,81 @@ func constructTree(query pipeline.Query, ss stats.StatisticsSource, seen QueryCa
 	return nil, nil, errors.New(fmt.Sprintf("supplied query is not supported: %s", query.Query))
 }
 
+func addRelevant(q cqr.CommonQueryRepresentation, relevant Documents) cqr.CommonQueryRepresentation {
+	clauses := make([]cqr.CommonQueryRepresentation, len(relevant))
+	for i, r := range relevant {
+		clauses[i] = cqr.NewKeyword(r.String(), fields.PMID)
+	}
+	return cqr.NewBooleanQuery(cqr.AND, []cqr.CommonQueryRepresentation{
+		q,
+		cqr.NewBooleanQuery(cqr.OR, clauses),
+	})
+}
+
+func constructShallowTree(query pipeline.Query, s stats.StatisticsSource, relevant Documents) (LogicalTreeNode, error) {
+	switch q := query.Query.(type) {
+	case cqr.Keyword:
+		var n, r float64
+		var err error
+		if len(relevant) > 0 {
+			r, err = s.RetrievalSize(addRelevant(q, relevant))
+			if err != nil {
+				return nil, err
+			}
+		}
+		n, err = s.RetrievalSize(q)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Println(" - ", q, n, r)
+		a := NewAtom(q)
+		a.N = n
+		a.R = r
+		return a, nil
+	case cqr.BooleanQuery:
+		var operator Operator
+		switch strings.ToLower(q.Operator) {
+		case cqr.OR:
+			operator = OrOperator
+		case cqr.AND:
+			operator = AndOperator
+		case cqr.NOT:
+			operator = NotOperator
+		default:
+			operator = OrOperator
+		}
+		clauses := make([]LogicalTreeNode, len(q.Children))
+		var wg sync.WaitGroup
+		var loopErr error
+		for i, child := range q.Children {
+			wg.Add(1)
+			go func(c cqr.CommonQueryRepresentation, idx int) {
+				clauses[idx], loopErr = constructShallowTree(pipeline.NewQuery(query.Name, query.Topic, c), s, relevant)
+				wg.Done()
+			}(child, i)
+		}
+		var r float64
+		n, err := s.RetrievalSize(q)
+		if err != nil {
+			return nil, err
+		}
+		if len(relevant) > 0 {
+			r, err = s.RetrievalSize(addRelevant(q, relevant))
+			if err != nil {
+				return nil, err
+			}
+		}
+		b := NewCombinator(q, operator, clauses...)
+		b.N = n
+		b.R = r
+		wg.Wait()
+		fmt.Printf("%v - (%f, %f)\n", q, n, r)
+		return b, loopErr
+
+	}
+	return nil, errors.New(fmt.Sprintf("supplied query is not supported: %s", query.Query))
+}
+
 // NewLogicalTree creates a new logical tree.  If the operator of the query is unknown
 // (i.e. it is not one of `or`, `and`, `not`, or an `adj` operator) the default operator will be `or`.
 //
@@ -511,6 +592,13 @@ func NewLogicalTree(query pipeline.Query, ss stats.StatisticsSource, seen QueryC
 	return LogicalTree{
 		Root: root,
 	}, seen, nil
+}
+
+func NewShallowLogicalTree(query pipeline.Query, s stats.StatisticsSource, relevant Documents) (LogicalTree, error) {
+	node, err := constructShallowTree(query, s, relevant)
+	return LogicalTree{
+		Root: node,
+	}, err
 }
 
 // Documents returns the documents that the tree (query) would return if executed.
