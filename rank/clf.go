@@ -21,7 +21,7 @@ import (
 	"github.com/hscells/transmute/fields"
 	"github.com/hscells/trecresults"
 	"github.com/reiver/go-porterstemmer"
-	"gopkg.in/jdkato/prose.v2"
+	"github.com/jdkato/prose/v2"
 	"io/ioutil"
 	"math/rand"
 	"os"

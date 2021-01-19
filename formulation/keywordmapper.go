@@ -11,7 +11,7 @@ import (
 	"github.com/hscells/meshexp"
 	"github.com/hscells/metawrap"
 	"github.com/hscells/transmute/fields"
-	"gopkg.in/olivere/elastic.v7"
+	"github.com/olivere/elastic/v7"
 	"strings"
 	"time"
 )

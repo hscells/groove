@@ -26,7 +26,7 @@ func tokenise(text string) (tokeniseOutput, error) {
 
 	txt := unidecode.Unidecode(strings.ToLower(text))
 
-	portions, err := clean_html.TextPos(txt)
+	portions, err := clean_html.TextPos([]byte(txt))
 	if err != nil {
 		return nil, err
 	}
@@ -35,11 +35,11 @@ func tokenise(text string) (tokeniseOutput, error) {
 		for j, t := range txt[portions.Positions[i][0]:portions.Positions[i][1]] {
 			prev := curr
 
-			if unicode.IsSpace(rune(t)) {
+			if unicode.IsSpace(t) {
 				curr = space
-			} else if unicode.IsNumber(rune(t)) {
+			} else if unicode.IsNumber(t) {
 				curr = num
-			} else if unicode.IsLetter(rune(t)) {
+			} else if unicode.IsLetter(t) {
 				curr = char
 			} else {
 				curr = other
@@ -47,7 +47,7 @@ func tokenise(text string) (tokeniseOutput, error) {
 
 			// Remove this if not doing lower ...
 			if curr == char {
-				t = byte(unicode.ToLower(rune(t)))
+				t = unicode.ToLower(t)
 			}
 
 			var change bool
@@ -68,7 +68,7 @@ func tokenise(text string) (tokeniseOutput, error) {
 						currWordLen = 0
 						continue
 					}
-					tokens = append(tokens, txt[start:portions.Positions[i][0]+j])
+					tokens = append(tokens, []byte(txt[start:portions.Positions[i][0]+j]))
 					currWordLen = 0
 				}
 			}
@@ -79,7 +79,7 @@ func tokenise(text string) (tokeniseOutput, error) {
 						currWordLen = 0
 						continue
 					}
-					tokens = append(tokens, txt[portions.Positions[i][0]+j-currWordLen:portions.Positions[i][0]+j+1])
+					tokens = append(tokens, []byte(txt[portions.Positions[i][0]+j-currWordLen:portions.Positions[i][0]+j+1]))
 					currWordLen = 0
 				}
 			}

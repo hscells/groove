@@ -14,7 +14,7 @@ import (
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
 	"github.com/hscells/trecresults"
-	"gopkg.in/olivere/elastic.v7"
+	"github.com/olivere/elastic/v7"
 	"math/bits"
 	"os/exec"
 	"sort"

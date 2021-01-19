@@ -13,7 +13,7 @@ import (
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/trecresults"
 	"github.com/mailru/easyjson"
-	"gopkg.in/jdkato/prose.v2"
+	"github.com/jdkato/prose/v2"
 	"io"
 	"io/ioutil"
 	"log"

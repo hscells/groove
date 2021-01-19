@@ -3,8 +3,8 @@ package rank
 import (
 	"fmt"
 	"github.com/hscells/guru"
-	"gopkg.in/cheggaaa/pb.v1"
-	"gopkg.in/jdkato/prose.v2"
+	"github.com/cheggaaa/pb/v3"
+	"github.com/jdkato/prose/v2"
 	"hash/fnv"
 	"math"
 	"strings"

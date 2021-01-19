@@ -8,7 +8,7 @@ import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/fields"
-	"gopkg.in/jdkato/prose.v2"
+	"github.com/jdkato/prose/v2"
 	"log"
 	"sort"
 )

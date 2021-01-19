@@ -11,7 +11,7 @@ import (
 	"github.com/hscells/transmute/fields"
 	"github.com/xtgo/set"
 	"gopkg.in/cheggaaa/pb.v1"
-	"gopkg.in/jdkato/prose.v2"
+	"github.com/jdkato/prose/v2"
 	"math"
 	"sort"
 	"strings"

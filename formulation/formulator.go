@@ -9,7 +9,7 @@ import (
 	"github.com/hscells/groove/stats"
 	"github.com/hscells/guru"
 	"github.com/hscells/trecresults"
-	"gopkg.in/olivere/elastic.v7"
+	"github.com/olivere/elastic/v7"
 	"strconv"
 )
 
