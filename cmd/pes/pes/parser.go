@@ -11,7 +11,8 @@ type Script struct {
 		Tool  string `json:"tool"`
 		Key   string `json:"key"`
 	} `json:"statistic"`
-	PMIDS []int `json:"pmids"`
+	PMIDS []int  `json:"pmids"`
+	Field string `json:"field"`
 }
 
 func Parse(f io.Reader) (*Script, error) {

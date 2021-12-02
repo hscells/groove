@@ -12,8 +12,8 @@ import (
 	"github.com/hscells/transmute"
 	"github.com/hscells/transmute/backend"
 	"github.com/hscells/trecresults"
-	"github.com/mailru/easyjson"
 	"github.com/jdkato/prose/v2"
+	"github.com/mailru/easyjson"
 	"io"
 	"io/ioutil"
 	"log"
@@ -162,6 +162,8 @@ type esearchresult struct {
 
 // Search uses the entrez eutils to get the pmids for a given query.
 func (e EntrezStatisticsSource) Search(query string, options ...func(p *entrez.Parameters)) ([]int, error) {
+	ncbi.SetTimeout(10 * time.Minute)
+
 	//fmt.Printf("%s", query)
 	p := &entrez.Parameters{}
 	p.RetMax = e.options.Size

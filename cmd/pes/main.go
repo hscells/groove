@@ -12,7 +12,7 @@ import (
 
 var (
 	name    = "pes"
-	version = "25.Mar.2020"
+	version = "14.Apr.2021"
 	author  = "Harry Scells"
 )
 
@@ -48,14 +48,14 @@ func main() {
 		stats.EntrezAPIKey(script.Statistic.Key),
 		stats.EntrezEmail(script.Statistic.Email),
 		stats.EntrezTool(script.Statistic.Tool),
-		stats.EntrezOptions(stats.SearchOptions{Size: 10000}))
+		stats.EntrezOptions(stats.SearchOptions{Size: 500}))
 	if err != nil {
 		panic(err)
 	}
 
 	var docs guru.MedlineDocuments
-	for i := 0; i < len(script.PMIDS); i += 10000 {
-		end := i + 10000
+	for i := 0; i < len(script.PMIDS); i += 500 {
+		end := i + 500
 		if end >= len(script.PMIDS) {
 			end = len(script.PMIDS) - 1
 		}
@@ -69,7 +69,11 @@ func main() {
 
 	titles := make(map[string]string, len(docs))
 	for _, doc := range docs {
-		titles[doc.PMID] = doc.TI
+		if script.Field == "ab" {
+			titles[doc.PMID] = doc.AB
+		} else {
+			titles[doc.PMID] = doc.TI
+		}
 	}
 
 	err = json.NewEncoder(os.Stdout).Encode(titles)
