@@ -546,14 +546,17 @@ func constructShallowTree(query pipeline.Query, s stats.StatisticsSource, releva
 			operator = OrOperator
 		}
 		clauses := make([]LogicalTreeNode, len(q.Children))
-		var wg sync.WaitGroup
-		var loopErr error
+		//var wg sync.WaitGroup
+		var err error
 		for i, child := range q.Children {
-			wg.Add(1)
-			go func(c cqr.CommonQueryRepresentation, idx int) {
-				clauses[idx], loopErr = constructShallowTree(pipeline.NewQuery(query.Name, query.Topic, c), s, relevant)
-				wg.Done()
-			}(child, i)
+			//wg.Add(1)
+			//go func(c cqr.CommonQueryRepresentation, idx int) {
+			clauses[i], err = constructShallowTree(pipeline.NewQuery(query.Name, query.Topic, child), s, relevant)
+			if err != nil {
+				panic(err)
+			}
+			//wg.Done()
+			//}(child, i)
 		}
 		var r float64
 		n, err := s.RetrievalSize(q)
@@ -569,10 +572,9 @@ func constructShallowTree(query pipeline.Query, s stats.StatisticsSource, releva
 		b := NewCombinator(q, operator, clauses...)
 		b.N = n
 		b.R = r
-		wg.Wait()
-		fmt.Printf("%v - (%f, %f)\n", q, n, r)
-		return b, loopErr
-
+		//wg.Wait()
+		//fmt.Printf("%v - (%f, %f)\n", q, n, r)
+		return b, nil
 	}
 	return nil, errors.New(fmt.Sprintf("supplied query is not supported: %s", query.Query))
 }

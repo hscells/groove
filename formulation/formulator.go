@@ -140,9 +140,9 @@ func NewObjectiveFormulator(s stats.EntrezStatisticsSource, esClient *elastic.Cl
 		//DevK:         []float64{0.20},
 		//PopK:         []float64{0.02},
 		//MeSHK:        []int{20},
-		DevK:  []float64{0.15, 0.20, 0.25, 0.30},
-		PopK:  []float64{0.001, 0.01, 0.02},
-		MeSHK: []int{1, 5, 10, 15, 20},
+		DevK:  []float64{0.15},
+		PopK:  []float64{0.05},
+		MeSHK: []int{5},
 	}
 
 	for _, option := range options {

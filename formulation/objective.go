@@ -230,6 +230,32 @@ func (r RandomSplitter) Split(docs []guru.MedlineDocument) ([]guru.MedlineDocume
 	return dev, val, unseen
 }
 
+type TraditionalSplitter int64
+
+func (r TraditionalSplitter) Split(docs []guru.MedlineDocument) ([]guru.MedlineDocument, []guru.MedlineDocument, []guru.MedlineDocument) {
+	source := rand.New(rand.NewSource(int64(r)))
+	source.Shuffle(len(docs), func(i, j int) {
+		docs[i], docs[j] = docs[j], docs[i]
+	})
+
+	devSplit := float64(len(docs)) * 0.75
+	valSplit := float64(len(docs)) * 0.25
+
+	var (
+		dev []guru.MedlineDocument
+		val []guru.MedlineDocument
+	)
+	for i, j := 0.0, 0; i < float64(len(docs)); i++ {
+		if i < devSplit {
+			dev = append(dev, docs[j])
+		} else if i < devSplit+valSplit {
+			val = append(val, docs[j])
+		}
+		j++
+	}
+	return dev, val, []guru.MedlineDocument{}
+}
+
 // TermFrequencyAnalyser computes the document frequency for the input documents.
 func TermFrequencyAnalyser(docs []guru.MedlineDocument) (TermStatistics, error) {
 	t := make(TermStatistics)
@@ -296,6 +322,8 @@ func cutDevelopmentTerms(t TermStatistics, dev []guru.MedlineDocument, cut float
 			terms[k] = v
 		}
 	}
+
+
 
 	return terms
 }
@@ -950,17 +978,19 @@ func constructQuery(conditions, treatments, studyTypes []cqr.Keyword, other ...c
 // evaluate computes evaluation measures for each of the dev, val, and unseen sets.
 func evaluate(query cqr.CommonQueryRepresentation, e stats.EntrezStatisticsSource, dev, val, unseen []guru.MedlineDocument, topic string) (evaluation, error) {
 	// Execute the query and find the effectiveness.
-	d, err := os.UserCacheDir()
-	if err != nil {
-		return evaluation{}, err
-	}
-	filecache := combinator.NewFileQueryCache(path.Join(d, "filecache"))
+	//d, err := os.UserCacheDir()
+	//if err != nil {
+	//	return evaluation{}, err
+	//}
+	//filecache := combinator.NewFileQueryCache(path.Join(d, "filecache"))
 	pq := pipeline.NewQuery("0", "0", query)
-	tree, _, err := combinator.NewLogicalTree(pq, e, filecache)
+	tree, err := combinator.NewShallowLogicalTree(pq, e, combinator.Documents{})
+	fmt.Println(err)
 	if err != nil {
 		panic(err)
 	}
-	results := tree.Documents(filecache).Results(pq, "0")
+	results := tree.Documents(combinator.NewMapQueryCache()).Results(pq, "0")
+	fmt.Println(results)
 	//results, err := e.Execute(pipeline.NewQuery("", "", query), e.SearchOptions())
 	//if err != nil {
 	//	return evaluation{}, err
@@ -970,6 +1000,7 @@ func evaluate(query cqr.CommonQueryRepresentation, e stats.EntrezStatisticsSourc
 	devEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": MakeQrels(dev, topic)}}, "0")
 	valEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": MakeQrels(val, topic)}}, "0")
 	unseenEval := eval.Evaluate(ev, &results, trecresults.QrelsFile{Qrels: map[string]trecresults.Qrels{"0": MakeQrels(unseen, topic)}}, "0")
+
 	return evaluation{
 		Development: devEval,
 		Validation:  valEval,
@@ -1021,10 +1052,10 @@ func rankTerms(t TermStatistics, dev []guru.MedlineDocument, topic, folder strin
 // derive actually performs the objective derivation for the objective method.
 func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.MedlineDocument, population BackgroundCollection, m eval.Evaluator) (cqr.CommonQueryRepresentation, cqr.CommonQueryRepresentation, error) {
 	var (
-		bestEval float64
-		bestD    float64
-		bestP    float64
-		bestM    int
+		//bestEval float64
+		bestD float64
+		bestP float64
+		bestM int
 
 		bestConditions []cqr.Keyword
 		bestTreatments []cqr.Keyword
@@ -1065,12 +1096,12 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 		params := make(map[string]float64)
 		json.NewDecoder(f).Decode(&params)
 		fmt.Println(params)
-		var ev evaluation
-		bestConditions, bestTreatments, bestStudyTypes, bestQ, ev, _, _, err = o.tuneSingleQuery(devDF, dev, params["d"], population, params["p"], semTypes, val)
+		//var ev evaluation
+		bestConditions, bestTreatments, bestStudyTypes, bestQ, _, _, _, err = o.tuneSingleQuery(devDF, dev, params["d"], population, params["p"], semTypes, val)
 		if err != nil {
 			return nil, nil, err
 		}
-		bestEval = ev.Validation[m.Name()]
+		//bestEval = ev.Validation[m.Name()]
 		conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH, err := addMeSHTerms(bestConditions, bestTreatments, bestStudyTypes, dev, o.s, o.query.Topic, int(params["m"]), o.Folder)
 		if err != nil {
 			return nil, nil, err
@@ -1079,11 +1110,11 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 		qWithMeSH := constructQuery(conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH)
 		qWithMeSH = preprocess.DateRestrictions(o.Pubdates)(qWithMeSH, o.query.Topic)()
 
-		ev, err = evaluate(qWithMeSH, o.s, dev, val, nil, o.Topic())
-		if err != nil {
-			return nil, nil, err
-		}
-		bestEval = ev.Validation[m.Name()]
+		//ev, err = evaluate(qWithMeSH, o.s, dev, val, nil, o.Topic())
+		//if err != nil {
+		//	return nil, nil, err
+		//}
+		//bestEval = ev.Validation[m.Name()]
 		bestQWithMesh = qWithMeSH
 		bestM = int(params["m"])
 
@@ -1093,26 +1124,27 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 			for _, p := range o.PopK {
 				fmt.Println(d, p)
 
-				conditionsKeywords, treatmentsKeywords, studyTypesKeywords, q, ev, representation, queryRepresentation, err2 := o.tuneSingleQuery(devDF, dev, d, population, p, semTypes, val)
+				conditionsKeywords, treatmentsKeywords, studyTypesKeywords, q, _, representation, queryRepresentation, err2 := o.tuneSingleQuery(devDF, dev, d, population, p, semTypes, val)
 				if err2 != nil {
 					return representation, queryRepresentation, err2
 				}
 
-				if ev.Validation[m.Name()] > bestEval {
-					bestEval = ev.Validation[m.Name()]
-					bestQ = q
-					bestConditions = conditionsKeywords
-					bestTreatments = treatmentsKeywords
-					bestStudyTypes = studyTypesKeywords
-					bestD = d
-					bestP = p
-				}
+				//if ev.Validation[m.Name()] > bestEval {
+				//bestEval = ev.Validation[m.Name()]
+				bestQ = q
+				bestConditions = conditionsKeywords
+				bestTreatments = treatmentsKeywords
+				bestStudyTypes = studyTypesKeywords
+				bestD = d
+				bestP = p
+				//}
+				//fmt.Println(q)
 			}
 		}
 		fmt.Println("completed grid search")
 
 		// Grid search parameters of k for the number of mesh keywords to add to a query.
-		bestEval = 0.0
+		//bestEval = 0.0
 		for _, k := range o.MeSHK {
 			fmt.Println(k)
 			conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH, err := addMeSHTerms(bestConditions, bestTreatments, bestStudyTypes, dev, o.s, o.query.Topic, k, o.Folder)
@@ -1122,22 +1154,24 @@ func (o ObjectiveFormulator) derive(devDF TermStatistics, dev, val []guru.Medlin
 			qWithMeSH := constructQuery(conditionsKeywordsWithMeSH, treatmentsKeywordsWithMeSH, studyTypesKeywordsWithMeSH)
 			qWithMeSH = preprocess.DateRestrictions(o.Pubdates)(qWithMeSH, o.query.Topic)()
 
-			ev, err := evaluate(qWithMeSH, o.s, dev, val, nil, o.Topic())
-			if err != nil {
-				return nil, nil, err
-			}
-
-			if ev.Validation[m.Name()] > bestEval {
-				bestEval = ev.Validation[m.Name()]
-				bestQWithMesh = qWithMeSH
-				bestM = k
-			}
+			//ev, err := evaluate(qWithMeSH, o.s, dev, val, nil, o.Topic())
+			//if err != nil {
+			//	return nil, nil, err
+			//}
+			//
+			//if ev.Validation[m.Name()] > bestEval {
+			//	bestEval = ev.Validation[m.Name()]
+			bestQWithMesh = qWithMeSH
+			bestM = k
+			//}
 		}
+		fmt.Println(bestQ)
 
 		v := make(map[string]interface{})
 		v["d"] = bestD
 		v["p"] = bestP
 		v["m"] = bestM
+		fmt.Println(v)
 		b, err := json.Marshal(v)
 		if err != nil {
 			return nil, nil, err
@@ -1195,14 +1229,17 @@ func (o ObjectiveFormulator) tuneSingleQuery(devDF TermStatistics, dev []guru.Me
 	fmt.Println("constructing final query")
 	// Create the query from the three categories.
 	q := constructQuery(conditionsKeywords, treatmentsKeywords, studyTypesKeywords)
-	fmt.Println(q)
 	q = preprocess.DateRestrictions(o.Pubdates)(q, o.query.Topic)()
-	fmt.Println(q)
 
-	fmt.Println("evaluating final query")
-	ev, err := evaluate(q, o.s, dev, val, nil, o.Topic())
-	if err != nil {
-		return nil, nil, nil, nil, evaluation{}, nil, nil, err
-	}
-	return conditionsKeywords, treatmentsKeywords, studyTypesKeywords, q, ev, nil, nil, nil
+	//fmt.Println("evaluating final query")
+	//ev, err := evaluate(q, o.s, dev, val, nil, o.Topic())
+	//if err != nil {
+	//	return nil, nil, nil, nil, evaluation{}, nil, nil, err
+	//}
+	//fmt.Println("evaluated query!")
+	return conditionsKeywords, treatmentsKeywords, studyTypesKeywords, q, evaluation{
+		Development: map[string]float64{},
+		Validation:  map[string]float64{},
+		Unseen:      map[string]float64{},
+	}, nil, nil, nil
 }
